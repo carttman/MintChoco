@@ -1,0 +1,63 @@
+#pragma once
+
+#include "CoreMinimal.h"
+
+#include "PaintSplat.generated.h"
+
+/**
+ * A single paint contact event. Every paint source - a debug click trace, a paintball
+ * projectile, a mop dragged along a wall - produces this same struct; only the rate and
+ * the values differ. This is the only thing that will be replicated.
+ */
+USTRUCT(BlueprintType)
+struct FPaintSplat
+{
+	GENERATED_BODY()
+
+	/** World-space contact point. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
+	FVector Location = FVector::ZeroVector;
+
+	/** Surface normal at the contact point. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
+	FVector Normal = FVector::UpVector;
+
+	/** Incoming velocity, deliberately not normalized: its magnitude is the impact speed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
+	FVector IncidentVelocity = FVector::ZeroVector;
+
+	/** Contact point in the surface's UV space. Only meaningful while painting is UV-based. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
+	FVector2D SurfaceUV = FVector2D::ZeroVector;
+
+	/** Owning team of the paint. 0 means "unpainted" in the ID buffer and is never a valid splat value. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint", meta = (ClampMin = "1"))
+	uint8 TeamId = 1;
+
+	/** How much paint this contact deposits. A mop tick deposits far less than a paintball. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
+	float Volume = 1.0f;
+
+	/** Drives shape variation. Shared across clients so every machine draws the same splat. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
+	int32 Seed = 0;
+};
+
+/** The drawing parameters derived from an FPaintSplat and the surface it landed on. */
+USTRUCT(BlueprintType)
+struct FPaintSplatShape
+{
+	GENERATED_BODY()
+
+	/** Radius in UV units while painting is UV-based. */
+	UPROPERTY(BlueprintReadOnly, Category = "Paint")
+	float Radius = 0.0f;
+
+	/** 1 / cos(incidence), clamped. 1 means a head-on hit. */
+	UPROPERTY(BlueprintReadOnly, Category = "Paint")
+	float Stretch = 1.0f;
+
+	/** Surface-tangent direction the splat stretches along. Zero for a head-on hit. */
+	UPROPERTY(BlueprintReadOnly, Category = "Paint")
+	FVector TangentDirection = FVector::ZeroVector;
+};
