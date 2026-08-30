@@ -91,7 +91,7 @@ void ASamplePaintController::OnCycleTeamTriggered(const FInputActionValue& Value
 {
 	const int32 Step = Value.Get<float>() > 0.0f ? 1 : -1;
 	const int32 TeamCount = FMath::Max(static_cast<int32>(NumTeams), 1);
-	TeamId = static_cast<uint8>((TeamId - 1 + Step + TeamCount) % TeamCount + 1);
+	TeamId = static_cast<uint8>((TeamId + Step + TeamCount) % TeamCount);
 
 	if (GEngine)
 	{

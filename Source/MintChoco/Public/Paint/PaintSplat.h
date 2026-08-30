@@ -5,6 +5,13 @@
 #include "PaintSplat.generated.h"
 
 /**
+ * Size of the paint-id space. Ids 0-3 are player teams, 4-6 are reserved for game
+ * elements, and the last id means "nothing painted here" - so painting it erases.
+ */
+inline constexpr uint8 PaintIdCount = 8;
+inline constexpr uint8 PaintIdNone = PaintIdCount - 1;
+
+/**
  * A single paint contact event. Every paint source - a debug click trace, a paintball
  * projectile, a mop dragged along a wall - produces this same struct; only the rate and
  * the values differ. This is the only thing that will be replicated.
@@ -30,9 +37,9 @@ struct FPaintSplat
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
 	FVector2D SurfaceUV = FVector2D::ZeroVector;
 
-	/** Owning team of the paint. 0 means "unpainted" in the ID buffer and is never a valid splat value. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint", meta = (ClampMin = "1"))
-	uint8 TeamId = 1;
+	/** Id this splat writes into the buffer. PaintIdNone erases back to "unpainted". */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint", meta = (ClampMin = "0", ClampMax = "7"))
+	uint8 PaintId = 0;
 
 	/** How much paint this contact deposits. A mop tick deposits far less than a paintball. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")

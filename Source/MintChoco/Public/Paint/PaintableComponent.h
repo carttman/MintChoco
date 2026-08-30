@@ -15,9 +15,10 @@ class UTextureRenderTarget2D;
  * Gives its owner a paint layer: one render target per component instance, a brush material
  * drawn into it, and a surface material that reads it back.
  *
- * The render target is a team-ID buffer, not a color buffer: R8, 0 = unpainted, 1..255 = owning
- * team, decoded to a color through a palette in the surface material. IDs must never be
- * interpolated, so the target samples with nearest filtering.
+ * The render target is a paint-id buffer, not a color buffer: R8 holding one of the
+ * PaintIdCount ids per texel, PaintIdNone meaning "unpainted". The surface material decodes
+ * each id to its designer-assigned color (MF_PaintOverlay's per-id parameters). Ids must never
+ * be interpolated, so the target samples with nearest filtering.
  *
  * Writing an ID has to replace, never blend, which rules out both of the obvious draw paths:
  * translucent blend modes can never write the target's alpha, and a masked material's clip is
@@ -53,7 +54,7 @@ public:
 	bool BuildSplatFromHit(
 		const FHitResult& Hit,
 		FVector IncidentVelocity,
-		uint8 TeamId,
+		uint8 PaintId,
 		float Volume,
 		FPaintSplat& OutSplat) const;
 

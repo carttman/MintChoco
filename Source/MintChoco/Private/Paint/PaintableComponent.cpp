@@ -8,7 +8,7 @@
 
 namespace
 {
-	const FName BrushTeamParam(TEXT("BrushTeam"));
+	const FName BrushPaintIdParam(TEXT("BrushPaintId"));
 	const FName BrushCenterParam(TEXT("BrushCenter"));
 	const FName BrushRadiusParam(TEXT("BrushRadius"));
 	const FName PreviousPaintParam(TEXT("PreviousPaint"));
@@ -76,7 +76,7 @@ UTextureRenderTarget2D* UPaintableComponent::CreateIdBuffer()
 	// on every splat boundary, and sRGB would corrupt the ID -> byte round trip.
 	UTextureRenderTarget2D* const Buffer = NewObject<UTextureRenderTarget2D>(this);
 	Buffer->RenderTargetFormat = RTF_R8;
-	Buffer->ClearColor = FLinearColor::Black;
+	Buffer->ClearColor = FLinearColor(PaintIdNone / 255.0f, 0.0f, 0.0f);
 	Buffer->Filter = TF_Nearest;
 	Buffer->SRGB = false;
 	Buffer->InitAutoFormat(RenderTargetResolution, RenderTargetResolution);
@@ -88,7 +88,7 @@ UTextureRenderTarget2D* UPaintableComponent::CreateIdBuffer()
 bool UPaintableComponent::BuildSplatFromHit(
 	const FHitResult& Hit,
 	FVector IncidentVelocity,
-	uint8 TeamId,
+	uint8 PaintId,
 	float Volume,
 	FPaintSplat& OutSplat) const
 {
@@ -106,7 +106,7 @@ bool UPaintableComponent::BuildSplatFromHit(
 	OutSplat.Normal = Hit.ImpactNormal;
 	OutSplat.IncidentVelocity = IncidentVelocity;
 	OutSplat.SurfaceUV = SurfaceUV;
-	OutSplat.TeamId = TeamId;
+	OutSplat.PaintId = PaintId;
 	OutSplat.Volume = Volume;
 	OutSplat.Seed = FMath::Rand();
 
@@ -122,8 +122,8 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 
 	const FPaintSplatShape Shape = ComputeSplatShape(Splat);
 
-	// The brush writes the ID as a normalized byte; the R8 target stores it back as exactly TeamId.
-	BrushMID->SetScalarParameterValue(BrushTeamParam, Splat.TeamId / 255.0f);
+	// The brush writes the id as a normalized byte; the R8 target stores it back as exactly PaintId.
+	BrushMID->SetScalarParameterValue(BrushPaintIdParam, Splat.PaintId / 255.0f);
 	BrushMID->SetVectorParameterValue(
 		BrushCenterParam, FLinearColor(Splat.SurfaceUV.X, Splat.SurfaceUV.Y, 0.0f, 0.0f));
 	BrushMID->SetScalarParameterValue(BrushRadiusParam, Shape.Radius);
@@ -149,7 +149,8 @@ void UPaintableComponent::ClearPaint()
 	{
 		if (Buffer)
 		{
-			UKismetRenderingLibrary::ClearRenderTarget2D(this, Buffer, FLinearColor::Black);
+			UKismetRenderingLibrary::ClearRenderTarget2D(
+				this, Buffer, FLinearColor(PaintIdNone / 255.0f, 0.0f, 0.0f));
 		}
 	}
 }

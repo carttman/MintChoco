@@ -51,11 +51,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI")
 	TSubclassOf<UUserWidget> CrosshairWidgetClass;
 
-	/** Team painted by the next click. Must stay within the surface material's palette. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample|Paint", meta = (ClampMin = "1"))
-	uint8 TeamId = 1;
+	/** Paint id written by the next click. 0-3 are player teams; 7 (PaintIdNone) erases. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample|Paint", meta = (ClampMin = "0", ClampMax = "7"))
+	uint8 TeamId = 0;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample|Paint", meta = (ClampMin = "1"))
+	/** The wheel cycles TeamId through 0..NumTeams-1. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample|Paint", meta = (ClampMin = "1", ClampMax = "7"))
 	uint8 NumTeams = 4;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample|Paint")
