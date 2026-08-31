@@ -9,6 +9,7 @@
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class UMeshComponent;
+class UPositionMapBaker;
 class UTextureRenderTarget2D;
 
 /**
@@ -66,15 +67,6 @@ public:
 	void ClearPaint();
 
 	/**
-	 * Bakes the position map: the owner's mesh is flattened into its UV layout by the unwrap
-	 * material and captured once from above. Each texel ends up holding the bounds-normalized
-	 * local position of the surface point it addresses.
-	 * Local space means the map survives the actor moving; only a mesh change needs a re-bake.
-	 */
-	UFUNCTION(BlueprintCallable, Category = "Paint")
-	void BakePositionMap();
-
-	/**
 	 * Turns a contact event into drawing parameters. All of the incidence-angle behaviour
 	 * lives here, so a paintball and a mop stroke go through exactly the same maths.
 	 */
@@ -85,9 +77,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Paint")
 	UTextureRenderTarget2D* GetPaintRenderTarget() const { return PaintRenderTargets[FrontBufferIndex]; }
 
-	/** Bounds-normalized local position per texel. Null until BakePositionMap has run. */
+	/** Bounds-normalized local position per texel. Null until the baker has delivered. */
 	UFUNCTION(BlueprintPure, Category = "Paint")
-	UTextureRenderTarget2D* GetPositionRenderTarget() const{ return PositionRenderTarget; }
+	UTextureRenderTarget2D* GetPositionRenderTarget() const;
 
 protected:
 	/** Square resolution of the paint render target. */
@@ -152,7 +144,7 @@ protected:
 private:
 	UMeshComponent* FindTargetMesh() const;
 	UTextureRenderTarget2D* CreateIdBuffer();
-	UTextureRenderTarget2D* CreatePositionBuffer();
+	void OnPositionMapBaked(UTextureRenderTarget2D* PositionMap);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTarget2D> PaintRenderTargets[2];
@@ -164,10 +156,10 @@ private:
 	TObjectPtr<UMaterialInstanceDynamic> SurfaceMID;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UTextureRenderTarget2D> PositionRenderTarget;
+	TObjectPtr<UMeshComponent> TargetMesh;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UMeshComponent> TargetMesh;
+	TObjectPtr<UPositionMapBaker> PositionBaker;
 
 	int32 FrontBufferIndex = 0;
 };
