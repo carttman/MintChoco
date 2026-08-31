@@ -1,6 +1,7 @@
 #include "Paint/PaintableComponent.h"
 
 #include "Components/MeshComponent.h"
+#include "Components/SceneCaptureComponent2D.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetRenderingLibrary.h"
@@ -13,6 +14,11 @@ namespace
 	const FName BrushRadiusParam(TEXT("BrushRadius"));
 	const FName PreviousPaintParam(TEXT("PreviousPaint"));
 	const FName PaintRenderTargetParam(TEXT("PaintRT"));
+	const FName PositionMapParam(TEXT("PositionMap"));
+	const FName BoundsMinParam(TEXT("BoundsMin"));
+	const FName BoundsSizeParam(TEXT("BoundsSize"));
+	const FName UnwrapOriginParam(TEXT("UnwrapOrigin"));
+	const FName UnwrapSizeParam(TEXT("UnwrapSize"));
 }
 
 UPaintableComponent::UPaintableComponent()
@@ -30,18 +36,18 @@ void UPaintableComponent::BeginPlay()
 		return;
 	}
 
-	PaintRenderTargets[0] = CreateIdBuffer();
-	PaintRenderTargets[1] = CreateIdBuffer();
-	FrontBufferIndex = 0;
-
-	BrushMID = UMaterialInstanceDynamic::Create(BrushMaterial, this);
-
-	UMeshComponent* TargetMesh = FindTargetMesh();
+	TargetMesh = FindTargetMesh();
 	if (!TargetMesh)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("%s: no MeshComponent on the owner to paint onto."), *GetReadableName());
 		return;
 	}
+
+	PaintRenderTargets[0] = CreateIdBuffer();
+	PaintRenderTargets[1] = CreateIdBuffer();
+	FrontBufferIndex = 0;
+
+	BrushMID = UMaterialInstanceDynamic::Create(BrushMaterial, this);
 
 	// An unset SurfaceMaterial means "keep what the mesh already has and blend paint into it",
 	// so the original look survives instead of being replaced by a stand-in.
@@ -57,6 +63,8 @@ void UPaintableComponent::BeginPlay()
 	SurfaceMID = UMaterialInstanceDynamic::Create(BaseMaterial, this);
 	SurfaceMID->SetTextureParameterValue(PaintRenderTargetParam, GetPaintRenderTarget());
 	TargetMesh->SetMaterial(SurfaceMaterialSlot, SurfaceMID);
+
+	BakePositionMap();
 }
 
 void UPaintableComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -65,6 +73,8 @@ void UPaintableComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	PaintRenderTargets[1] = nullptr;
 	BrushMID = nullptr;
 	SurfaceMID = nullptr;
+	PositionRenderTarget = nullptr;
+	TargetMesh = nullptr;
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -77,6 +87,21 @@ UTextureRenderTarget2D* UPaintableComponent::CreateIdBuffer()
 	UTextureRenderTarget2D* const Buffer = NewObject<UTextureRenderTarget2D>(this);
 	Buffer->RenderTargetFormat = RTF_R8;
 	Buffer->ClearColor = FLinearColor(PaintIdNone / 255.0f, 0.0f, 0.0f);
+	Buffer->Filter = TF_Nearest;
+	Buffer->SRGB = false;
+	Buffer->InitAutoFormat(RenderTargetResolution, RenderTargetResolution);
+	Buffer->UpdateResourceImmediate(true);
+
+	return Buffer;
+}
+
+UTextureRenderTarget2D* UPaintableComponent::CreatePositionBuffer()
+{
+	// Nearest for the same reason as the id buffer: bilinear across a UV island boundary would
+	// blend two unrelated surface positions into one that exists nowhere on the mesh.
+	const auto Buffer = NewObject<UTextureRenderTarget2D>(this);
+	Buffer->RenderTargetFormat = RTF_RGBA16f;
+	Buffer->ClearColor = FLinearColor::Black;
 	Buffer->Filter = TF_Nearest;
 	Buffer->SRGB = false;
 	Buffer->InitAutoFormat(RenderTargetResolution, RenderTargetResolution);
@@ -152,6 +177,88 @@ void UPaintableComponent::ClearPaint()
 			UKismetRenderingLibrary::ClearRenderTarget2D(
 				this, Buffer, FLinearColor(PaintIdNone / 255.0f, 0.0f, 0.0f));
 		}
+	}
+}
+
+void UPaintableComponent::BakePositionMap()
+{
+	if (!TargetMesh) return;
+	if (!UnwrapMaterial)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s: UnwrapMaterial is unset, position map not baked."), *GetReadableName());
+		return;
+	}
+
+	if (!PositionRenderTarget)
+	{
+		PositionRenderTarget = CreatePositionBuffer();
+	}
+
+	const auto UnwrapOrigin = GetOwner()->GetActorLocation();
+	const auto UnwrapMID = UMaterialInstanceDynamic::Create(UnwrapMaterial, this);
+	UnwrapMID->SetVectorParameterValue(
+		UnwrapOriginParam,
+		FLinearColor(UnwrapOrigin.X, UnwrapOrigin.Y, UnwrapOrigin.Z));
+	UnwrapMID->SetScalarParameterValue(UnwrapSizeParam, UnwrapPlaneSize);
+
+	// Every slot gets the unwrap material: any slot left out would leave its triangles
+	// unflattened and punch holes in the position map.
+	TArray<UMaterialInterface*> SavedMaterials;
+	const int32 SlotCount = TargetMesh->GetNumMaterials();
+	SavedMaterials.Reserve(SlotCount);
+	for (int32 i=0; i<SlotCount; ++i)
+	{
+		SavedMaterials.Add(TargetMesh->GetMaterial(i));
+		TargetMesh->SetMaterial(i, UnwrapMID);
+	}
+
+	// The unwrap plane sits at the owner itself: frustum culling still uses the original
+	// primitive bounds, so a faraway plane would cull the mesh and capture nothing.
+	// ShowOnlyComponents keeps neighbouring geometry out instead.
+	const auto Capture = NewObject<USceneCaptureComponent2D>(GetOwner());
+	Capture->RegisterComponent();
+	Capture->ProjectionType = ECameraProjectionMode::Orthographic;
+	Capture->OrthoWidth = UnwrapPlaneSize;
+	Capture->TextureTarget = PositionRenderTarget;
+	Capture->CaptureSource = SCS_SceneColorHDR;
+	Capture->bCaptureEveryFrame = false;
+	Capture->bCaptureOnMovement = false;
+	Capture->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
+	Capture->ShowOnlyComponents.Add(TargetMesh);
+
+	constexpr float CaptureHeight = 500.0f;
+	Capture->SetWorldLocationAndRotation(
+		UnwrapOrigin + FVector(0.0f, 0.0f, CaptureHeight),
+		FRotator(-90.0f, 0.0f, 0.0f));
+	Capture->CaptureScene();
+
+	for (int32 i=0; i<SlotCount; ++i)
+	{
+		TargetMesh->SetMaterial(i, SavedMaterials[i]);
+	}
+	Capture->DestroyComponent();
+
+	// Identity transform in, local bounds out - the same box the material's ObjectLocalBounds
+	// node reads, which is what makes the un-normalize in the brush line up.
+	const auto LocalBounds = TargetMesh->CalcBounds(FTransform::Identity).GetBox();
+	const auto BoundsSize = LocalBounds.GetSize();
+	if (BrushMID)
+	{
+		BrushMID->SetTextureParameterValue(
+			PositionMapParam,
+			PositionRenderTarget);
+		BrushMID->SetVectorParameterValue(
+			BoundsMinParam,
+			FLinearColor(LocalBounds.Min.X, LocalBounds.Min.Y, LocalBounds.Min.Z));
+		BrushMID->SetVectorParameterValue(
+			BoundsSizeParam,
+			FLinearColor(BoundsSize.X, BoundsSize.Y, BoundsSize.Z));
+	}
+	if (SurfaceMID)
+	{
+		// Only the brush needs the map, but the surface getting it too is what lets the
+		// M_DebugPosition override work with zero extra plumbing.
+		SurfaceMID->SetTextureParameterValue(PositionMapParam, PositionRenderTarget);
 	}
 }
 

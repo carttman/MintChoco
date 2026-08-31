@@ -66,6 +66,15 @@ public:
 	void ClearPaint();
 
 	/**
+	 * Bakes the position map: the owner's mesh is flattened into its UV layout by the unwrap
+	 * material and captured once from above. Each texel ends up holding the bounds-normalized
+	 * local position of the surface point it addresses.
+	 * Local space means the map survives the actor moving; only a mesh change needs a re-bake.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Paint")
+	void BakePositionMap();
+
+	/**
 	 * Turns a contact event into drawing parameters. All of the incidence-angle behaviour
 	 * lives here, so a paintball and a mop stroke go through exactly the same maths.
 	 */
@@ -75,6 +84,10 @@ public:
 	/** The target currently holding the paint. The other one is scratch for the next splat. */
 	UFUNCTION(BlueprintPure, Category = "Paint")
 	UTextureRenderTarget2D* GetPaintRenderTarget() const { return PaintRenderTargets[FrontBufferIndex]; }
+
+	/** Bounds-normalized local position per texel. Null until BakePositionMap has run. */
+	UFUNCTION(BlueprintPure, Category = "Paint")
+	UTextureRenderTarget2D* GetPositionRenderTarget() const{ return PositionRenderTarget; }
 
 protected:
 	/** Square resolution of the paint render target. */
@@ -94,6 +107,20 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
 	TObjectPtr<UMaterialInterface> BrushMaterial;
+
+	/**
+	 * Unlit material whose WPO flattens the mesh into its UV layout while the emissive outputs
+	 * the pre-offset local position, normalized to the object bounds (M_PaintUnwrap).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
+	TObjectPtr<UMaterialInterface> UnwrapMaterial;
+
+	/**
+	 * World-space size of the plane the mesh unwraps onto during the bake. The value itself is
+	 * arbitrary; it only has to match the capture's ortho width, which BakePositionMap guarantees.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
+	float UnwrapPlaneSize = 1000.0f;
 
 	/**
 	 * Optional override. Leave it unset to keep whatever material the mesh already has and simply
@@ -125,6 +152,7 @@ protected:
 private:
 	UMeshComponent* FindTargetMesh() const;
 	UTextureRenderTarget2D* CreateIdBuffer();
+	UTextureRenderTarget2D* CreatePositionBuffer();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTarget2D> PaintRenderTargets[2];
@@ -134,6 +162,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> SurfaceMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextureRenderTarget2D> PositionRenderTarget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMeshComponent> TargetMesh;
 
 	int32 FrontBufferIndex = 0;
 };
