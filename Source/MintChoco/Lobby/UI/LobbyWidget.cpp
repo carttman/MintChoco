@@ -8,6 +8,23 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "GameFramework/GameState.h"
+
+bool ULobbyWidget::Initialize()
+{
+	if (Super::Initialize() == false)
+		return false;
+
+	SetInfo();
+
+	return true;
+}
+
+void ULobbyWidget::SetInfo()
+{
+
+	//LobbyUsers.Empty()
+}
+
 TArray<ALobbyPlayerState*> ULobbyWidget::GetLobbyPlayerStates()
 {
 	TArray<ALobbyPlayerState*> LobbyPlayerStates;
