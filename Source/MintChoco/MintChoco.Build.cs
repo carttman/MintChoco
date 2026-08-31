@@ -25,6 +25,8 @@ public class MintChoco : ModuleRules
 
 		PublicIncludePaths.AddRange(new string[] {
 			"MintChoco",
+			"MintChoco/Paint",
+			"MintChoco/Sample",
 			"MintChoco/Variant_Platforming",
 			"MintChoco/Variant_Platforming/Animation",
 			"MintChoco/Variant_Combat",
