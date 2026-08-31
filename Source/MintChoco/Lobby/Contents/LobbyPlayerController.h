@@ -7,11 +7,17 @@
 #include "LobbyPlayerController.generated.h"
 
 /**
- * 
+ *
  */
 UCLASS()
 class MINTCHOCO_API ALobbyPlayerController : public APlayerController
 {
 	GENERATED_BODY()
-	
+
+public:
+	UFUNCTION(BlueprintCallable, Server, Reliable)
+	void Server_HandleReadyButton();
+
+	UFUNCTION(BlueprintCallable, Server, Reliable)
+	void Server_HandleChangeUsername(const FText& InNickname);
 };

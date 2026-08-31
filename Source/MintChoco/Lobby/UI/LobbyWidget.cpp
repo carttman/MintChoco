@@ -5,7 +5,6 @@
 #include "LobbyUserWidget.h"
 #include "Components/VerticalBox.h"
 #include "Components/Button.h"
-#include "GameFramework/GameStateBase.h"
 #include "Lobby/Contents/LobbyPlayerState.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -23,18 +22,18 @@ bool ULobbyWidget::Initialize()
 
 void ULobbyWidget::SetInfo()
 {
-	//Clear Children
+	// Clear Children
+	UserList->ClearChildren();
 	LobbyUsers.Empty();
 
 	// Create Child Widget
-	for (int i=0; i<10; i++)
+	for (int32 i = 0; i < 10; i++)
 	{
 		if (LobbyUserWidgetClass == nullptr)
 			continue;
 
 		ULobbyUserWidget* ChildWidget = CreateWidget<ULobbyUserWidget>(GetWorld(), LobbyUserWidgetClass);
-
-		if (LobbyUserWidgetClass == nullptr)
+		if (ChildWidget == nullptr)
 			continue;
 
 		UserList->AddChildToVerticalBox(ChildWidget);
@@ -48,35 +47,34 @@ void ULobbyWidget::SetInfo()
 void ULobbyWidget::RefreshUI()
 {
 	AGameStateBase* GameState = UGameplayStatics::GetGameState(this);
-
 	if (GameState == nullptr)
 		return;
 
-	//Cache Player Length
+	// Cache Player Length
 	TArray<ALobbyPlayerState*> LobbyPlayerStates = GetLobbyPlayerStates();
 	const int32 PlayerLength = LobbyPlayerStates.Num();
 
-	for (int32 i = 0; i<LobbyUsers.Num(); i++)
+	for (int32 i = 0; i < LobbyUsers.Num(); i++)
 	{
 		const int32 Index = i;
 
 		if (Index < PlayerLength)
 		{
-			//Show UI
+			// Show UI
 			LobbyUsers[Index]->SetVisibility(ESlateVisibility::Visible);
 
-			//SetInfo
+			// SetInfo
 			ALobbyPlayerState* PlayerState = GetLobbyPlayerStateAtIndex(Index);
 			LobbyUsers[Index]->SetInfo(PlayerState);
 		}
 		else
 		{
-			//Hide UI
+			// Hide UI
 			LobbyUsers[Index]->SetVisibility(ESlateVisibility::Collapsed);
 		}
 	}
 
-	//show GameConfig Button
+	// Show GameConfig Button
 	if (UKismetSystemLibrary::IsServer(this))
 		Btn_GameConfig->SetVisibility(ESlateVisibility::Visible);
 	else
@@ -87,7 +85,7 @@ TArray<ALobbyPlayerState*> ULobbyWidget::GetLobbyPlayerStates()
 {
 	TArray<ALobbyPlayerState*> LobbyPlayerStates;
 
-	if(AGameStateBase* GameState = UGameplayStatics::GetGameState(this))
+	if (AGameStateBase* GameState = UGameplayStatics::GetGameState(this))
 	{
 		for (APlayerState* PlayerState : GameState->PlayerArray)
 		{
@@ -99,7 +97,7 @@ TArray<ALobbyPlayerState*> ULobbyWidget::GetLobbyPlayerStates()
 		}
 	}
 
-	return TArray<ALobbyPlayerState*>();
+	return LobbyPlayerStates;
 }
 
 ALobbyPlayerState* ULobbyWidget::GetLobbyPlayerStateAtIndex(int32 InIndex)
