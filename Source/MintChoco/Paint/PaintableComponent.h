@@ -141,6 +141,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
 	float CenterShiftScale = 0.5f;
 
+	/**
+	 * Below this stretch the stamp is visually round, so aligning it to the incident tangent
+	 * just repeats one orientation every click; such splats spin from the seed instead.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
+	float MinAlignedStretch = 1.2f;
+
 private:
 	static UTextureRenderTarget2D* CreateIdBuffer(UObject* Outer, int32 Resolution);
 

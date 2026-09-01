@@ -15,8 +15,11 @@ namespace
 	const FName BrushPaintIdParam(TEXT("BrushPaintId"));
 	const FName BrushCenterParam(TEXT("BrushCenterLocal"));
 	const FName BrushRadiusParam(TEXT("BrushRadiusLocal"));
-	const FName BrushTangentParam(TEXT("BrushTangentLocal"));
+	const FName BrushAxisUParam(TEXT("BrushAxisULocal"));
+	const FName BrushAxisVParam(TEXT("BrushAxisVLocal"));
 	const FName BrushStretchParam(TEXT("BrushStretch"));
+	const FName BrushSeedParam(TEXT("BrushSeed"));
+	const FName BrushImpactUParam(TEXT("BrushImpactU"));
 	const FName PreviousPaintParam(TEXT("PreviousPaint"));
 	const FName PaintRenderTargetParam(TEXT("PaintRT"));
 	const FName PositionMapParam(TEXT("PositionMap"));
@@ -129,11 +132,27 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 
 	const auto Shape = ComputeSplatShape(Splat);
 
+	// The stamp needs a full 2D frame on the surface, not just a stretch axis. A near-round
+	// stamp gains nothing from tangent alignment - it would just repeat one orientation every
+	// click - so its rotation comes from the replicated seed instead: every client derives the
+	// same frame and stamps the same shape.
+	const FVector Normal = Splat.Normal.GetSafeNormal();
+	FVector AxisU = Shape.TangentDirection;
+	if (Shape.Stretch < MinAlignedStretch || AxisU.IsNearlyZero())
+	{
+		const FRandomStream Stream(Splat.Seed);
+		const FVector Reference = FMath::Abs(Normal.Z) < 0.9f ? FVector::UpVector : FVector::ForwardVector;
+		const FVector Base = FVector::CrossProduct(Normal, Reference).GetSafeNormal();
+		AxisU = Base.RotateAngleAxis(Stream.FRand() * 360.0f, Normal);
+	}
+	const FVector AxisV = FVector::CrossProduct(Normal, AxisU);
+
 	const auto& MeshTransform = TargetMesh->GetComponentTransform();
 	const auto ShiftedCenter = Splat.Location + Shape.TangentDirection * Shape.CenterShift;
 	const auto LocalCenter = MeshTransform.InverseTransformPosition(ShiftedCenter);
 	// A direction only needs the rotation undone; scale would just be normalized away again.
-	const auto LocalTangent = MeshTransform.InverseTransformVectorNoScale(Shape.TangentDirection);
+	const auto LocalAxisU = MeshTransform.InverseTransformVectorNoScale(AxisU);
+	const auto LocalAxisV = MeshTransform.InverseTransformVectorNoScale(AxisV);
 	// Uniform scale assumed
 	const float LocalRadius = Shape.Radius / MeshTransform.GetScale3D().X;
 
@@ -148,11 +167,23 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 		BrushRadiusParam,
 		LocalRadius);
 	BrushMID->SetVectorParameterValue(
-		BrushTangentParam,
-		FLinearColor(LocalTangent));
+		BrushAxisUParam,
+		FLinearColor(LocalAxisU));
+	BrushMID->SetVectorParameterValue(
+		BrushAxisVParam,
+		FLinearColor(LocalAxisV));
 	BrushMID->SetScalarParameterValue(
 		BrushStretchParam,
 		Shape.Stretch);
+	// Wrapped so sin()-based hashing in the shader keeps its precision for typed-in seeds.
+	BrushMID->SetScalarParameterValue(
+		BrushSeedParam,
+		static_cast<float>(Splat.Seed % 65536));
+	// The center slid ahead of the contact, so in stamp space the impact sits behind the
+	// origin: its u coordinate, normalized by the stamp's long axis, anchors the spike field.
+	BrushMID->SetScalarParameterValue(
+		BrushImpactUParam,
+		-Shape.CenterShift / FMath::Max(Shape.Radius * Shape.Stretch, UE_KINDA_SMALL_NUMBER));
 	BrushMID->SetTextureParameterValue(PreviousPaintParam, GetPaintRenderTarget());
 
 	UTextureRenderTarget2D* const Back = PaintRenderTargets[1 - FrontBufferIndex];
