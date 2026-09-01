@@ -22,6 +22,11 @@ namespace
 	const FName BrushImpactUParam(TEXT("BrushImpactU"));
 	const FName PreviousPaintParam(TEXT("PreviousPaint"));
 	const FName PaintRenderTargetParam(TEXT("PaintRT"));
+	// The relief custom node reads the id buffer through its own TextureObjectParameter. It must
+	// NOT share PaintRT's name: an override on a name used by both a sampler parameter and a
+	// texture-object parameter only reaches the sampler one.
+	const FName PaintIdMapParam(TEXT("PaintIdMap"));
+	const FName PaintTexelSizeParam(TEXT("PaintTexelSize"));
 	const FName PositionMapParam(TEXT("PositionMap"));
 	const FName BoundsMinParam(TEXT("BoundsMin"));
 	const FName BoundsSizeParam(TEXT("BoundsSize"));
@@ -68,6 +73,9 @@ void UPaintableComponent::BeginPlay()
 
 	SurfaceMID = UMaterialInstanceDynamic::Create(BaseMaterial, this);
 	SurfaceMID->SetTextureParameterValue(PaintRenderTargetParam, GetPaintRenderTarget());
+	SurfaceMID->SetTextureParameterValue(PaintIdMapParam, GetPaintRenderTarget());
+	// The relief blur in MF_PaintOverlay measures its taps in texels, so it needs the actual size.
+	SurfaceMID->SetScalarParameterValue(PaintTexelSizeParam, 1.0f / RenderTargetResolution);
 	TargetMesh->SetMaterial(SurfaceMaterialSlot, SurfaceMID);
 
 	PositionBaker = NewObject<UPositionMapBaker>(this);
@@ -197,6 +205,7 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 	if (SurfaceMID)
 	{
 		SurfaceMID->SetTextureParameterValue(PaintRenderTargetParam, Back);
+		SurfaceMID->SetTextureParameterValue(PaintIdMapParam, Back);
 	}
 }
 
