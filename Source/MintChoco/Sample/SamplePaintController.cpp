@@ -158,10 +158,7 @@ bool ASamplePaintController::TracePaintTarget(FHitResult& OutHit, FVector& OutDi
 	OutDirection = ViewRotation.Vector();
 	const FVector TraceEnd = ViewLocation + OutDirection * TraceDistance;
 
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(SamplePaintTrace), /*bTraceComplex=*/true, GetPawn());
-	// Both of these are required for FindCollisionUV to return anything but (0,0). The project
-	// also needs Physics -> Support UV From Hit Results enabled.
-	Params.bReturnFaceIndex = true;
+	const FCollisionQueryParams Params(SCENE_QUERY_STAT(SamplePaintTrace), /*bTraceComplex=*/false, GetPawn());
 
 	return GetWorld()->LineTraceSingleByChannel(OutHit, ViewLocation, TraceEnd, ECC_Visibility, Params);
 }
@@ -181,10 +178,7 @@ bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Di
 	const FVector IncidentVelocity = Direction * NominalImpactSpeed;
 
 	FPaintSplat Splat;
-	if (!Paintable->BuildSplatFromHit(Hit, IncidentVelocity, TeamId, SplatVolume, Splat))
-	{
-		return false;
-	}
+	Paintable->BuildSplatFromHit(Hit, IncidentVelocity, TeamId, SplatVolume, Splat);
 
 	// The brush is a world-space sphere, so every paintable inside the radius takes the same
 	// splat. The query radius comes from the hit surface's own tuning - a compromise that

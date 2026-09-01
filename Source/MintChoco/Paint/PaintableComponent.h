@@ -45,14 +45,11 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/**
-	 * Fills in a splat from a trace or collision hit against this component's owner.
-	 *
-	 * The UV lookup lives here rather than in the caller because the UV layout is a property of
-	 * the surface, not of whatever threw paint at it. A click trace, a paintball and a mop all
-	 * arrive with an FHitResult and should not each need to know the channel.
+	 * Fills in a splat from a trace or collision hit. A click trace, a paintball and a mop all
+	 * arrive with an FHitResult and produce this same struct; only the values differ.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Paint")
-	bool BuildSplatFromHit(
+	void BuildSplatFromHit(
 		const FHitResult& Hit,
 		FVector IncidentVelocity,
 		uint8 PaintId,
@@ -93,17 +90,6 @@ protected:
 	/** Square resolution of the paint render target. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
 	int32 RenderTargetResolution = 1024;
-
-	/**
-	 * UV channel the paint is addressed in.
-	 *
-	 * Channel 0 of the engine's basic shapes maps every face onto the same 0-1 square, so
-	 * painting one face of a cube would paint all six. The lightmap channel is a real
-	 * non-overlapping unwrap, which is what painting needs. This whole property disappears once
-	 * painting moves to a world-position unwrap.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
-	int32 PaintUVChannel = 1;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
 	TObjectPtr<UMaterialInterface> BrushMaterial;

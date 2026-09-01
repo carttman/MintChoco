@@ -5,7 +5,6 @@
 #include "Engine/OverlapResult.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
-#include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetRenderingLibrary.h"
 #include "Materials/MaterialInstanceDynamic.h"
 
@@ -106,32 +105,19 @@ UTextureRenderTarget2D* UPaintableComponent::CreateIdBuffer()
 	return Buffer;
 }
 
-bool UPaintableComponent::BuildSplatFromHit(
+void UPaintableComponent::BuildSplatFromHit(
 	const FHitResult& Hit,
 	FVector IncidentVelocity,
 	uint8 PaintId,
 	float Volume,
 	FPaintSplat& OutSplat) const
 {
-	FVector2D SurfaceUV = FVector2D::ZeroVector;
-	if (!UGameplayStatics::FindCollisionUV(Hit, PaintUVChannel, SurfaceUV))
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("%s: FindCollisionUV failed on UV channel %d. Check Physics -> Support UV From Hit "
-				 "Results, and that the trace used Trace Complex with Return Face Index."),
-			*GetReadableName(), PaintUVChannel);
-		return false;
-	}
-
 	OutSplat.Location = Hit.ImpactPoint;
 	OutSplat.Normal = Hit.ImpactNormal;
 	OutSplat.IncidentVelocity = IncidentVelocity;
-	OutSplat.SurfaceUV = SurfaceUV;
 	OutSplat.PaintId = PaintId;
 	OutSplat.Volume = Volume;
 	OutSplat.Seed = FMath::Rand();
-
-	return true;
 }
 
 void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)

@@ -33,10 +33,6 @@ struct FPaintSplat
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
 	FVector IncidentVelocity = FVector::ZeroVector;
 
-	/** Contact point in the surface's UV space. Only meaningful while painting is UV-based. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
-	FVector2D SurfaceUV = FVector2D::ZeroVector;
-
 	/** Id this splat writes into the buffer. PaintIdNone erases back to "unpainted". */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint", meta = (ClampMin = "0", ClampMax = "7"))
 	uint8 PaintId = 0;
@@ -56,7 +52,7 @@ struct FPaintSplatShape
 {
 	GENERATED_BODY()
 
-	/** Radius in UV units while painting is UV-based. */
+	/** Radius in world cm. ApplySplat converts it into the painted surface's local space. */
 	UPROPERTY(BlueprintReadOnly, Category = "Paint")
 	float Radius = 0.0f;
 
