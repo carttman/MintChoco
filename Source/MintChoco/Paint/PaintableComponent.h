@@ -63,6 +63,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Paint")
 	void ApplySplat(const FPaintSplat& Splat);
 
+	/**
+	 * Applies one splat to every paintable surface within the splat's world radius. The
+	 * world-space brush makes this trivial: every component tests its own texels against the
+	 * same sphere, so a splat landing near an actor boundary simply paints both sides.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Paint", meta = (WorldContext = "WorldContextObject"))
+	static void ApplySplatInRadius(const UObject* WorldContextObject, const FPaintSplat& Splat, float WorldRadius);
+
 	UFUNCTION(BlueprintCallable, Category = "Paint")
 	void ClearPaint();
 

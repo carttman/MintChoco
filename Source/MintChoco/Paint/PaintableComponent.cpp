@@ -1,7 +1,10 @@
 #include "Paint/PaintableComponent.h"
 
 #include "Components/MeshComponent.h"
+#include "Engine/Engine.h"
+#include "Engine/OverlapResult.h"
 #include "Engine/TextureRenderTarget2D.h"
+#include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetRenderingLibrary.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -165,6 +168,43 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 	if (SurfaceMID)
 	{
 		SurfaceMID->SetTextureParameterValue(PaintRenderTargetParam, Back);
+	}
+}
+
+void UPaintableComponent::ApplySplatInRadius(
+	const UObject* WorldContextObject, const FPaintSplat& Splat, float WorldRadius)
+{
+	UWorld* const World =
+		GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	if (!World)
+	{
+		return;
+	}
+
+	TArray<FOverlapResult> Overlaps;
+	World->OverlapMultiByChannel(
+		Overlaps, Splat.Location, FQuat::Identity, ECC_Visibility,
+		FCollisionShape::MakeSphere(WorldRadius));
+
+	// Overlap results repeat an actor once per overlapping component, so dedupe on the
+	// paintable itself before drawing.
+	TSet<UPaintableComponent*> Painted;
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		const AActor* const Actor = Overlap.GetActor();
+		UPaintableComponent* const Paintable =
+			Actor ? Actor->FindComponentByClass<UPaintableComponent>() : nullptr;
+		if (!Paintable)
+		{
+			continue;
+		}
+
+		bool bAlreadyPainted = false;
+		Painted.Add(Paintable, &bAlreadyPainted);
+		if (!bAlreadyPainted)
+		{
+			Paintable->ApplySplat(Splat);
+		}
 	}
 }
 
