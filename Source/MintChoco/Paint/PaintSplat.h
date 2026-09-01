@@ -66,4 +66,11 @@ struct FPaintSplatShape
 	/** Surface-tangent direction the splat stretches along. Zero for a head-on hit. */
 	UPROPERTY(BlueprintReadOnly, Category = "Paint")
 	FVector TangentDirection = FVector::ZeroVector;
+
+	/** cm the splat center slides along TangentDirection. A grazing hit lands "ahead" of contact. */
+	UPROPERTY(BlueprintReadOnly, Category = "Paint")
+	float CenterShift = 0.0f;
+
+	/** Farthest painted point from the contact, in world cm. This is the overlap query radius. */
+	float GetWorldExtent() const { return CenterShift + Radius * Stretch; }
 };

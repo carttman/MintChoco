@@ -15,6 +15,8 @@ namespace
 	const FName BrushPaintIdParam(TEXT("BrushPaintId"));
 	const FName BrushCenterParam(TEXT("BrushCenterLocal"));
 	const FName BrushRadiusParam(TEXT("BrushRadiusLocal"));
+	const FName BrushTangentParam(TEXT("BrushTangentLocal"));
+	const FName BrushStretchParam(TEXT("BrushStretch"));
 	const FName PreviousPaintParam(TEXT("PreviousPaint"));
 	const FName PaintRenderTargetParam(TEXT("PaintRT"));
 	const FName PositionMapParam(TEXT("PositionMap"));
@@ -128,7 +130,10 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 	const auto Shape = ComputeSplatShape(Splat);
 
 	const auto& MeshTransform = TargetMesh->GetComponentTransform();
-	const auto LocalCenter = MeshTransform.InverseTransformPosition(Splat.Location);
+	const auto ShiftedCenter = Splat.Location + Shape.TangentDirection * Shape.CenterShift;
+	const auto LocalCenter = MeshTransform.InverseTransformPosition(ShiftedCenter);
+	// A direction only needs the rotation undone; scale would just be normalized away again.
+	const auto LocalTangent = MeshTransform.InverseTransformVectorNoScale(Shape.TangentDirection);
 	// Uniform scale assumed
 	const float LocalRadius = Shape.Radius / MeshTransform.GetScale3D().X;
 
@@ -142,6 +147,12 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 	BrushMID->SetScalarParameterValue(
 		BrushRadiusParam,
 		LocalRadius);
+	BrushMID->SetVectorParameterValue(
+		BrushTangentParam,
+		FLinearColor(LocalTangent));
+	BrushMID->SetScalarParameterValue(
+		BrushStretchParam,
+		Shape.Stretch);
 	BrushMID->SetTextureParameterValue(PreviousPaintParam, GetPaintRenderTarget());
 
 	UTextureRenderTarget2D* const Back = PaintRenderTargets[1 - FrontBufferIndex];
@@ -253,6 +264,7 @@ FPaintSplatShape UPaintableComponent::ComputeSplatShape(const FPaintSplat& Splat
 		MaxRadius);
 	Shape.Stretch = FMath::Clamp(1.0f / FMath::Max(CosTheta, UE_KINDA_SMALL_NUMBER), 1.0f, MaxStretch);
 	Shape.TangentDirection = (Incident - FVector::DotProduct(Incident, Normal) * Normal).GetSafeNormal();
+	Shape.CenterShift = Shape.Radius * (Shape.Stretch - 1.0f) * CenterShiftScale;
 
 	return Shape;
 }

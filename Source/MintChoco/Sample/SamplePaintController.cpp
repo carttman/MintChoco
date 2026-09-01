@@ -183,10 +183,10 @@ bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Di
 		TeamId,
 		SplatVolume);
 
-	// The brush is a world-space sphere, so every paintable inside the radius takes the same
+	// The brush is a world-space ellipsoid, so every paintable inside its extent takes the same
 	// splat. The query radius comes from the hit surface's own tuning - a compromise that
 	// holds until tuning moves off the surface and onto the paint source.
-	const float WorldRadius = Paintable->ComputeSplatShape(Splat).Radius;
+	const float WorldRadius = Paintable->ComputeSplatShape(Splat).GetWorldExtent();
 	UPaintableComponent::ApplySplatInRadius(this, Splat, WorldRadius);
 
 	return true;

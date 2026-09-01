@@ -134,6 +134,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
 	float MaxStretch = 3.0f;
 
+	/**
+	 * Fraction of the stretch-added radius the splat center slides along the tangent. 0 keeps
+	 * the ellipse centered on the contact; 1 keeps the near edge pinned there instead.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
+	float CenterShiftScale = 0.5f;
+
 private:
 	static UTextureRenderTarget2D* CreateIdBuffer(UObject* Outer, int32 Resolution);
 
