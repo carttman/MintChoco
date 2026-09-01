@@ -138,31 +138,11 @@ void UPositionMapBaker::Bake()
 		return;
 	}
 
-	if (!PositionRenderTarget)
-	{
-		PositionRenderTarget = CreatePositionBuffer();
-	}
+	EnsureCaptureComponent();
 
 	const FVector UnwrapOrigin = ProxyMesh->GetOwner()->GetActorLocation();
 	UnwrapMID->SetVectorParameterValue(UnwrapOriginParam, FLinearColor(UnwrapOrigin));
 	UnwrapMID->SetScalarParameterValue(UnwrapSizeParam, PlaneSize);
-
-	if (!Capture)
-	{
-		// The unwrap plane sits at the owner: frustum culling still uses the original primitive
-		// bounds, so a faraway plane would cull the mesh and capture nothing. ShowOnlyComponents
-		// keeps neighbouring geometry out instead.
-		Capture = NewObject<USceneCaptureComponent2D>(ProxyMesh->GetOwner());
-		Capture->RegisterComponent();
-		Capture->ProjectionType = ECameraProjectionMode::Orthographic;
-		Capture->OrthoWidth = PlaneSize;
-		Capture->TextureTarget = PositionRenderTarget;
-		Capture->CaptureSource = SCS_SceneColorHDR;
-		Capture->bCaptureEveryFrame = false;
-		Capture->bCaptureOnMovement = false;
-		Capture->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
-		Capture->ShowOnlyComponents.Add(ProxyMesh);
-	}
 
 	constexpr float CaptureHeight = 500.0f;
 	Capture->SetWorldLocationAndRotation(
@@ -170,11 +150,30 @@ void UPositionMapBaker::Bake()
 	Capture->CaptureScene();
 }
 
-UTextureRenderTarget2D* UPositionMapBaker::CreatePositionBuffer()
+void UPositionMapBaker::EnsurePositionBuffer()
+{
+	if (!PositionRenderTarget)
+	{
+		PositionRenderTarget = CreatePositionBuffer(this, Resolution);
+	}
+}
+
+void UPositionMapBaker::EnsureCaptureComponent()
+{
+	// The capture is born pointing at the buffer, so the buffer has to exist first.
+	EnsurePositionBuffer();
+
+	if (!Capture)
+	{
+		Capture = CreateCaptureComponent(ProxyMesh, PlaneSize, PositionRenderTarget);
+	}
+}
+
+UTextureRenderTarget2D* UPositionMapBaker::CreatePositionBuffer(UObject* Outer, int32 Resolution)
 {
 	// Nearest for the same reason as the id buffer: bilinear across a UV island boundary would
 	// blend two unrelated surface positions into one that exists nowhere on the mesh.
-	const auto Buffer = NewObject<UTextureRenderTarget2D>(this);
+	const auto Buffer = NewObject<UTextureRenderTarget2D>(Outer);
 	Buffer->RenderTargetFormat = RTF_RGBA16f;
 	Buffer->ClearColor = FLinearColor::Black;
 	Buffer->Filter = TF_Nearest;
@@ -183,6 +182,26 @@ UTextureRenderTarget2D* UPositionMapBaker::CreatePositionBuffer()
 	Buffer->UpdateResourceImmediate(true);
 
 	return Buffer;
+}
+
+USceneCaptureComponent2D* UPositionMapBaker::CreateCaptureComponent(
+	UStaticMeshComponent* ProxyMesh, float OrthoWidth, UTextureRenderTarget2D* Target)
+{
+	// The unwrap plane sits at the owner: frustum culling still uses the original primitive
+	// bounds, so a faraway plane would cull the mesh and capture nothing. ShowOnlyComponents
+	// keeps neighbouring geometry out instead.
+	const auto Capture = NewObject<USceneCaptureComponent2D>(ProxyMesh->GetOwner());
+	Capture->RegisterComponent();
+	Capture->ProjectionType = ECameraProjectionMode::Orthographic;
+	Capture->OrthoWidth = OrthoWidth;
+	Capture->TextureTarget = Target;
+	Capture->CaptureSource = SCS_SceneColorHDR;
+	Capture->bCaptureEveryFrame = false;
+	Capture->bCaptureOnMovement = false;
+	Capture->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
+	Capture->ShowOnlyComponents.Add(ProxyMesh);
+
+	return Capture;
 }
 
 void UPositionMapBaker::Shutdown()

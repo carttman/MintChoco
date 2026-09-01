@@ -135,8 +135,9 @@ protected:
 	float MaxStretch = 3.0f;
 
 private:
+	static UTextureRenderTarget2D* CreateIdBuffer(UObject* Outer, int32 Resolution);
+
 	UStaticMeshComponent* FindTargetMesh() const;
-	UTextureRenderTarget2D* CreateIdBuffer();
 	void OnPositionMapBaked(UTextureRenderTarget2D* PositionMap);
 
 	UPROPERTY(Transient)

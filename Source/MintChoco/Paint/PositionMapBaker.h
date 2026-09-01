@@ -40,16 +40,21 @@ public:
 	/** Creates the proxy on first call, then bakes as soon as the PSO precache queue drains. */
 	void RequestBake();
 
-	/** Cancels any pending bake and tears the proxy down. Safe to call twice. */
+	/** Cancels any pending bake and tears down the proxy and capture. Safe to call twice. */
 	void Shutdown();
 
 	UTextureRenderTarget2D* GetPositionMap() const { return PositionRenderTarget; }
 
 private:
+	static UTextureRenderTarget2D* CreatePositionBuffer(UObject* Outer, int32 Resolution);
+	static USceneCaptureComponent2D* CreateCaptureComponent(
+		UStaticMeshComponent* ProxyMesh, float OrthoWidth, UTextureRenderTarget2D* Target);
+
 	void TryBake();
 	void Bake();
 	bool IsPositionMapValid() const;
-	UTextureRenderTarget2D* CreatePositionBuffer();
+	void EnsurePositionBuffer();
+	void EnsureCaptureComponent();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMeshComponent> SourceMesh;

@@ -44,8 +44,8 @@ void UPaintableComponent::BeginPlay()
 		return;
 	}
 
-	PaintRenderTargets[0] = CreateIdBuffer();
-	PaintRenderTargets[1] = CreateIdBuffer();
+	PaintRenderTargets[0] = CreateIdBuffer(this, RenderTargetResolution);
+	PaintRenderTargets[1] = CreateIdBuffer(this, RenderTargetResolution);
 	FrontBufferIndex = 0;
 
 	BrushMID = UMaterialInstanceDynamic::Create(BrushMaterial, this);
@@ -69,7 +69,6 @@ void UPaintableComponent::BeginPlay()
 	PositionBaker->OnBaked.BindUObject(this, &UPaintableComponent::OnPositionMapBaked);
 	PositionBaker->Initialize(TargetMesh, UnwrapMaterial, RenderTargetResolution, UnwrapPlaneSize);
 	PositionBaker->RequestBake();
-
 }
 
 void UPaintableComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -90,17 +89,17 @@ void UPaintableComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-UTextureRenderTarget2D* UPaintableComponent::CreateIdBuffer()
+UTextureRenderTarget2D* UPaintableComponent::CreateIdBuffer(UObject* Outer, int32 Resolution)
 {
 	// Built by hand instead of CreateRenderTarget2D because the ID buffer needs its sampler
 	// settings fixed before the resource is created: bilinear filtering would invent team IDs
 	// on every splat boundary, and sRGB would corrupt the ID -> byte round trip.
-	UTextureRenderTarget2D* const Buffer = NewObject<UTextureRenderTarget2D>(this);
+	const auto Buffer = NewObject<UTextureRenderTarget2D>(Outer);
 	Buffer->RenderTargetFormat = RTF_R8;
 	Buffer->ClearColor = PaintIdNoneColor;
 	Buffer->Filter = TF_Nearest;
 	Buffer->SRGB = false;
-	Buffer->InitAutoFormat(RenderTargetResolution, RenderTargetResolution);
+	Buffer->InitAutoFormat(Resolution, Resolution);
 	Buffer->UpdateResourceImmediate(true);
 
 	return Buffer;
