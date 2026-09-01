@@ -11,6 +11,9 @@
 inline constexpr uint8 PaintIdCount = 8;
 inline constexpr uint8 PaintIdNone = PaintIdCount - 1;
 
+/** Clear color that fills an id buffer with PaintIdNone in its R8 encoding. */
+inline const FLinearColor PaintIdNoneColor(PaintIdNone / 255.0f, 0.0f, 0.0f);
+
 /**
  * A single paint contact event. Every paint source - a debug click trace, a paintball
  * projectile, a mop dragged along a wall - produces this same struct; only the rate and

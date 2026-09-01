@@ -8,8 +8,8 @@
 
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
-class UMeshComponent;
 class UPositionMapBaker;
+class UStaticMeshComponent;
 class UTextureRenderTarget2D;
 
 /**
@@ -49,12 +49,11 @@ public:
 	 * arrive with an FHitResult and produce this same struct; only the values differ.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Paint")
-	void BuildSplatFromHit(
+	FPaintSplat BuildSplatFromHit(
 		const FHitResult& Hit,
 		FVector IncidentVelocity,
 		uint8 PaintId,
-		float Volume,
-		FPaintSplat& OutSplat) const;
+		float Volume) const;
 
 	/** Draws one splat into the render target. */
 	UFUNCTION(BlueprintCallable, Category = "Paint")
@@ -136,7 +135,7 @@ protected:
 	float MaxStretch = 3.0f;
 
 private:
-	UMeshComponent* FindTargetMesh() const;
+	UStaticMeshComponent* FindTargetMesh() const;
 	UTextureRenderTarget2D* CreateIdBuffer();
 	void OnPositionMapBaked(UTextureRenderTarget2D* PositionMap);
 
@@ -150,7 +149,7 @@ private:
 	TObjectPtr<UMaterialInstanceDynamic> SurfaceMID;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UMeshComponent> TargetMesh;
+	TObjectPtr<UStaticMeshComponent> TargetMesh;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UPositionMapBaker> PositionBaker;

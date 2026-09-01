@@ -177,8 +177,11 @@ bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Di
 	// its real impact velocity here instead - that single substitution is the whole difference.
 	const FVector IncidentVelocity = Direction * NominalImpactSpeed;
 
-	FPaintSplat Splat;
-	Paintable->BuildSplatFromHit(Hit, IncidentVelocity, TeamId, SplatVolume, Splat);
+	const auto Splat = Paintable->BuildSplatFromHit(
+		Hit,
+		IncidentVelocity,
+		TeamId,
+		SplatVolume);
 
 	// The brush is a world-space sphere, so every paintable inside the radius takes the same
 	// splat. The query radius comes from the hit surface's own tuning - a compromise that

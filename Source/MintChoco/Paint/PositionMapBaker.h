@@ -7,7 +7,7 @@
 
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
-class UMeshComponent;
+class USceneCaptureComponent2D;
 class UStaticMeshComponent;
 class UTextureRenderTarget2D;
 
@@ -32,7 +32,7 @@ public:
 	FOnPositionMapBaked OnBaked;
 
 	void Initialize(
-		UMeshComponent* InSourceMesh,
+		UStaticMeshComponent* InSourceMesh,
 		UMaterialInterface* InUnwrapMaterial,
 		int32 InResolution,
 		float InPlaneSize);
@@ -52,7 +52,7 @@ private:
 	UTextureRenderTarget2D* CreatePositionBuffer();
 
 	UPROPERTY(Transient)
-	TObjectPtr<UMeshComponent> SourceMesh;
+	TObjectPtr<UStaticMeshComponent> SourceMesh;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> UnwrapMaterial;
@@ -62,6 +62,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMeshComponent> ProxyMesh;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USceneCaptureComponent2D> Capture;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTarget2D> PositionRenderTarget;

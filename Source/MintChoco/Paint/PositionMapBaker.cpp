@@ -22,7 +22,7 @@ namespace
 }
 
 void UPositionMapBaker::Initialize(
-	UMeshComponent* InSourceMesh,
+	UStaticMeshComponent* InSourceMesh,
 	UMaterialInterface* InUnwrapMaterial,
 	int32 InResolution,
 	float InPlaneSize)
@@ -35,11 +35,10 @@ void UPositionMapBaker::Initialize(
 
 void UPositionMapBaker::RequestBake()
 {
-	UStaticMeshComponent* const StaticSource = Cast<UStaticMeshComponent>(SourceMesh);
-	if (!StaticSource || !UnwrapMaterial)
+	if (!SourceMesh || !UnwrapMaterial)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("%s: baking needs a StaticMeshComponent source and an unwrap material."), *GetName());
+			TEXT("%s: baking needs a source mesh and an unwrap material."), *GetName());
 		return;
 	}
 
@@ -49,12 +48,12 @@ void UPositionMapBaker::RequestBake()
 
 		// Registering the proxy with the unwrap material already applied files the PSO precache
 		// request through the engine's normal path - no draw call needed to trigger it.
-		ProxyMesh = NewObject<UStaticMeshComponent>(StaticSource->GetOwner());
-		ProxyMesh->SetStaticMesh(StaticSource->GetStaticMesh());
+		ProxyMesh = NewObject<UStaticMeshComponent>(SourceMesh->GetOwner());
+		ProxyMesh->SetStaticMesh(SourceMesh->GetStaticMesh());
 		ProxyMesh->bVisibleInSceneCaptureOnly = true;
 		ProxyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		ProxyMesh->RegisterComponent();
-		ProxyMesh->AttachToComponent(StaticSource, FAttachmentTransformRules::SnapToTargetIncludingScale);
+		ProxyMesh->AttachToComponent(SourceMesh, FAttachmentTransformRules::SnapToTargetIncludingScale);
 		for (int32 Slot = 0; Slot < ProxyMesh->GetNumMaterials(); ++Slot)
 		{
 			ProxyMesh->SetMaterial(Slot, UnwrapMID);
@@ -145,36 +144,37 @@ void UPositionMapBaker::Bake()
 	}
 
 	const FVector UnwrapOrigin = ProxyMesh->GetOwner()->GetActorLocation();
-	UnwrapMID->SetVectorParameterValue(
-		UnwrapOriginParam, FLinearColor(UnwrapOrigin.X, UnwrapOrigin.Y, UnwrapOrigin.Z));
+	UnwrapMID->SetVectorParameterValue(UnwrapOriginParam, FLinearColor(UnwrapOrigin));
 	UnwrapMID->SetScalarParameterValue(UnwrapSizeParam, PlaneSize);
 
-	// The unwrap plane sits at the owner: frustum culling still uses the original primitive
-	// bounds, so a faraway plane would cull the mesh and capture nothing. ShowOnlyComponents
-	// keeps neighbouring geometry out instead.
-	USceneCaptureComponent2D* const Capture = NewObject<USceneCaptureComponent2D>(ProxyMesh->GetOwner());
-	Capture->RegisterComponent();
-	Capture->ProjectionType = ECameraProjectionMode::Orthographic;
-	Capture->OrthoWidth = PlaneSize;
-	Capture->TextureTarget = PositionRenderTarget;
-	Capture->CaptureSource = SCS_SceneColorHDR;
-	Capture->bCaptureEveryFrame = false;
-	Capture->bCaptureOnMovement = false;
-	Capture->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
-	Capture->ShowOnlyComponents.Add(ProxyMesh);
+	if (!Capture)
+	{
+		// The unwrap plane sits at the owner: frustum culling still uses the original primitive
+		// bounds, so a faraway plane would cull the mesh and capture nothing. ShowOnlyComponents
+		// keeps neighbouring geometry out instead.
+		Capture = NewObject<USceneCaptureComponent2D>(ProxyMesh->GetOwner());
+		Capture->RegisterComponent();
+		Capture->ProjectionType = ECameraProjectionMode::Orthographic;
+		Capture->OrthoWidth = PlaneSize;
+		Capture->TextureTarget = PositionRenderTarget;
+		Capture->CaptureSource = SCS_SceneColorHDR;
+		Capture->bCaptureEveryFrame = false;
+		Capture->bCaptureOnMovement = false;
+		Capture->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
+		Capture->ShowOnlyComponents.Add(ProxyMesh);
+	}
 
 	constexpr float CaptureHeight = 500.0f;
 	Capture->SetWorldLocationAndRotation(
 		UnwrapOrigin + FVector(0.0f, 0.0f, CaptureHeight), FRotator(-90.0f, 0.0f, 0.0f));
 	Capture->CaptureScene();
-	Capture->DestroyComponent();
 }
 
 UTextureRenderTarget2D* UPositionMapBaker::CreatePositionBuffer()
 {
 	// Nearest for the same reason as the id buffer: bilinear across a UV island boundary would
 	// blend two unrelated surface positions into one that exists nowhere on the mesh.
-	UTextureRenderTarget2D* const Buffer = NewObject<UTextureRenderTarget2D>(this);
+	const auto Buffer = NewObject<UTextureRenderTarget2D>(this);
 	Buffer->RenderTargetFormat = RTF_RGBA16f;
 	Buffer->ClearColor = FLinearColor::Black;
 	Buffer->Filter = TF_Nearest;
@@ -190,6 +190,11 @@ void UPositionMapBaker::Shutdown()
 	if (UWorld* const World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(BakeWaitHandle);
+	}
+	if (Capture)
+	{
+		Capture->DestroyComponent();
+		Capture = nullptr;
 	}
 	if (ProxyMesh)
 	{

@@ -1,6 +1,6 @@
 #include "Paint/PaintableComponent.h"
 
-#include "Components/MeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/TextureRenderTarget2D.h"
@@ -40,7 +40,7 @@ void UPaintableComponent::BeginPlay()
 	TargetMesh = FindTargetMesh();
 	if (!TargetMesh)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("%s: no MeshComponent on the owner to paint onto."), *GetReadableName());
+		UE_LOG(LogTemp, Warning, TEXT("%s: no StaticMeshComponent on the owner to paint onto."), *GetReadableName());
 		return;
 	}
 
@@ -97,7 +97,7 @@ UTextureRenderTarget2D* UPaintableComponent::CreateIdBuffer()
 	// on every splat boundary, and sRGB would corrupt the ID -> byte round trip.
 	UTextureRenderTarget2D* const Buffer = NewObject<UTextureRenderTarget2D>(this);
 	Buffer->RenderTargetFormat = RTF_R8;
-	Buffer->ClearColor = FLinearColor(PaintIdNone / 255.0f, 0.0f, 0.0f);
+	Buffer->ClearColor = PaintIdNoneColor;
 	Buffer->Filter = TF_Nearest;
 	Buffer->SRGB = false;
 	Buffer->InitAutoFormat(RenderTargetResolution, RenderTargetResolution);
@@ -106,27 +106,25 @@ UTextureRenderTarget2D* UPaintableComponent::CreateIdBuffer()
 	return Buffer;
 }
 
-void UPaintableComponent::BuildSplatFromHit(
+FPaintSplat UPaintableComponent::BuildSplatFromHit(
 	const FHitResult& Hit,
 	FVector IncidentVelocity,
 	uint8 PaintId,
-	float Volume,
-	FPaintSplat& OutSplat) const
+	float Volume) const
 {
-	OutSplat.Location = Hit.ImpactPoint;
-	OutSplat.Normal = Hit.ImpactNormal;
-	OutSplat.IncidentVelocity = IncidentVelocity;
-	OutSplat.PaintId = PaintId;
-	OutSplat.Volume = Volume;
-	OutSplat.Seed = FMath::Rand();
+	FPaintSplat Splat;
+	Splat.Location = Hit.ImpactPoint;
+	Splat.Normal = Hit.ImpactNormal;
+	Splat.IncidentVelocity = IncidentVelocity;
+	Splat.PaintId = PaintId;
+	Splat.Volume = Volume;
+	Splat.Seed = FMath::Rand();
+	return Splat;
 }
 
 void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 {
-	if (!bPaintReady)
-	{
-		return;
-	}
+	if (!bPaintReady) return;
 
 	const auto Shape = ComputeSplatShape(Splat);
 
@@ -141,7 +139,7 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 		Splat.PaintId / 255.0f);
 	BrushMID->SetVectorParameterValue(
 		BrushCenterParam,
-		FLinearColor(LocalCenter.X, LocalCenter.Y, LocalCenter.Z, 0.0f));
+		FLinearColor(LocalCenter));
 	BrushMID->SetScalarParameterValue(
 		BrushRadiusParam,
 		LocalRadius);
@@ -204,8 +202,7 @@ void UPaintableComponent::ClearPaint()
 	{
 		if (Buffer)
 		{
-			UKismetRenderingLibrary::ClearRenderTarget2D(
-				this, Buffer, FLinearColor(PaintIdNone / 255.0f, 0.0f, 0.0f));
+			UKismetRenderingLibrary::ClearRenderTarget2D(this, Buffer, PaintIdNoneColor);
 		}
 	}
 }
@@ -224,15 +221,14 @@ void UPaintableComponent::OnPositionMapBaked(UTextureRenderTarget2D* PositionMap
 	// Identity transform in, local bounds out - the same box the material's ObjectLocalBounds
 	// node reads, which is what makes the un-normalize in the brush line up.
 	const auto LocalBounds = TargetMesh->CalcBounds(FTransform::Identity).GetBox();
-	const auto BoundsSize = LocalBounds.GetSize();
 
 	BrushMID->SetTextureParameterValue(PositionMapParam, PositionMap);
 	BrushMID->SetVectorParameterValue(
 		BoundsMinParam,
-		FLinearColor(LocalBounds.Min.X, LocalBounds.Min.Y, LocalBounds.Min.Z));
+		FLinearColor(LocalBounds.Min));
 	BrushMID->SetVectorParameterValue(
 		BoundsSizeParam,
-		FLinearColor(BoundsSize.X, BoundsSize.Y, BoundsSize.Z));
+		FLinearColor(LocalBounds.GetSize()));
 
 	// Only the brush needs the map, but the surface getting it too is what lets the
 	// M_DebugPosition override work with zero extra plumbing.
@@ -262,8 +258,8 @@ FPaintSplatShape UPaintableComponent::ComputeSplatShape(const FPaintSplat& Splat
 	return Shape;
 }
 
-UMeshComponent* UPaintableComponent::FindTargetMesh() const
+UStaticMeshComponent* UPaintableComponent::FindTargetMesh() const
 {
 	const AActor* Owner = GetOwner();
-	return Owner ? Owner->FindComponentByClass<UMeshComponent>() : nullptr;
+	return Owner ? Owner->FindComponentByClass<UStaticMeshComponent>() : nullptr;
 }
