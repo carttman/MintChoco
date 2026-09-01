@@ -156,4 +156,7 @@ private:
 	TObjectPtr<UPositionMapBaker> PositionBaker;
 
 	int32 FrontBufferIndex = 0;
+
+	/** True once the position map has baked and every MID parameter is in place. */
+	bool bPaintReady = false;
 };

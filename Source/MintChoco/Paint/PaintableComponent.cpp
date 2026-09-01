@@ -74,6 +74,7 @@ void UPaintableComponent::BeginPlay()
 
 void UPaintableComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	bPaintReady = false;
 	PaintRenderTargets[0] = nullptr;
 	PaintRenderTargets[1] = nullptr;
 	BrushMID = nullptr;
@@ -122,7 +123,10 @@ void UPaintableComponent::BuildSplatFromHit(
 
 void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 {
-	if (!PaintRenderTargets[0] || !PaintRenderTargets[1] || !BrushMID || !GetPositionRenderTarget()) return;
+	if (!bPaintReady)
+	{
+		return;
+	}
 
 	const auto Shape = ComputeSplatShape(Splat);
 
@@ -213,26 +217,28 @@ UTextureRenderTarget2D* UPaintableComponent::GetPositionRenderTarget() const
 
 void UPaintableComponent::OnPositionMapBaked(UTextureRenderTarget2D* PositionMap)
 {
+	// The baker only exists once BeginPlay fully succeeded, and EndPlay tears it down before
+	// releasing the MIDs, so a null here is a programmer error rather than a designer one.
+	check(BrushMID && SurfaceMID && TargetMesh);
+
 	// Identity transform in, local bounds out - the same box the material's ObjectLocalBounds
 	// node reads, which is what makes the un-normalize in the brush line up.
 	const auto LocalBounds = TargetMesh->CalcBounds(FTransform::Identity).GetBox();
 	const auto BoundsSize = LocalBounds.GetSize();
-	if (BrushMID)
-	{
-		BrushMID->SetTextureParameterValue(PositionMapParam, PositionMap);
-		BrushMID->SetVectorParameterValue(
-			BoundsMinParam,
-			FLinearColor(LocalBounds.Min.X, LocalBounds.Min.Y, LocalBounds.Min.Z));
-		BrushMID->SetVectorParameterValue(
-			BoundsSizeParam,
-			FLinearColor(BoundsSize.X, BoundsSize.Y, BoundsSize.Z));
-	}
-	if (SurfaceMID)
-	{
-		// Only the brush needs the map, but the surface getting it too is what lets the
-		// M_DebugPosition override work with zero extra plumbing.
-		SurfaceMID->SetTextureParameterValue(PositionMapParam, PositionMap);
-	}
+
+	BrushMID->SetTextureParameterValue(PositionMapParam, PositionMap);
+	BrushMID->SetVectorParameterValue(
+		BoundsMinParam,
+		FLinearColor(LocalBounds.Min.X, LocalBounds.Min.Y, LocalBounds.Min.Z));
+	BrushMID->SetVectorParameterValue(
+		BoundsSizeParam,
+		FLinearColor(BoundsSize.X, BoundsSize.Y, BoundsSize.Z));
+
+	// Only the brush needs the map, but the surface getting it too is what lets the
+	// M_DebugPosition override work with zero extra plumbing.
+	SurfaceMID->SetTextureParameterValue(PositionMapParam, PositionMap);
+
+	bPaintReady = true;
 }
 
 FPaintSplatShape UPaintableComponent::ComputeSplatShape(const FPaintSplat& Splat) const
