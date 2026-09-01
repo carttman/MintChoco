@@ -23,6 +23,12 @@ Each of these cost real debugging time once.
   editor, and a hung editor process can keep holding port 8000.
 - Inside `ProgrammaticToolset` scripts, `try/except` does not reliably catch
   `execute_tool` failures — split risky calls into separate script runs.
+- `MaterialTools.recompile` propagates **parameter default** changes to everything
+  on screen, but **structural graph changes** (new wires, new outputs, Custom code)
+  do not reach materials already rendering in the session — only a freshly created
+  MaterialInstanceConstant compiles the current in-memory graph. Verify structural
+  edits through a fresh MIC, or save and restart the editor; a PIE-created MID
+  renders whatever shader its parent material loaded at editor start.
 
 ## Rendering traps (check the right column first)
 
@@ -38,3 +44,5 @@ Each of these cost real debugging time once.
 | Paint looks flat from the side | Normal/POM cannot change the silhouette. Is WPO or Displacement actually connected, and is the mesh tessellated enough? |
 | Splats cut off at actor boundaries | Limitation of the UV approach. Move to the world-position unwrap, or paint neighbors via sphere overlap. |
 | Colors differ between clients | Overlap-order differences are expected and allowed. A missing splat means the Unreliable Multicast dropped it — also check that local prediction and the server event are not drawn twice. |
+| A texture set via SetTextureParameterValue reaches one sample node but not a Custom node | A TextureSampleParameter2D and a TextureObjectParameter sharing one parameter name: the instance override only reaches the sampler one. Give the object parameter its own name and set both from C++. A stale MaterialInstance can also keep failing after a parameter rename — test with a freshly created instance. |
+| Paint mask/roughness respond but the relief normal stays flat on some faces | The height gradient is computed in UV1 (unwrap atlas) space but MP_Normal is applied in the mesh's UV0-derived tangent frame; per-face island orientation makes the result wrong or invisible. Judge normals face by face (front face can look dead while a side face wobbles), and prefer building a world-space normal from position-map-derived axes over trusting mesh tangents. |
