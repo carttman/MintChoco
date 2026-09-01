@@ -19,6 +19,7 @@ public class MintChoco : ModuleRules
 			"GameplayStateTreeModule",
 			"UMG",
 			"Slate",
+			"SlateCore",
 			"RHI"
 		});
 

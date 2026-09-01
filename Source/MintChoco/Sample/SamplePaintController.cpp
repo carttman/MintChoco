@@ -10,10 +10,12 @@
 #include "InputMappingContext.h"
 #include "Paint/PaintSplat.h"
 #include "Paint/PaintableComponent.h"
+#include "Sample/SampleSeedWidget.h"
 
 ASamplePaintController::ASamplePaintController()
 {
 	bShowMouseCursor = false;
+	SeedWidgetClass = USampleSeedWidget::StaticClass();
 }
 
 void ASamplePaintController::BeginPlay()
@@ -30,6 +32,17 @@ void ASamplePaintController::BeginPlay()
 		if (CrosshairWidget)
 		{
 			CrosshairWidget->AddToViewport();
+		}
+	}
+
+	NextSeed = FMath::Rand();
+
+	if (IsLocalPlayerController() && SeedWidgetClass)
+	{
+		SeedWidget = CreateWidget<USampleSeedWidget>(this, SeedWidgetClass);
+		if (SeedWidget)
+		{
+			SeedWidget->AddToViewport();
 		}
 	}
 }
@@ -84,6 +97,36 @@ void ASamplePaintController::SetupInputComponent()
 				CycleTeamAction, ETriggerEvent::Triggered, this,
 				&ASamplePaintController::OnCycleTeamTriggered);
 		}
+	}
+
+	// Typing into the seed box needs a cursor and UI focus, which the paint viewport otherwise
+	// owns. Tab flips between the two on demand instead of forcing an input mode at startup.
+	InputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &ASamplePaintController::OnToggleUIFocus);
+}
+
+void ASamplePaintController::OnToggleUIFocus()
+{
+	bUIFocused = !bUIFocused;
+	bShowMouseCursor = bUIFocused;
+	if (bUIFocused)
+	{
+		FInputModeGameAndUI InputMode;
+		InputMode.SetHideCursorDuringCapture(false);
+		SetInputMode(InputMode);
+	}
+	else
+	{
+		SetInputMode(FInputModeGameOnly());
+	}
+}
+
+void ASamplePaintController::SetSeedOverride(bool bInUseFixedSeed, int32 InFixedSeed)
+{
+	bUseFixedSeed = bInUseFixedSeed;
+	NextSeed = bInUseFixedSeed ? InFixedSeed : FMath::Rand();
+	if (SeedWidget)
+	{
+		SeedWidget->SetDisplayedSeed(NextSeed);
 	}
 }
 
@@ -177,11 +220,23 @@ bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Di
 	// its real impact velocity here instead - that single substitution is the whole difference.
 	const FVector IncidentVelocity = Direction * NominalImpactSpeed;
 
-	const auto Splat = Paintable->BuildSplatFromHit(
+	auto Splat = Paintable->BuildSplatFromHit(
 		Hit,
 		IncidentVelocity,
 		TeamId,
 		SplatVolume);
+
+	// The widget always shows the seed the NEXT splat will use: a pinned seed just stays,
+	// a free-running one rerolls on every use and the mirror updates with it.
+	Splat.Seed = NextSeed;
+	if (!bUseFixedSeed)
+	{
+		NextSeed = FMath::Rand();
+		if (SeedWidget)
+		{
+			SeedWidget->SetDisplayedSeed(NextSeed);
+		}
+	}
 
 	// The brush is a world-space ellipsoid, so every paintable inside its extent takes the same
 	// splat. The query radius comes from the hit surface's own tuning - a compromise that
