@@ -126,16 +126,16 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
 	int32 SurfaceMaterialSlot = 0;
 
-	/** Radius in UV units for a splat of unit volume arriving at zero speed. */
+	/** Radius in cm for a splat of unit volume arriving at zero speed. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
-	float BaseRadius = 0.05f;
+	float BaseRadius = 25.0f;
 
-	/** UV radius added per cm/s of impact speed. */
+	/** cm of radius added per cm/s of impact speed. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
-	float RadiusPerSpeed = 0.000005f;
+	float RadiusPerSpeed = 0.005f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
-	float MaxRadius = 0.25f;
+	float MaxRadius = 120.0f;
 
 	/** Upper bound on 1 / cos(incidence). Without it a grazing hit stretches to infinity. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")

@@ -11,8 +11,8 @@
 namespace
 {
 	const FName BrushPaintIdParam(TEXT("BrushPaintId"));
-	const FName BrushCenterParam(TEXT("BrushCenter"));
-	const FName BrushRadiusParam(TEXT("BrushRadius"));
+	const FName BrushCenterParam(TEXT("BrushCenterLocal"));
+	const FName BrushRadiusParam(TEXT("BrushRadiusLocal"));
 	const FName PreviousPaintParam(TEXT("PreviousPaint"));
 	const FName PaintRenderTargetParam(TEXT("PaintRT"));
 	const FName PositionMapParam(TEXT("PositionMap"));
@@ -133,18 +133,25 @@ bool UPaintableComponent::BuildSplatFromHit(
 
 void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 {
-	if (!PaintRenderTargets[0] || !PaintRenderTargets[1] || !BrushMID)
-	{
-		return;
-	}
+	if (!PaintRenderTargets[0] || !PaintRenderTargets[1] || !BrushMID || !GetPositionRenderTarget()) return;
 
-	const FPaintSplatShape Shape = ComputeSplatShape(Splat);
+	const auto Shape = ComputeSplatShape(Splat);
+
+	const auto& MeshTransform = TargetMesh->GetComponentTransform();
+	const auto LocalCenter = MeshTransform.InverseTransformPosition(Splat.Location);
+	// Uniform scale assumed
+	const float LocalRadius = Shape.Radius / MeshTransform.GetScale3D().X;
 
 	// The brush writes the id as a normalized byte; the R8 target stores it back as exactly PaintId.
-	BrushMID->SetScalarParameterValue(BrushPaintIdParam, Splat.PaintId / 255.0f);
+	BrushMID->SetScalarParameterValue(
+		BrushPaintIdParam,
+		Splat.PaintId / 255.0f);
 	BrushMID->SetVectorParameterValue(
-		BrushCenterParam, FLinearColor(Splat.SurfaceUV.X, Splat.SurfaceUV.Y, 0.0f, 0.0f));
-	BrushMID->SetScalarParameterValue(BrushRadiusParam, Shape.Radius);
+		BrushCenterParam,
+		FLinearColor(LocalCenter.X, LocalCenter.Y, LocalCenter.Z, 0.0f));
+	BrushMID->SetScalarParameterValue(
+		BrushRadiusParam,
+		LocalRadius);
 	BrushMID->SetTextureParameterValue(PreviousPaintParam, GetPaintRenderTarget());
 
 	UTextureRenderTarget2D* const Back = PaintRenderTargets[1 - FrontBufferIndex];

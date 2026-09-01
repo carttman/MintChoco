@@ -48,6 +48,7 @@ public:
 private:
 	void TryBake();
 	void Bake();
+	bool IsPositionMapValid() const;
 	UTextureRenderTarget2D* CreatePositionBuffer();
 
 	UPROPERTY(Transient)
@@ -69,4 +70,5 @@ private:
 	float PlaneSize = 1000.0f;
 	FTimerHandle BakeWaitHandle;
 	float BakeWaitElapsed = 0.0f;
+	float LastAttemptElapsed = -1.0f;
 };

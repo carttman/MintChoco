@@ -6,6 +6,8 @@
 #include "Engine/World.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "PipelineStateCache.h"
+#include "RHI.h"
+#include "TextureResource.h"
 #include "TimerManager.h"
 
 namespace
@@ -15,6 +17,8 @@ namespace
 
 	constexpr float BakePollInterval = 0.1f;
 	constexpr float MaxBakeWaitSeconds = 3.0f;
+	constexpr float MaxBakePollSeconds = 30.0f;
+	constexpr float BakeRetryInterval = 0.5f;
 }
 
 void UPositionMapBaker::Initialize(
@@ -58,6 +62,7 @@ void UPositionMapBaker::RequestBake()
 	}
 
 	BakeWaitElapsed = 0.0f;
+	LastAttemptElapsed = -BakeRetryInterval;
 	GetWorld()->GetTimerManager().SetTimer(
 		BakeWaitHandle, this, &UPositionMapBaker::TryBake, BakePollInterval, true);
 }
@@ -66,14 +71,65 @@ void UPositionMapBaker::TryBake()
 {
 	BakeWaitElapsed += BakePollInterval;
 
-	const bool bPrecacheIdle = PipelineStateCache::NumActivePrecacheRequests() == 0;
-	if (!bPrecacheIdle && BakeWaitElapsed < MaxBakeWaitSeconds)
+	if (BakeWaitElapsed >= MaxBakePollSeconds)
 	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("%s: gave up waiting for a valid position map after %.0fs."), *GetName(), MaxBakePollSeconds);
+		GetWorld()->GetTimerManager().ClearTimer(BakeWaitHandle);
 		return;
 	}
 
-	GetWorld()->GetTimerManager().ClearTimer(BakeWaitHandle);
+	// A busy precache queue is a cheap reason to wait, but an idle queue proves nothing:
+	// on the very first poll our own PSO request may not even be filed yet. Ground truth
+	// is the bake result itself - bake, read the pixels back, retry until they are real.
+	if (PipelineStateCache::NumActivePrecacheRequests() > 0 && BakeWaitElapsed < MaxBakeWaitSeconds)
+	{
+		return;
+	}
+	if (BakeWaitElapsed - LastAttemptElapsed < BakeRetryInterval)
+	{
+		return;
+	}
+	LastAttemptElapsed = BakeWaitElapsed;
+
 	Bake();
+	if (IsPositionMapValid())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(BakeWaitHandle);
+		OnBaked.ExecuteIfBound(PositionRenderTarget);
+	}
+}
+
+bool UPositionMapBaker::IsPositionMapValid() const
+{
+	if (!PositionRenderTarget)
+	{
+		return false;
+	}
+	FTextureRenderTargetResource* const Resource = PositionRenderTarget->GameThread_GetRenderTargetResource();
+	if (!Resource)
+	{
+		return false;
+	}
+
+	// One row through the middle is enough: any reasonable unwrap layout crosses the center
+	// line, while a capture that missed the mesh entirely is uniformly black. Synchronous
+	// readback is fine here - this runs a handful of times at load, never per frame.
+	TArray<FLinearColor> Pixels;
+	const int32 Row = Resolution / 2;
+	if (!Resource->ReadLinearColorPixels(
+			Pixels, FReadSurfaceDataFlags(RCM_MinMax), FIntRect(0, Row, Resolution, Row + 1)))
+	{
+		return false;
+	}
+	for (const FLinearColor& Pixel : Pixels)
+	{
+		if (Pixel.R > UE_KINDA_SMALL_NUMBER || Pixel.G > UE_KINDA_SMALL_NUMBER || Pixel.B > UE_KINDA_SMALL_NUMBER)
+		{
+			return true;
+		}
+	}
+	return false;
 }
 
 void UPositionMapBaker::Bake()
@@ -112,8 +168,6 @@ void UPositionMapBaker::Bake()
 		UnwrapOrigin + FVector(0.0f, 0.0f, CaptureHeight), FRotator(-90.0f, 0.0f, 0.0f));
 	Capture->CaptureScene();
 	Capture->DestroyComponent();
-
-	OnBaked.ExecuteIfBound(PositionRenderTarget);
 }
 
 UTextureRenderTarget2D* UPositionMapBaker::CreatePositionBuffer()
