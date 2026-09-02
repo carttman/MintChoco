@@ -119,6 +119,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
 	int32 SurfaceMaterialSlot = 0;
 
+	/**
+	 * Unlit material that writes, per texel, how close the unwrap island edge is (M_PaintEdgeFade).
+	 * Displacement is scaled by it: at a hard edge the neighbouring faces rise along different
+	 * vertex normals, so any height left there tears the mesh open.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
+	TObjectPtr<UMaterialInterface> EdgeFadeMaterial;
+
+	/** Width of the displacement fade at island edges, in paint texels. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning", meta = (ClampMin = "1"))
+	float EdgeFadeTexels = 8.0f;
+
 	/** Radius in cm for a splat of unit volume arriving at zero speed. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
 	float BaseRadius = 25.0f;
@@ -150,12 +162,20 @@ protected:
 
 private:
 	static UTextureRenderTarget2D* CreateIdBuffer(UObject* Outer, int32 Resolution);
+	static UTextureRenderTarget2D* CreateFadeBuffer(UObject* Outer, int32 Resolution);
 
 	UStaticMeshComponent* FindTargetMesh() const;
 	void OnPositionMapBaked(UTextureRenderTarget2D* PositionMap);
+	void BakeEdgeFade(UTextureRenderTarget2D* PositionMap);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTarget2D> PaintRenderTargets[2];
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextureRenderTarget2D> EdgeFadeRenderTarget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> EdgeFadeMID;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> BrushMID;

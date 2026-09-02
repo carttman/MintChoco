@@ -31,6 +31,8 @@ namespace
 	const FName PositionMapParam(TEXT("PositionMap"));
 	const FName BoundsMinParam(TEXT("BoundsMin"));
 	const FName BoundsSizeParam(TEXT("BoundsSize"));
+	const FName PaintEdgeFadeParam(TEXT("PaintEdgeFade"));
+	const FName FadeTexelsParam(TEXT("FadeTexels"));
 }
 
 UPaintableComponent::UPaintableComponent()
@@ -90,6 +92,8 @@ void UPaintableComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	bPaintReady = false;
 	PaintRenderTargets[0] = nullptr;
 	PaintRenderTargets[1] = nullptr;
+	EdgeFadeRenderTarget = nullptr;
+	EdgeFadeMID = nullptr;
 	BrushMID = nullptr;
 	SurfaceMID = nullptr;
 	TargetMesh = nullptr;
@@ -113,6 +117,21 @@ UTextureRenderTarget2D* UPaintableComponent::CreateIdBuffer(UObject* Outer, int3
 	Buffer->RenderTargetFormat = RTF_RG8;
 	Buffer->ClearColor = PaintIdNoneColor;
 	Buffer->Filter = TF_Nearest;
+	Buffer->SRGB = false;
+	Buffer->InitAutoFormat(Resolution, Resolution);
+	Buffer->UpdateResourceImmediate(true);
+
+	return Buffer;
+}
+
+UTextureRenderTarget2D* UPaintableComponent::CreateFadeBuffer(UObject* Outer, int32 Resolution)
+{
+	// A plain scalar, so unlike the id buffer it can be filtered by the sampler. White means
+	// "no fade", which is also what the surface material assumes until the bake delivers.
+	const auto Buffer = NewObject<UTextureRenderTarget2D>(Outer);
+	Buffer->RenderTargetFormat = RTF_R8;
+	Buffer->ClearColor = FLinearColor::White;
+	Buffer->Filter = TF_Bilinear;
 	Buffer->SRGB = false;
 	Buffer->InitAutoFormat(Resolution, Resolution);
 	Buffer->UpdateResourceImmediate(true);
@@ -291,7 +310,34 @@ void UPaintableComponent::OnPositionMapBaked(UTextureRenderTarget2D* PositionMap
 		BoundsSizeParam,
 		FLinearColor(LocalBounds.GetSize()));
 
+	BakeEdgeFade(PositionMap);
+
 	bPaintReady = true;
+}
+
+void UPaintableComponent::BakeEdgeFade(UTextureRenderTarget2D* PositionMap)
+{
+	if (!EdgeFadeMaterial)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s: EdgeFadeMaterial is unset, displacement will tear at island edges."), *GetReadableName());
+		return;
+	}
+
+	if (!EdgeFadeRenderTarget)
+	{
+		EdgeFadeRenderTarget = CreateFadeBuffer(this, RenderTargetResolution);
+	}
+	if (!EdgeFadeMID)
+	{
+		EdgeFadeMID = UMaterialInstanceDynamic::Create(EdgeFadeMaterial, this);
+	}
+
+	EdgeFadeMID->SetTextureParameterValue(PositionMapParam, PositionMap);
+	EdgeFadeMID->SetScalarParameterValue(FadeTexelsParam, EdgeFadeTexels);
+
+	// The map only depends on the unwrap, never on the paint, so one draw per bake is enough.
+	UKismetRenderingLibrary::DrawMaterialToRenderTarget(this, EdgeFadeRenderTarget, EdgeFadeMID);
+	SurfaceMID->SetTextureParameterValue(PaintEdgeFadeParam, EdgeFadeRenderTarget);
 }
 
 FPaintSplatShape UPaintableComponent::ComputeSplatShape(const FPaintSplat& Splat) const
