@@ -21,10 +21,12 @@ public class MintChoco : ModuleRules
 			"Slate",
 			"OnlineSubsystem",
 			"OnlineSubsystemUtils",
-			"OnlineSubsystemSteam"
+			"SteamSockets"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
+
+		DynamicallyLoadedModuleNames.Add("OnlineSubsystemSteam");
 
 		PublicIncludePaths.AddRange(new string[] {
 			"MintChoco",
