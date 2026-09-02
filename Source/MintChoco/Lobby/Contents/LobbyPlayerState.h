@@ -7,11 +7,18 @@
 #include "LobbyPlayerState.generated.h"
 
 /**
- * 
+ *
  */
 UCLASS()
 class MINTCHOCO_API ALobbyPlayerState : public APlayerState
 {
 	GENERATED_BODY()
-	
+
+public:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Lobby")
+	bool Ready;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Lobby")
+	FText Nickname;
+
 };
