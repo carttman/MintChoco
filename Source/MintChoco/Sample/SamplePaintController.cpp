@@ -153,7 +153,7 @@ void ASamplePaintController::OnPaintTriggered()
 		return;
 	}
 
-	if (PaintAtHit(Hit, Direction) && bDrawDebugTrace)
+	if (PaintAtHit(Hit, Direction, HeightPerSplat) && bDrawDebugTrace)
 	{
 		DrawDebugLine(GetWorld(), Hit.TraceStart, Hit.ImpactPoint, FColor::Cyan, false, 2.0f);
 		DrawDebugDirectionalArrow(
@@ -180,7 +180,7 @@ void ASamplePaintController::OnContinuousPaintTriggered()
 		return;
 	}
 
-	if (PaintAtHit(Hit, Direction))
+	if (PaintAtHit(Hit, Direction, HeightPerSplatHeld))
 	{
 		StrokeAnchor = Hit.ImpactPoint;
 		bStrokeAnchorValid = true;
@@ -206,7 +206,7 @@ bool ASamplePaintController::TracePaintTarget(FHitResult& OutHit, FVector& OutDi
 	return GetWorld()->LineTraceSingleByChannel(OutHit, ViewLocation, TraceEnd, ECC_Visibility, Params);
 }
 
-bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Direction)
+bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Direction, float HeightAdd)
 {
 	UPaintableComponent* Paintable = Hit.GetActor()
 		? Hit.GetActor()->FindComponentByClass<UPaintableComponent>()
@@ -228,6 +228,7 @@ bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Di
 
 	// The widget always shows the seed the NEXT splat will use: a pinned seed just stays,
 	// a free-running one rerolls on every use and the mirror updates with it.
+	Splat.HeightAdd = HeightAdd;
 	Splat.Seed = NextSeed;
 	if (!bUseFixedSeed)
 	{

@@ -51,6 +51,9 @@ void UPositionMapBaker::RequestBake()
 		ProxyMesh = NewObject<UStaticMeshComponent>(SourceMesh->GetOwner());
 		ProxyMesh->SetStaticMesh(SourceMesh->GetStaticMesh());
 		ProxyMesh->bVisibleInSceneCaptureOnly = true;
+		// The unwrap WPO must flatten the raw vertex mesh; a Nanite-enabled source asset
+		// would route the proxy through the Nanite raster path instead.
+		ProxyMesh->SetForceDisableNanite(true);
 		ProxyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		ProxyMesh->RegisterComponent();
 		ProxyMesh->AttachToComponent(SourceMesh, FAttachmentTransformRules::SnapToTargetIncludingScale);

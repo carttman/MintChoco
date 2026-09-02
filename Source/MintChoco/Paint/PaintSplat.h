@@ -44,6 +44,10 @@ struct FPaintSplat
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
 	float Volume = 1.0f;
 
+	/** Fraction of the max paint height this contact adds; the buffer accumulates with saturation. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint", meta = (ClampMin = "0", ClampMax = "1"))
+	float HeightAdd = 0.35f;
+
 	/** Drives shape variation. Shared across clients so every machine draws the same splat. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
 	int32 Seed = 0;

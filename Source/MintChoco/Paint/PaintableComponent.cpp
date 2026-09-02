@@ -20,6 +20,7 @@ namespace
 	const FName BrushStretchParam(TEXT("BrushStretch"));
 	const FName BrushSeedParam(TEXT("BrushSeed"));
 	const FName BrushImpactUParam(TEXT("BrushImpactU"));
+	const FName BrushHeightAddParam(TEXT("BrushHeightAdd"));
 	const FName PreviousPaintParam(TEXT("PreviousPaint"));
 	const FName PaintRenderTargetParam(TEXT("PaintRT"));
 	// The relief custom node reads the id buffer through its own TextureObjectParameter. It must
@@ -108,7 +109,8 @@ UTextureRenderTarget2D* UPaintableComponent::CreateIdBuffer(UObject* Outer, int3
 	// settings fixed before the resource is created: bilinear filtering would invent team IDs
 	// on every splat boundary, and sRGB would corrupt the ID -> byte round trip.
 	const auto Buffer = NewObject<UTextureRenderTarget2D>(Outer);
-	Buffer->RenderTargetFormat = RTF_R8;
+	// R stores the team id, G accumulates deposited paint height.
+	Buffer->RenderTargetFormat = RTF_RG8;
 	Buffer->ClearColor = PaintIdNoneColor;
 	Buffer->Filter = TF_Nearest;
 	Buffer->SRGB = false;
@@ -192,6 +194,7 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 	BrushMID->SetScalarParameterValue(
 		BrushImpactUParam,
 		-Shape.CenterShift / FMath::Max(Shape.Radius * Shape.Stretch, UE_KINDA_SMALL_NUMBER));
+	BrushMID->SetScalarParameterValue(BrushHeightAddParam, Splat.HeightAdd);
 	BrushMID->SetTextureParameterValue(PreviousPaintParam, GetPaintRenderTarget());
 
 	UTextureRenderTarget2D* const Back = PaintRenderTargets[1 - FrontBufferIndex];
@@ -283,6 +286,10 @@ void UPaintableComponent::OnPositionMapBaked(UTextureRenderTarget2D* PositionMap
 	// Only the brush needs the map, but the surface getting it too is what lets the
 	// M_DebugPosition override work with zero extra plumbing.
 	SurfaceMID->SetTextureParameterValue(PositionMapParam, PositionMap);
+	// The paint normal differentiates the position map, so it needs the un-normalize scale too.
+	SurfaceMID->SetVectorParameterValue(
+		BoundsSizeParam,
+		FLinearColor(LocalBounds.GetSize()));
 
 	bPaintReady = true;
 }
