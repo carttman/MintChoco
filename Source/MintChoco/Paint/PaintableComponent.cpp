@@ -113,8 +113,10 @@ UTextureRenderTarget2D* UPaintableComponent::CreateIdBuffer(UObject* Outer, int3
 	// settings fixed before the resource is created: bilinear filtering would invent team IDs
 	// on every splat boundary, and sRGB would corrupt the ID -> byte round trip.
 	const auto Buffer = NewObject<UTextureRenderTarget2D>(Outer);
-	// R stores the team id, G accumulates deposited paint height.
-	Buffer->RenderTargetFormat = RTF_RG8;
+	// R stores the team id, G accumulates deposited paint height, B the distance to the
+	// nearest paint edge in texels, encoded as 1 - d / PaintDistanceRange so that a cleared
+	// or default texel (B = 0) reads as "far".
+	Buffer->RenderTargetFormat = RTF_RGBA8;
 	Buffer->ClearColor = PaintIdNoneColor;
 	Buffer->Filter = TF_Nearest;
 	Buffer->SRGB = false;
