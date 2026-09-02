@@ -53,6 +53,19 @@ Each of these cost real debugging time once.
 - After a UPROPERTY or struct-layout change, hot reload re-instances classes
   unreliably; restart the editor before trusting PIE. The MCP server dies with the
   editor, and a hung editor process can keep holding port 8000.
+- Never write a layer stack (`MaterialAttributeLayers.DefaultLayers`, an MI's
+  `MaterialLayers`) through `ObjectTools.set_properties`: the arrays land one at a time
+  and `FMaterialLayersFunctions::Validate` asserts on the first length mismatch,
+  **crashing the editor**. Stacks are edited in the UI (node details / MI layer panel);
+  in-place edits that keep every array length are the only safe write.
+  `connect_to_output` does work for `MP_FrontMaterial`.
+- Never grow/shrink `AttributeSetTypes` / `AttributeGetTypes` on Get/SetMaterialAttributes
+  through `ObjectTools`: the node's pin arrays are only resized by the editor's
+  PostEditChange path, so the next compile (autosave thumbnails included) indexes out of
+  range and **crashes the editor** minutes later. Use Make/BreakMaterialAttributes
+  (fixed pins, FrontMaterial included) or have the developer add those pins in the UI.
+- After an editor crash: stop, report the crash log, and wait — never keep working in
+  a relaunched editor on your own.
 - Inside `ProgrammaticToolset` scripts, `try/except` does not reliably catch
   `execute_tool` failures — split risky calls into separate script runs.
 - `MaterialTools.recompile` propagates **parameter default** changes to everything
