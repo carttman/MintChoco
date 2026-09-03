@@ -16,10 +16,12 @@ class UTextureRenderTarget2D;
  * Gives its owner a paint layer: one render target per component instance, a brush material
  * drawn into it, and a surface material that reads it back.
  *
- * The render target is a paint-id buffer, not a color buffer: R8 holding one of the
- * PaintIdCount ids per texel, PaintIdNone meaning "unpainted". The surface material decodes
- * each id to its designer-assigned color (MF_PaintOverlay's per-id parameters). Ids must never
- * be interpolated, so the target samples with nearest filtering.
+ * The render target is a paint buffer, not a color buffer. Per texel, R holds one of the
+ * PaintIdCount ids (PaintIdNone meaning "unpainted"), G the accumulated paint height and B the
+ * distance to the nearest paint edge. The surface material turns the id into a team look
+ * through its material layer stack (MF_PaintOverlay feeds the stack input) and the height into
+ * relief. Ids must never be interpolated, so the target samples with nearest filtering and the
+ * reads filter the other channels by hand.
  *
  * Writing an ID has to replace, never blend, which rules out both of the obvious draw paths:
  * translucent blend modes can never write the target's alpha, and a masked material's clip is
@@ -109,8 +111,8 @@ protected:
 
 	/**
 	 * Optional override. Leave it unset to keep whatever material the mesh already has and simply
-	 * feed the paint render target into it - that material then needs a PaintRT texture parameter,
-	 * which is what MF_PaintOverlay provides.
+	 * feed the paint buffers into it - that material then needs the parameters MF_PaintOverlay
+	 * declares (PaintIdMap, PaintTexelSize, PaintDistRange, PositionMap, BoundsSize, PaintEdgeFade).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
 	TObjectPtr<UMaterialInterface> SurfaceMaterial;
@@ -130,6 +132,21 @@ protected:
 	/** Width of the displacement fade at island edges, in paint texels. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning", meta = (ClampMin = "1"))
 	float EdgeFadeTexels = 8.0f;
+
+	/**
+	 * Two neighbouring texels whose baked positions differ by more than this fraction of the
+	 * mesh bounds belong to different unwrap islands, so the fade treats the gap as an edge.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning", meta = (ClampMin = "0.001", ClampMax = "1"))
+	float EdgeFadeSeamFraction = 0.05f;
+
+	/**
+	 * How far from a paint edge, in texels, the brush keeps an exact distance in the buffer's B
+	 * channel. The reads threshold that distance for anti-aliased edges; beyond it a texel only
+	 * knows which side it is on. Wider survives more minification, but costs precision in 8 bits.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning", meta = (ClampMin = "1"))
+	float PaintDistanceRange = 4.0f;
 
 	/** Radius in cm for a splat of unit volume arriving at zero speed. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
