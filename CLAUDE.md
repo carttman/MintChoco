@@ -30,7 +30,8 @@ Each of these cost real debugging time once.
   `MaterialLayers`) through `ObjectTools.set_properties`: the arrays land one at a time
   and `FMaterialLayersFunctions::Validate` asserts on the first length mismatch.
   Stacks are edited in the UI (node details / MI layer panel); in-place edits that keep
-  every array length are the only safe write.
+  every array length are the only safe write. Replacing `layers[0]` in place from a
+  script with every length kept compiled and saved cleanly (M_PaintableSurface).
 - Never grow/shrink `AttributeSetTypes` / `AttributeGetTypes` on Get/SetMaterialAttributes
   through `ObjectTools`: the node's pin arrays are only resized by the editor's
   PostEditChange path, so the next compile indexes out of range. Use
@@ -72,6 +73,10 @@ Each of these cost real debugging time once.
   layer stack must ride pixel attributes (Anisotropy, Refraction, Opacity, PDO, ...).
   Parameters inside a Material Layer/Blend are namespaced per slot, so C++ cannot set
   them by name — feed runtime data through the stack `Input` instead.
+- `MaterialTools` object references need the full object path (`/Game/X/M_Foo.M_Foo`);
+  a bare package path is rejected. Pins without a name (Transform, MaterialLayerOutput)
+  are addressed as `"None"` in `connect_expressions`. `ProgrammaticToolset` runs
+  `execute_tool_script` with a `run()` that returns a dict.
 - `UInputMappingContext.Mappings` is deprecated and invisible to the editor UI.
   Read and write `DefaultKeyMappings.mappings` instead.
 
@@ -109,6 +114,12 @@ Each of these cost real debugging time once.
   delete, import, re-hook — deleting also nulls sampler defaults that pointed at it.
 - Duplicated parameter nodes with the same name are one parameter; keep every copy's
   default identical or only one wins.
+- A paintable mesh needs a unique UV1: `M_PaintUnwrap` and every paint read use
+  TexCoord 1, and a missing channel silently pads with the last one (UV0). Art meshes
+  arrive with UV0 only (`LightMapCoordinateIndex 0`,
+  `StaticMaterials[].uVChannelData.localUVDensities[1] == 0`). `SourceModels` / Build
+  Settings cannot be read or written through `ObjectTools`, so Generate Lightmap UVs
+  (destination index 1) is a Static Mesh editor step; verify with the density read.
 
 ### Nanite tessellation displacement (UE 5.8)
 
@@ -146,3 +157,4 @@ Each of these cost real debugging time once.
 | A rim outline appears on painted blobs at a distance | `fwidth(sd)` jumps between the clamped ±range samples under minification and smears the background through the whole rim; a swallowed same-team edge also keeps a small stored `d`. Cap `w` at one texel and pin quads whose four corner ids agree to ±range. |
 | Background shows through where two teams meet | Sequential layer blends lerp twice. Carry the coverage already consumed (`S`) through the stack and use `alpha = cov / (1 − S)` per blend. |
 | Paint reads as a matte sticker with glossy reflections | Flat team colors with a wet roughness. The fix is per-team looks with albedo texture and roughness designed together; for cream/ice cream go Substrate (slab with SSS MFP + fuzz) rather than overwriting attributes. |
+| Paint on an art mesh lands twice or in the wrong place | The mesh has no UV1. TexCoord 1 pads with the last channel, so the unwrap and every read run on the art UV0 with its overlaps and mirroring. Generate Lightmap UVs into index 1 and rebuild. |
