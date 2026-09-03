@@ -3,77 +3,124 @@
 C++ follows the Epic Coding Standard (tabs, PascalCase, U/A/F/E prefixes);
 personal styles do not apply here.
 
+## Working rules
+
+- After an editor crash: stop, report the crash log (`Saved/Crashes/*/MintChoco.log`,
+  the `Assertion failed` line and the log lines just before it), and wait. Never keep
+  working in a relaunched editor on your own. A crash can surface minutes after the
+  offending call (autosave thumbnail compiles), so read the log instead of blaming the
+  last call.
+- Never drive the developer's mouse or keyboard. Anything MCP cannot do (the
+  `MP_Displacement` wire, console commands, painting in PIE, layer stacks, dynamic
+  pins) is a request to the developer with exact steps. Launching or relaunching the
+  editor and running a build watcher are fine.
+- Before "fixing" a graph the developer edited, ask what they changed. A wire that
+  looks wrong (packed ids on Anisotropy, weights on Refraction, coverage on Opacity)
+  may be a deliberate carrier convention.
+- Try a new node type or property write on a scratch asset first, through
+  save + recompile, before touching real assets.
+
 ## Unreal MCP pitfalls
 
 Each of these cost real debugging time once.
 
-- `UInputMappingContext.Mappings` is deprecated and invisible to the editor UI.
-  Read and write `DefaultKeyMappings.mappings` instead.
-- `ObjectTools.set_properties` on an array property: **grow** by exactly one element
-  per call, passing the existing elements back verbatim as read (growing by several
-  fails with "insertion points are ambiguous"). Shrinking and in-place edits of any
-  size work in one call.
-- `MaterialTools.connect_to_output` / `get_property_input` silently ignore
-  `MP_Displacement` (returns "not connected" forever), and `MaterialEditorOnlyData`
-  exposes no `FExpressionInput` properties to `ObjectTools`. That one wire has to be
-  dragged in the material editor by hand — and material editor edits live in the
-  **preview copy until Apply is pressed**: `AssetTools.save_assets` right after a UI
-  drag saves the original without the wire. Drag → Apply → save.
-- `MaterialTools.get_expression_inputs` mislabels a `MaterialFunctionCall` source:
-  it always prints the first output's name whatever the wire really uses. The truth is
-  the raw `outputIndex` in `ObjectTools.get_properties(..., ["Inputs"])` on a Custom
-  node; to wire a non-first function output into a Custom node, write that
-  `outputIndex` explicitly (function outputs are ordered by SortPriority).
-- There is no console-command or editor-python route: `ProgrammaticToolset` only
-  orchestrates registered tools, and `EditorAppToolset.SearchCVars` only reads. Anything
-  needing `py`/console must be asked of the developer.
-- `EditorAppToolset.CaptureViewport` with `captureTransform` renders the **editor
-  world**, not the PIE world (no paint visible). Use `CaptureEditorImage` for PIE;
-  `SceneTools.find_actors` does search the PIE world while it runs, and PIE actors
-  address as `/Game/<Path>/UEDPIE_0_<Map>.<Map>:PersistentLevel.<Actor>_C_0`.
-  `ActorTools.set_actor_transform` teleports a PIE pawn; `ControlRotation` is not
-  settable, so the view yaw can only come from input.
-- `/Engine/BasicShapes/*` are engine assets: duplicate into `/Game` before enabling
-  Nanite (`StaticMeshTools.set_nanite_enabled`) or editing anything.
-- Nanite tessellation displacement facts (UE 5.8): tessellation is **on by default**
-  (`r.Nanite.AllowTessellation` no longer exists; `r.Nanite.Tessellation`,
-  `ProgrammableRaster`, `ComputeRasterization` all default 1). The material needs
-  `bEnableTessellation=true` and its `DisplacementScaling.Magnitude` is baked into
-  proxy bounds — set it once, never animate it. The Displacement pin compiles at pixel
-  frequency with the full material evaluated per micro-vertex every frame, so
-  sampling a runtime render target through a Custom node is fine. It **does not**
-  recompute shading normals: vertices move along the vertex normal and shade with it.
-- `ObjectTools.reset_properties` resets to the C++ default, not the Blueprint
-  default. To clear a level-instance override, set the value explicitly.
-- Editing a BP CDO does not reach level instances that hold a serialized override.
-  Verify on the instance (`Lvl:PersistentLevel.<Actor>.<Component>`), never only on
-  the CDO.
-- `TextureTools.import_file` never overwrites. Reimporting means: unhook referencers,
-  delete, import, re-hook — deleting also nulls sampler defaults that pointed at it.
-- After a UPROPERTY or struct-layout change, hot reload re-instances classes
-  unreliably; restart the editor before trusting PIE. The MCP server dies with the
-  editor, and a hung editor process can keep holding port 8000.
+### Writes that crash the editor
+
 - Never write a layer stack (`MaterialAttributeLayers.DefaultLayers`, an MI's
   `MaterialLayers`) through `ObjectTools.set_properties`: the arrays land one at a time
-  and `FMaterialLayersFunctions::Validate` asserts on the first length mismatch,
-  **crashing the editor**. Stacks are edited in the UI (node details / MI layer panel);
-  in-place edits that keep every array length are the only safe write.
-  `connect_to_output` does work for `MP_FrontMaterial`.
+  and `FMaterialLayersFunctions::Validate` asserts on the first length mismatch.
+  Stacks are edited in the UI (node details / MI layer panel); in-place edits that keep
+  every array length are the only safe write.
 - Never grow/shrink `AttributeSetTypes` / `AttributeGetTypes` on Get/SetMaterialAttributes
   through `ObjectTools`: the node's pin arrays are only resized by the editor's
-  PostEditChange path, so the next compile (autosave thumbnails included) indexes out of
-  range and **crashes the editor** minutes later. Use Make/BreakMaterialAttributes
-  (fixed pins, FrontMaterial included) or have the developer add those pins in the UI.
-- After an editor crash: stop, report the crash log, and wait — never keep working in
-  a relaunched editor on your own.
-- Inside `ProgrammaticToolset` scripts, `try/except` does not reliably catch
-  `execute_tool` failures — split risky calls into separate script runs.
+  PostEditChange path, so the next compile indexes out of range. Use
+  Make/BreakMaterialAttributes (fixed pins; no FrontMaterial pin, so Substrate slabs
+  are built in the master from carried attributes) or have the developer add pins in
+  the UI. Plugin templates worth duplicating instead of creating: Material Layers under
+  `/Landmass/PreviewContent/MatLayers/`, blends under `/BaseMaterial/Materials/Blends/`.
+
+### Arrays and pins
+
+- `ObjectTools.set_properties` on an array property: **grow** by exactly one element
+  per call, passing the existing elements back verbatim as read; shrink only with the
+  surviving elements unchanged (remove-and-edit in one call is "ambiguous"); in-place
+  edits of any size work in one call. To replace element 0 and shrink, first rotate in
+  place, then drop the tail. A fresh Custom node already holds one unnamed input.
+  Inside a `ProgrammaticToolset` script, one `execute_tool` call per step obeys these
+  rules while still batching the round-trips.
+- `MaterialTools.get_expression_inputs` mislabels a multi-output source: it prints
+  the first output's name whatever the wire really uses. The truth is the raw
+  `outputIndex` in `ObjectTools.get_properties(..., ["Inputs"])` on a Custom node.
+  `connect_expressions` **by output name does land correctly** (verified with a probe
+  Custom node); only the read is unreliable.
+  Its unwired pins come back with `expression` as the **string** `"None"`, so test
+  `str(ex) == "None"`, not `is None`. Make/Break pins are `FExpressionInput`s that
+  `ObjectTools.get_properties` cannot read; verify wiring with `get_expression_inputs`.
+- `BreakMaterialAttributes` exposes Refraction as **RG only** (float2). Pixel-frequency
+  carriers through a layer stack: Anisotropy (1), Refraction (2), PixelDepthOffset (1),
+  Opacity (1), Tangent (3) — every look layer must pass each one through Break → Make.
+- `MaterialTools.connect_to_output` / `get_property_input` silently ignore
+  `MP_Displacement`, and `MaterialEditorOnlyData` exposes no `FExpressionInput`
+  properties. That one wire is dragged by the developer, and material editor edits
+  live in the **preview copy until Apply**: save right after a UI drag stores the
+  original without the wire. Drag → Apply → save. `MP_FrontMaterial` connects fine.
+  Deleting or reordering a function's outputs shifts the call node's output indices;
+  have the developer re-check hand-wired pins afterwards.
+- `CustomizedUVs` (and WPO) in a MaterialAttributes struct are **vertex-frequency**
+  even when written by Make and read back through Break inside a pixel chain: the
+  value is computed per vertex and interpolated. Per-pixel data smuggled through a
+  layer stack must ride pixel attributes (Anisotropy, Refraction, Opacity, PDO, ...).
+  Parameters inside a Material Layer/Blend are namespaced per slot, so C++ cannot set
+  them by name — feed runtime data through the stack `Input` instead.
+- `UInputMappingContext.Mappings` is deprecated and invisible to the editor UI.
+  Read and write `DefaultKeyMappings.mappings` instead.
+
+### Verifying
+
 - `MaterialTools.recompile` propagates **parameter default** changes to everything
   on screen, but **structural graph changes** (new wires, new outputs, Custom code)
   do not reach materials already rendering in the session — only a freshly created
   MaterialInstanceConstant compiles the current in-memory graph. Verify structural
   edits through a fresh MIC, or save and restart the editor; a PIE-created MID
   renders whatever shader its parent material loaded at editor start.
+- `EditorAppToolset.CaptureViewport` with `captureTransform` renders the **editor
+  world**, not the PIE world. Use `CaptureEditorImage` for PIE; `SceneTools.find_actors`
+  does search the PIE world while it runs, and PIE actors address as
+  `/Game/<Path>/UEDPIE_0_<Map>.<Map>:PersistentLevel.<Actor>_C_0`.
+- There is no console-command or editor-python route: `ProgrammaticToolset` only
+  orchestrates registered tools, and `EditorAppToolset.SearchCVars` only reads.
+  `try/except` inside a script does not reliably catch `execute_tool` failures.
+- A new UPROPERTY is invisible to `ObjectTools` until the module is rebuilt and the
+  editor restarted; setting it earlier just fails. After a UPROPERTY or struct-layout
+  change, hot reload re-instances classes unreliably — restart before trusting PIE.
+  The MCP server dies with the editor and its session expires on every restart.
+- While PIE runs, `AssetTools.save_assets` / `exists` / `is_dirty` fail with
+  "Asset does not exist" even though compiles succeed. Stop PIE, then save.
+
+### Assets and instances
+
+- `/Engine/BasicShapes/*` are engine assets: duplicate into `/Game` before enabling
+  Nanite (`StaticMeshTools.set_nanite_enabled`) or editing anything.
+- Editing a BP CDO does not reach level instances that hold a serialized override.
+  Verify on the instance (`Lvl:PersistentLevel.<Actor>.<Component>`), never only on
+  the CDO. `ObjectTools.reset_properties` resets to the C++ default, not the Blueprint
+  default — clear an override by setting the value explicitly.
+- `TextureTools.import_file` never overwrites. Reimporting means: unhook referencers,
+  delete, import, re-hook — deleting also nulls sampler defaults that pointed at it.
+- Duplicated parameter nodes with the same name are one parameter; keep every copy's
+  default identical or only one wins.
+
+### Nanite tessellation displacement (UE 5.8)
+
+- Tessellation is **on by default** (`r.Nanite.AllowTessellation` no longer exists;
+  `r.Nanite.Tessellation`, `ProgrammableRaster`, `ComputeRasterization` all default 1;
+  `r.Nanite.DicingRate` is the density knob). The material needs
+  `bEnableTessellation=true`, and `DisplacementScaling.Magnitude` is baked into proxy
+  bounds — set it once, never animate it.
+- The Displacement pin compiles at pixel frequency with the full material evaluated
+  per micro-vertex every frame, so sampling a runtime render target through a Custom
+  node is fine. It **does not** recompute shading normals, and it displaces along the
+  **vertex normal**: two faces meeting at a hard edge move apart and tear.
 
 ## Rendering traps (check the right column first)
 
@@ -90,7 +137,12 @@ Each of these cost real debugging time once.
 | Splats cut off at actor boundaries | Limitation of the UV approach. Move to the world-position unwrap, or paint neighbors via sphere overlap. |
 | Colors differ between clients | Overlap-order differences are expected and allowed. A missing splat means the Unreliable Multicast dropped it — also check that local prediction and the server event are not drawn twice. |
 | A texture set via SetTextureParameterValue reaches one sample node but not a Custom node | A TextureSampleParameter2D and a TextureObjectParameter sharing one parameter name: the instance override only reaches the sampler one. Give the object parameter its own name and set both from C++. A stale MaterialInstance can also keep failing after a parameter rename — test with a freshly created instance. |
-| Paint mask/roughness respond but the relief normal stays flat on some faces | The height gradient is computed in UV1 (unwrap atlas) space but MP_Normal is applied in the mesh's UV0-derived tangent frame; per-face island orientation makes the result wrong or invisible. Judge normals face by face (front face can look dead while a side face wobbles), and prefer building a world-space normal from position-map-derived axes over trusting mesh tangents. |
+| Paint mask/roughness respond but the relief normal stays flat on some faces | The height gradient is computed in UV1 (unwrap atlas) space but MP_Normal is applied in the mesh's UV0-derived tangent frame; per-face island orientation makes the result wrong or invisible. Build a world-space normal from position-map-derived axes instead of trusting mesh tangents. |
 | Displaced paint shows a silhouette but shades flat | Nanite displacement keeps the vertex normal. Derive the normal from the height field: differentiate the position map for ∂P/∂u, ∂P/∂v (bounds-normalized local → cm via BoundsSize), then `cross(Pu + Hu·N, Pv + Hv·N)` in local space, `Local→World`, with the material's Tangent Space Normal off. Fall back to the vertex normal across atlas seams. |
 | Displacement is a plateau with vertical cliffs and texel stairs | The height was derived from the binary id coverage read through a point-filtered buffer. Accumulate a soft height in its own channel (RG8: R id, G height) from a soft brush kernel, and bilinear-filter it by hand in the shader — the id sampler must stay TF_Nearest. |
-| Paint reads as a matte sticker with glossy reflections | Flat team colors with a wet roughness. The fix is per-team looks with albedo texture and roughness designed together; for cream/ice cream go Substrate (slab with SSS MFP + fuzz, paint layered over the surface with thickness from the height buffer) rather than overwriting attributes. |
+| Mesh tears open along hard edges when painted | Faces sharing a hard edge displace along different vertex normals. Fade the height to 0 over the last texels of each unwrap island (`M_PaintEdgeFade` bakes distance-to-island-edge once per position map). Art with chamfered edges does not tear. |
+| Sparkling noise on the displacement slope near edges | The per-texel deposit noise rides on the fade slope and grazes the specular lobe. Damp the derived normal's gradient by the same fade (`PaintNormalStrength 0` makes it vanish, which confirms it). |
+| Paint edges look blocky however they are filtered | The brush binarizes the SDF into the id buffer at texel resolution; read-time bilinear only blurs the stairs. Store the brush distance in its own channel (`1 − d/range`, 0 = far, so clears stay valid), build per-team signed distances from the four corner texels, and threshold with `smoothstep(−w, w, sd)`, `w = clamp(0.5·fwidth, …, 0.5)`. |
+| A rim outline appears on painted blobs at a distance | `fwidth(sd)` jumps between the clamped ±range samples under minification and smears the background through the whole rim; a swallowed same-team edge also keeps a small stored `d`. Cap `w` at one texel and pin quads whose four corner ids agree to ±range. |
+| Background shows through where two teams meet | Sequential layer blends lerp twice. Carry the coverage already consumed (`S`) through the stack and use `alpha = cov / (1 − S)` per blend. |
+| Paint reads as a matte sticker with glossy reflections | Flat team colors with a wet roughness. The fix is per-team looks with albedo texture and roughness designed together; for cream/ice cream go Substrate (slab with SSS MFP + fuzz) rather than overwriting attributes. |
