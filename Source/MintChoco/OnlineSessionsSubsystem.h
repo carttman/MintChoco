@@ -75,8 +75,6 @@ private:
 
 public:
 	IOnlineSessionPtr SessionInterface;
-	// 로컬 세션 이름은 NAME_GameSession으로 고정하고, MySessionName은 표시용으로만 쓴다.
-	FString MySessionName = TEXT("CHJ");
 	// NULL 서브시스템(= LAN)으로 동작 중인지. Initialize에서 월드별 인스턴스를 보고 캐시한다.
 	bool bIsLanSubsystem = false;
 
@@ -88,6 +86,9 @@ public:
 	FDelegateHandle JoinSessionDelegateHandle;
 	FDelegateHandle DestroySessionDelegateHandle;
 	FDelegateHandle UserInviteDelegateHandle;
+
+	// 광고할 호스트 이름(플랫폼 닉네임). 못 얻으면 "Unknown".
+	FString GetLocalPlayerNickname() const;
 
 	// 방생성 요청
 	void OnMyCreateSession(FString roomName, int32 maxPlayer);

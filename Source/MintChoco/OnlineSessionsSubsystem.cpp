@@ -5,9 +5,21 @@
 #include "OnlineSubsystem.h"
 #include "OnlineSessionSettings.h"
 #include "OnlineSubsystemUtils.h"
+#include "Interfaces/OnlineIdentityInterface.h"
 #include "Online/OnlineSessionNames.h"
 #include "Kismet/GameplayStatics.h"
 #include <string>
+
+/** Steam appid 480은 전 세계가 공유하는 로비 풀이라, 우리 세션만 식별할 키가 필요하다. */
+static const FName SETTING_GAME_ID = FName("MINTCHOCO_ID");
+static const FString MINTCHOCO_GAME_ID = TEXT("MintChoco_v1");
+
+/**
+ * 진단 스위치. true면 세션 필터를 하나도 걸지 않고 검색된 로비를 전부 로그로 남긴다.
+ * 무필터 검색은 appid 480 전역 풀에서 임의의 일부만 돌려주므로 우리 방이 밀려날 수 있다.
+ * 문제를 재현할 때만 잠시 true로 둘 것.
+ */
+static const bool bDiagnoseSessionFilters = false;
 
 
 
@@ -78,6 +90,23 @@ void UOnlineSessionsSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
+FString UOnlineSessionsSubsystem::GetLocalPlayerNickname() const
+{
+	if (auto* subsys = Online::GetSubsystem(GetWorld()))
+	{
+		if (const IOnlineIdentityPtr identity = subsys->GetIdentityInterface())
+		{
+			const FString nickname = identity->GetPlayerNickname(0);
+			if (false == nickname.IsEmpty())
+			{
+				return nickname;
+			}
+		}
+	}
+
+	return TEXT("Unknown");
+}
+
 void UOnlineSessionsSubsystem::OnMyCreateSession(FString roomName, int32 maxPlayer)
 {
 	FOnlineSessionSettings settings;
@@ -100,13 +129,17 @@ void UOnlineSessionsSubsystem::OnMyCreateSession(FString roomName, int32 maxPlay
 	// 커스텀 설정
 	settings.Set(FName("ROOM_NAME"), StringBase64Encoder(roomName),
 				 EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
-	settings.Set(FName("HOST_NAME"), StringBase64Encoder(MySessionName),
+	// 호스트 이름은 플랫폼 닉네임을 쓴다. 방 이름과 같은 값이 들어가면 목록에서 구분이 안 된다.
+	settings.Set(FName("HOST_NAME"), StringBase64Encoder(GetLocalPlayerNickname()),
 				 EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
+	// Steam은 이 키를 로비 문자열 필터로 번역하므로, 남의 480 로비는 결과에 내려오지 않는다.
+	settings.Set(SETTING_GAME_ID, MINTCHOCO_GAME_ID,
+				 EOnlineDataAdvertisementType::ViaOnlineService);
 
 	FUniqueNetIdPtr netID = GetWorld()->GetFirstLocalPlayerFromController()->GetUniqueNetIdForPlatformUser().
 										GetUniqueNetId();
 
-	UE_LOG(LogTemp, Warning, TEXT("OnMyCreateSession : %s"), *MySessionName);
+	UE_LOG(LogTemp, Warning, TEXT("OnMyCreateSession : %s, BuildId : 0x%08x"), *roomName, GetBuildUniqueId());
 
 	SessionInterface->CreateSession(*netID, NAME_GameSession, settings);
 }
@@ -131,6 +164,10 @@ void UOnlineSessionsSubsystem::OnMyFindSessions()
 	SessionSearch = MakeShareable(new FOnlineSessionSearch());
 
 	SessionSearch->QuerySettings.Set(SEARCH_LOBBIES, true, EOnlineComparisonOp::Equals);
+	if (false == bDiagnoseSessionFilters)
+	{
+		SessionSearch->QuerySettings.Set(SETTING_GAME_ID, MINTCHOCO_GAME_ID, EOnlineComparisonOp::Equals);
+	}
 	SessionSearch->bIsLanQuery = bIsLanSubsystem;
 	SessionSearch->MaxSearchResults = 50;
 
@@ -141,17 +178,41 @@ void UOnlineSessionsSubsystem::OnMyFindSessions()
 
 void UOnlineSessionsSubsystem::OnMyFindSessionsComplete(bool bWasSuccessful)
 {
-	UE_LOG(LogTemp, Warning, TEXT("OnMyFindSessionsComplete"));
+	UE_LOG(LogTemp, Warning, TEXT("OnMyFindSessionsComplete : bWasSuccessful : %d, BuildId : 0x%08x"),
+		   bWasSuccessful, GetBuildUniqueId());
 
 	OnSearchLockComplete.Broadcast(false);
 	if (bWasSuccessful)
 	{
 		TArray<FOnlineSessionSearchResult> results = SessionSearch->SearchResults;
 
+		// 0이면 Steam이 아무것도 돌려주지 않은 것, 그 이상이면 아래 필터가 범인인지 알 수 있다.
+		UE_LOG(LogTemp, Warning, TEXT("SearchResults : %d"), results.Num());
+
 		for (int32 i = 0; i < results.Num(); i++)
 		{
 			FOnlineSessionSearchResult& ssr = results[i];
 			if (false == ssr.IsValid()) continue;
+
+			FString gameId;
+			const bool bHasGameId = ssr.Session.SessionSettings.Get(SETTING_GAME_ID, gameId);
+
+			if (bDiagnoseSessionFilters)
+			{
+				UE_LOG(LogTemp, Warning,
+					   TEXT("  [%d] GAME_ID '%s' (found %d), BuildId 0x%08x, Owner '%s', %d/%d"),
+					   i, *gameId, bHasGameId,
+					   ssr.Session.SessionSettings.BuildUniqueId,
+					   *ssr.Session.OwningUserName,
+					   ssr.Session.SessionSettings.NumPublicConnections - ssr.Session.NumOpenPublicConnections,
+					   ssr.Session.SessionSettings.NumPublicConnections);
+			}
+			// NULL 서브시스템(LAN)은 QuerySettings를 무시하므로 여기서 한 번 더 거른다.
+			else if (false == bHasGameId || gameId != MINTCHOCO_GAME_ID)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Filtered out by GAME_ID : '%s'"), *gameId);
+				continue;
+			}
 
 			FMySessionInfo sessionInfo;
 
@@ -211,7 +272,7 @@ void UOnlineSessionsSubsystem::OnMyDestroySessionComplete(FName SessionName, boo
 	if (bWasSuccessful)
 	{
 		auto pc = GetWorld()->GetFirstPlayerController();
-		pc->ClientTravel(TEXT("/Game/MutiPlayer/Maps/LobbyMap"), TRAVEL_Absolute);
+		pc->ClientTravel(TEXT("/Game/Maps/Room"), TRAVEL_Absolute);
 	}
 }
 

@@ -18,11 +18,6 @@ void UCreateRoomPopupWidget::NativeConstruct()
 
 void UCreateRoomPopupWidget::OnCreateRoom()
 {
-	if (false == TxtBox_InputGameName->GetText().IsEmpty())
-	{
-		OSS->MySessionName = TxtBox_InputGameName->GetText().ToString();
-	}
-
 	OSS->OnMyCreateSession(
 		TxtBox_InputGameName->GetText().ToString(),
 		100);

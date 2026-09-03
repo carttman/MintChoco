@@ -32,6 +32,9 @@ private:
 	UFUNCTION()
 	void OnRep_NicknameChange();
 
+	UFUNCTION(BlueprintCallable)
+	void SetNickname();
+
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated)
 	bool Ready;

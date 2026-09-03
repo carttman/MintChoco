@@ -2,6 +2,8 @@
 
 
 #include "LobbyPlayerState.h"
+
+#include "OnlineSessionsSubsystem.h"
 #include "Net/UnrealNetwork.h"
 
 void ALobbyPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -27,4 +29,10 @@ void ALobbyPlayerState::RefreshLobbyUI()
 void ALobbyPlayerState::OnRep_NicknameChange()
 {
 	RefreshLobbyUI();
+}
+
+void ALobbyPlayerState::SetNickname()
+{
+	auto* OSS = GetGameInstance()->GetSubsystem<UOnlineSessionsSubsystem>();
+	Nickname = FText::FromString(OSS->GetLocalPlayerNickname());
 }
