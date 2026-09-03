@@ -6,10 +6,11 @@
 #include "Blueprint/UserWidget.h"
 #include "LobbyUserWidget.generated.h"
 
-class ALobbyPlayerState;
-class UButton;
-class UEditableTextBox;
 class UTextBlock;
+class UEditableTextBox;
+class UButton;
+class ALobbyPlayerState;
+
 /**
  *
  */
@@ -23,26 +24,25 @@ public:
 	void SetInfo(ALobbyPlayerState* InPlayerState);
 
 	UFUNCTION(BlueprintCallable)
-	void ReFreshUI();
+	void RefreshUI();
+
 protected:
 	UPROPERTY(BlueprintReadWrite, meta=(BindWidget))
 	TObjectPtr<UTextBlock> Txt_Ready;
 
-	UPROPERTY(BlueprintReadWrite, meta=(BindWidget))
+	UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
 	TObjectPtr<UTextBlock> Txt_PlayerName;
 
-	UPROPERTY(BlueprintReadWrite, meta=(BindWidget))
+	UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
 	TObjectPtr<UEditableTextBox> Editable_PlayerName;
 
-	UPROPERTY(BlueprintReadWrite, meta=(BindWidget))
+	UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
 	TObjectPtr<UButton> Btn_Ready;
 
-	UPROPERTY(BlueprintReadWrite, meta=(BindWidget))
+	UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
 	TObjectPtr<UButton> Btn_KickPlayer;
 
 protected:
 	UPROPERTY(BlueprintReadWrite)
 	TObjectPtr<ALobbyPlayerState> PlayerState;
-
-
 };

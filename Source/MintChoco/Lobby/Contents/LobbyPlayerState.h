@@ -15,10 +15,27 @@ class MINTCHOCO_API ALobbyPlayerState : public APlayerState
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Lobby")
+	virtual void GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const override;
+
+public:
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_Ready();
+
+public:
+	UFUNCTION(BlueprintImplementableEvent)
+	void BP_RefreshLobbyUI();
+
+	UFUNCTION(BlueprintCallable)
+	void RefreshLobbyUI();
+
+private:
+	UFUNCTION()
+	void OnRep_NicknameChange();
+
+public:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated)
 	bool Ready;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Lobby")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing=OnRep_NicknameChange)
 	FText Nickname;
-
 };

@@ -7,11 +7,17 @@
 #include "LobbyGameMode.generated.h"
 
 /**
- * 
+ *
  */
 UCLASS()
 class MINTCHOCO_API ALobbyGameMode : public AGameModeBase
 {
 	GENERATED_BODY()
-	
+
+public:
+	UFUNCTION(BlueprintImplementableEvent)
+	void BP_TryStartGame();
+
+	UFUNCTION(BlueprintCallable)
+	void TryStartGame();
 };
