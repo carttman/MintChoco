@@ -9,16 +9,6 @@
 #include "components/Button.h"
 
 
-bool URoomListWidget::Initialize()
-{
-	if (Super::Initialize() == false)
-			return false;
-
-	//SetInfo();
-
-	return true;
-}
-
 void URoomListWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -27,6 +17,7 @@ void URoomListWidget::NativeConstruct()
 
 	Btn_Refresh->OnClicked.AddDynamic(this, &URoomListWidget::OnMyFindRoom);
 	OSS->OnSearchComplete.AddDynamic(this, &URoomListWidget::AddItemWidget);
+	OSS->OnSearchLockComplete.AddDynamic(this, &URoomListWidget::OnSetRefreshBtn);
 }
 
 // // 미리 50개정도 만들고 UI 갱신
@@ -83,7 +74,7 @@ void URoomListWidget::OnMyFindRoom()
 {
 	Rooms.Empty();
 	RoomList->ClearChildren();
-
+	//Btn_Refresh->SetIsEnabled(false);
 	UE_LOG(LogTemp, Warning, TEXT("URoomListWidget::OnMyFindRoom"));
 
 	if (OSS)
@@ -99,6 +90,12 @@ void URoomListWidget::AddItemWidget(const struct FMySessionInfo& SessionInfo)
 	RoomList->AddChildToWrapBox(ItemWidget);
 
 	Rooms.Add(ItemWidget);
+}
+
+
+void URoomListWidget::OnSetRefreshBtn(bool flag)
+{
+	Btn_Refresh->SetIsEnabled(!flag);
 }
 
 
