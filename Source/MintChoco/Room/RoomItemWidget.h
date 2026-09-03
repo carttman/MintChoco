@@ -18,7 +18,9 @@ UCLASS()
 class MINTCHOCO_API URoomItemWidget : public UUserWidget
 {
 	GENERATED_BODY()
+private:
 
+	virtual void NativeConstruct() override;
 public:
 	// UFUNCTION(BlueprintCallable)
 	// void SetInfo(FBlueprintSessionResult InSessionResult);
@@ -29,6 +31,8 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void RefreshUI();
 
+	UFUNCTION()
+	void OnTryJoinSession();
 protected:
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
 	TObjectPtr<UTextBlock> Txt_RoomName;
@@ -46,5 +50,6 @@ public:
 	UPROPERTY(BlueprintReadOnly)
 	FMySessionInfo Result;
 
+	int32 SessionSearchIndex;
 
 };

@@ -12,9 +12,17 @@
 // 	RefreshUI();
 // }
 
+void URoomItemWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+
+	Btn_Join->OnClicked.AddDynamic(this, &URoomItemWidget::OnTryJoinSession);
+}
+
 void URoomItemWidget::SetInfo(const struct FMySessionInfo& SessionInfo)
 {
 	Result = SessionInfo;
+	SessionSearchIndex = SessionInfo.Index;
 	RefreshUI();
 }
 
@@ -36,4 +44,13 @@ void URoomItemWidget::RefreshUI()
 	//const int32 MaxPlayers = Result.OnlineResult.Session.SessionSettings.NumPublicConnections;
 	//FString PlayerCountString = FString::Printf(TEXT("( %d / %d )"), CurrentPlayers, MaxPlayers);
 	//Txt_PlayerCount->SetText(FText::FromString(PlayerCountString));
+}
+
+void URoomItemWidget::OnTryJoinSession()
+{
+	auto* OSS = GetGameInstance()->GetSubsystem<UOnlineSessionsSubsystem>();
+	if (OSS)
+	{
+		OSS->OnMyJoinSession(SessionSearchIndex);
+	}
 }

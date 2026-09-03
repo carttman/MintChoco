@@ -26,8 +26,8 @@ public:
 	// UFUNCTION(BlueprintCallable)
 	// void SetInfo();
 
-	UFUNCTION(BlueprintCallable)
-	void RefreshUI();
+	// UFUNCTION(BlueprintCallable)
+	// void RefreshUI();
 
 	UFUNCTION()
 	void OnMyFindRoom();

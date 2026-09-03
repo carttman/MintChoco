@@ -52,32 +52,32 @@ void URoomListWidget::NativeConstruct()
 //
 // 	RefreshUI();
 // }
-void URoomListWidget::RefreshUI()
-{
-	//Cache Session Length
-	const int32 SessionLength = SessionInfos.Num();
-
-	for (int32 i=0; i<Rooms.Num(); i++)
-	{
-		const int32 Index = i;
-
-		if (Index < SessionLength)
-		{
-			//ShowUI
-			Rooms[Index]->SetVisibility(ESlateVisibility::Visible);
-
-			//FBlueprintSessionResult Result = SessionInfos[Index];
-			auto Result = SessionInfos[Index];
-			Rooms[Index]->SetInfo(Result);
-
-		}
-		else
-		{
-			//HideUI
-			Rooms[Index]->SetVisibility(ESlateVisibility::Collapsed);
-		}
-	}
-}
+// void URoomListWidget::RefreshUI()
+// {
+// 	//Cache Session Length
+// 	const int32 SessionLength = SessionInfos.Num();
+//
+// 	for (int32 i=0; i<Rooms.Num(); i++)
+// 	{
+// 		const int32 Index = i;
+//
+// 		if (Index < SessionLength)
+// 		{
+// 			//ShowUI
+// 			Rooms[Index]->SetVisibility(ESlateVisibility::Visible);
+//
+// 			//FBlueprintSessionResult Result = SessionInfos[Index];
+// 			auto Result = SessionInfos[Index];
+// 			Rooms[Index]->SetInfo(Result);
+//
+// 		}
+// 		else
+// 		{
+// 			//HideUI
+// 			Rooms[Index]->SetVisibility(ESlateVisibility::Collapsed);
+// 		}
+// 	}
+// }
 
 void URoomListWidget::OnMyFindRoom()
 {
