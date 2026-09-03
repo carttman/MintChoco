@@ -4,6 +4,7 @@
 #include "OnlineSessionsSubsystem.h"
 #include "OnlineSubsystem.h"
 #include "OnlineSessionSettings.h"
+#include "OnlineSubsystemUtils.h"
 #include "Online/OnlineSessionNames.h"
 #include "Kismet/GameplayStatics.h"
 #include <string>
@@ -31,8 +32,13 @@ void UOnlineSessionsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 		GEngine->OnNetworkFailure().AddUObject(this, &UOnlineSessionsSubsystem::OnNetworkFailure);
 	}
 
-	if (auto* subsys = IOnlineSubsystem::Get())
+	// PIE에서는 월드마다 별도의 OSS 인스턴스가 존재한다. 월드 없이 IOnlineSubsystem::Get()을
+	// 부르면 모든 PIE 인스턴스가 전역 인스턴스 하나를 공유하게 되어, 한 인스턴스의
+	// CreateSession 완료 델리게이트가 나머지 인스턴스에서도 전부 호출된다.
+	if (auto* subsys = Online::GetSubsystem(GetWorld()))
 	{
+		bIsLanSubsystem = FName("NULL") == subsys->GetSubsystemName();
+
 		SessionInterface = subsys->GetSessionInterface();
 		if (SessionInterface)
 		{
@@ -56,11 +62,14 @@ void UOnlineSessionsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UOnlineSessionsSubsystem::Deinitialize()
 {
-	SessionInterface->OnCreateSessionCompleteDelegates.Remove(CreateSessionDelegateHandle);
-	SessionInterface->OnFindSessionsCompleteDelegates.Remove(FindSessionDelegateHandle);
-	SessionInterface->OnJoinSessionCompleteDelegates.Remove(JoinSessionDelegateHandle);
-	SessionInterface->OnDestroySessionCompleteDelegates.Remove(DestroySessionDelegateHandle);
-	SessionInterface->OnSessionUserInviteAcceptedDelegates.Remove(UserInviteDelegateHandle);
+	if (SessionInterface.IsValid())
+	{
+		SessionInterface->OnCreateSessionCompleteDelegates.Remove(CreateSessionDelegateHandle);
+		SessionInterface->OnFindSessionsCompleteDelegates.Remove(FindSessionDelegateHandle);
+		SessionInterface->OnJoinSessionCompleteDelegates.Remove(JoinSessionDelegateHandle);
+		SessionInterface->OnDestroySessionCompleteDelegates.Remove(DestroySessionDelegateHandle);
+		SessionInterface->OnSessionUserInviteAcceptedDelegates.Remove(UserInviteDelegateHandle);
+	}
 	if (GEngine)
 	{
 		GEngine->OnNetworkFailure().RemoveAll(this);
@@ -75,7 +84,7 @@ void UOnlineSessionsSubsystem::OnMyCreateSession(FString roomName, int32 maxPlay
 
 	settings.bIsDedicated = false;
 	// true 랜매치인가? false 스팀인가?
-	settings.bIsLANMatch = FName("NULL") == IOnlineSubsystem::Get()->GetSubsystemName();
+	settings.bIsLANMatch = bIsLanSubsystem;
 	// 매칭이 온라인에 노출시킬것인가?
 	settings.bShouldAdvertise = true;
 	// 온라인 상태 정보를 활용할것인가?
@@ -99,7 +108,7 @@ void UOnlineSessionsSubsystem::OnMyCreateSession(FString roomName, int32 maxPlay
 
 	UE_LOG(LogTemp, Warning, TEXT("OnMyCreateSession : %s"), *MySessionName);
 
-	SessionInterface->CreateSession(*netID, FName(MySessionName), settings);
+	SessionInterface->CreateSession(*netID, NAME_GameSession, settings);
 }
 
 void UOnlineSessionsSubsystem::OnMyCreateSessionComplete(FName SessionName, bool bWasSuccessful)
@@ -122,7 +131,7 @@ void UOnlineSessionsSubsystem::OnMyFindSessions()
 	SessionSearch = MakeShareable(new FOnlineSessionSearch());
 
 	SessionSearch->QuerySettings.Set(SEARCH_LOBBIES, true, EOnlineComparisonOp::Equals);
-	SessionSearch->bIsLanQuery = FName("NULL") == IOnlineSubsystem::Get()->GetSubsystemName();
+	SessionSearch->bIsLanQuery = bIsLanSubsystem;
 	SessionSearch->MaxSearchResults = 50;
 
 	SessionInterface->FindSessions(0, SessionSearch.ToSharedRef());
@@ -172,7 +181,7 @@ void UOnlineSessionsSubsystem::OnMyFindSessionsComplete(bool bWasSuccessful)
 void UOnlineSessionsSubsystem::OnMyJoinSession(int32 index)
 {
 	auto sr = SessionSearch->SearchResults[index];
-	SessionInterface->JoinSession(0, FName(MySessionName), sr);
+	SessionInterface->JoinSession(0, NAME_GameSession, sr);
 }
 
 void UOnlineSessionsSubsystem::OnMyJoinSessionComplete(FName SessionName, EOnJoinSessionCompleteResult::Type Result)
@@ -194,7 +203,7 @@ void UOnlineSessionsSubsystem::OnMyJoinSessionComplete(FName SessionName, EOnJoi
 
 void UOnlineSessionsSubsystem::OnMyExitRoom()
 {
-	SessionInterface->DestroySession(FName(MySessionName));
+	SessionInterface->DestroySession(NAME_GameSession);
 }
 
 void UOnlineSessionsSubsystem::OnMyDestroySessionComplete(FName SessionName, bool bWasSuccessful)
@@ -211,10 +220,7 @@ void UOnlineSessionsSubsystem::OnMyInviteAcceptedComplete(bool bWasSuccessful, i
 {
 	if (bWasSuccessful)
 	{
-		FString roomName;
-		InviteResult.Session.SessionSettings.Get(FName("ROOM_NAME"), roomName);
-		roomName = StringBase64Decoder(roomName);
-		SessionInterface->JoinSession(0, FName(roomName), InviteResult);
+		SessionInterface->JoinSession(0, NAME_GameSession, InviteResult);
 	}
 }
 
