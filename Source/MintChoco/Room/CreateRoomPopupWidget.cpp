@@ -11,20 +11,20 @@ void UCreateRoomPopupWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	GI = GetGameInstance()->GetSubsystem<UOnlineSessionsSubsystem>();
+	OSS = GetGameInstance()->GetSubsystem<UOnlineSessionsSubsystem>();
 
 	Btn_Create->OnClicked.AddDynamic(this, &UCreateRoomPopupWidget::OnCreateRoom);
-
 }
 
 void UCreateRoomPopupWidget::OnCreateRoom()
 {
 	if (false == TxtBox_InputGameName->GetText().IsEmpty())
 	{
-		GI->MySessionName = TxtBox_InputGameName->GetText().ToString();
+		OSS->MySessionName = TxtBox_InputGameName->GetText().ToString();
 	}
 
-	GI->OnMyCreateSession(
+	OSS->OnMyCreateSession(
 		TxtBox_InputGameName->GetText().ToString(),
 		100);
 }
+

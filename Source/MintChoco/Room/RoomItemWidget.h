@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "FindSessionsCallbackProxy.h"
+#include "OnlineSessionsSubsystem.h"
 #include "Blueprint/UserWidget.h"
 #include "RoomItemWidget.generated.h"
 
@@ -19,8 +20,11 @@ class MINTCHOCO_API URoomItemWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	// UFUNCTION(BlueprintCallable)
+	// void SetInfo(FBlueprintSessionResult InSessionResult);
+
 	UFUNCTION(BlueprintCallable)
-	void SetInfo(FBlueprintSessionResult InSessionResult);
+	void SetInfo(const struct FMySessionInfo& SessionInfo);
 
 	UFUNCTION(BlueprintCallable)
 	void RefreshUI();
@@ -40,5 +44,7 @@ protected:
 
 public:
 	UPROPERTY(BlueprintReadOnly)
-	FBlueprintSessionResult Result;
+	FMySessionInfo Result;
+
+
 };

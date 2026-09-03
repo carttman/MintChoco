@@ -18,7 +18,7 @@ public:
 	virtual void NativeConstruct() override;
 
 	UPROPERTY()
-	TObjectPtr<class UOnlineSessionsSubsystem> GI;
+	TObjectPtr<class UOnlineSessionsSubsystem> OSS;
 
 	UPROPERTY(meta=(BindWidget))
 	TObjectPtr<class UEditableTextBox> TxtBox_InputGameName;
@@ -29,4 +29,5 @@ public:
 public:
 	UFUNCTION()
 	void OnCreateRoom();
+
 };

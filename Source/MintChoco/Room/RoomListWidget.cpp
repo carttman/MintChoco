@@ -2,6 +2,8 @@
 
 
 #include "Room/RoomListWidget.h"
+
+#include "OnlineSessionsSubsystem.h"
 #include "RoomItemWidget.h"
 #include "Components/WrapBox.h"
 #include "components/Button.h"
@@ -12,34 +14,44 @@ bool URoomListWidget::Initialize()
 	if (Super::Initialize() == false)
 			return false;
 
-	SetInfo();
+	//SetInfo();
 
 	return true;
 }
 
-void URoomListWidget::SetInfo()
+void URoomListWidget::NativeConstruct()
 {
-	//Clear Children
-	Rooms.Empty();
+	Super::NativeConstruct();
 
-	//Create Child Widget
-	for (int32 i = 0; i<50; i++)
-	{
-		if (RoomItemWidgetClass == nullptr)
-			continue;
+	OSS = GetGameInstance()->GetSubsystem<UOnlineSessionsSubsystem>();
 
-		URoomItemWidget* ChildWidget = CreateWidget<URoomItemWidget>(GetWorld(), RoomItemWidgetClass);
-		if (ChildWidget == nullptr)
-			continue;
-
-		RoomList->AddChildToWrapBox(ChildWidget);
-
-		Rooms.Add(ChildWidget);
-	}
-
-	RefreshUI();
+	Btn_Refresh->OnClicked.AddDynamic(this, &URoomListWidget::OnMyFindRoom);
+	OSS->OnSearchComplete.AddDynamic(this, &URoomListWidget::AddItemWidget);
 }
 
+// // 미리 50개정도 만들고 UI 갱신
+// void URoomListWidget::SetInfo()
+// {
+// 	//Clear Children
+// 	Rooms.Empty();
+//
+// 	//Create Child Widget
+// 	for (int32 i = 0; i<50; i++)
+// 	{
+// 		if (RoomItemWidgetClass == nullptr)
+// 			continue;
+//
+// 		URoomItemWidget* ChildWidget = CreateWidget<URoomItemWidget>(GetWorld(), RoomItemWidgetClass);
+// 		if (ChildWidget == nullptr)
+// 			continue;
+//
+// 		RoomList->AddChildToWrapBox(ChildWidget);
+//
+// 		Rooms.Add(ChildWidget);
+// 	}
+//
+// 	RefreshUI();
+// }
 void URoomListWidget::RefreshUI()
 {
 	//Cache Session Length
@@ -54,7 +66,8 @@ void URoomListWidget::RefreshUI()
 			//ShowUI
 			Rooms[Index]->SetVisibility(ESlateVisibility::Visible);
 
-			FBlueprintSessionResult Result = SessionInfos[Index];
+			//FBlueprintSessionResult Result = SessionInfos[Index];
+			auto Result = SessionInfos[Index];
 			Rooms[Index]->SetInfo(Result);
 
 		}
@@ -65,3 +78,27 @@ void URoomListWidget::RefreshUI()
 		}
 	}
 }
+
+void URoomListWidget::OnMyFindRoom()
+{
+	Rooms.Empty();
+	RoomList->ClearChildren();
+
+	UE_LOG(LogTemp, Warning, TEXT("URoomListWidget::OnMyFindRoom"));
+
+	if (OSS)
+	{
+		OSS->OnMyFindSessions();
+	}
+}
+
+void URoomListWidget::AddItemWidget(const struct FMySessionInfo& SessionInfo)
+{
+	URoomItemWidget* ItemWidget = CreateWidget<URoomItemWidget>(this, RoomItemWidgetClass);
+	ItemWidget->SetInfo(SessionInfo);
+	RoomList->AddChildToWrapBox(ItemWidget);
+
+	Rooms.Add(ItemWidget);
+}
+
+

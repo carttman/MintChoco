@@ -123,7 +123,7 @@ void UOnlineSessionsSubsystem::OnMyFindSessions()
 
 	SessionSearch->QuerySettings.Set(SEARCH_LOBBIES, true, EOnlineComparisonOp::Equals);
 	SessionSearch->bIsLanQuery = FName("NULL") == IOnlineSubsystem::Get()->GetSubsystemName();
-	SessionSearch->MaxSearchResults = 30;
+	SessionSearch->MaxSearchResults = 50;
 
 	SessionInterface->FindSessions(0, SessionSearch.ToSharedRef());
 
@@ -132,22 +132,24 @@ void UOnlineSessionsSubsystem::OnMyFindSessions()
 
 void UOnlineSessionsSubsystem::OnMyFindSessionsComplete(bool bWasSuccessful)
 {
+	UE_LOG(LogTemp, Warning, TEXT("OnMyFindSessionsComplete"));
+
 	OnSearchLockComplete.Broadcast(false);
 	if (bWasSuccessful)
 	{
-		auto results = SessionSearch->SearchResults;
+		TArray<FOnlineSessionSearchResult> results = SessionSearch->SearchResults;
 
 		for (int32 i = 0; i < results.Num(); i++)
 		{
-			auto& ssr = results[i];
+			FOnlineSessionSearchResult& ssr = results[i];
 			if (false == ssr.IsValid()) continue;
 
-			FSessionInfo sessionInfo;
+			FMySessionInfo sessionInfo;
 
 			sessionInfo.Index = i;
 
-			ssr.Session.SessionSettings.Get(FName("ROOM_NAME"), sessionInfo.RoomName);
-			ssr.Session.SessionSettings.Get(FName("HOST_NAME"), sessionInfo.HostName);
+			ssr.Session.SessionSettings.Get(FName("ROOM_NAME"), OUT sessionInfo.RoomName);
+			ssr.Session.SessionSettings.Get(FName("HOST_NAME"), OUT sessionInfo.HostName);
 
 			sessionInfo.RoomName = StringBase64Decoder(sessionInfo.RoomName);
 			sessionInfo.HostName = StringBase64Decoder(sessionInfo.HostName);

@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "FindSessionsCallbackProxy.h"
+#include "OnlineSessionsSubsystem.h"
 #include "Blueprint/UserWidget.h"
 #include "RoomListWidget.generated.h"
 
@@ -21,14 +21,24 @@ class MINTCHOCO_API URoomListWidget : public UUserWidget
 
 public:
 	virtual bool Initialize() override;
+	virtual void NativeConstruct() override;
 
-	UFUNCTION(BlueprintCallable)
-	void SetInfo();
+	// UFUNCTION(BlueprintCallable)
+	// void SetInfo();
 
 	UFUNCTION(BlueprintCallable)
 	void RefreshUI();
 
+	UFUNCTION()
+	void OnMyFindRoom();
+
+	UFUNCTION()
+	void AddItemWidget(const struct FMySessionInfo& SessionInfo);
+
 protected:
+	UPROPERTY()
+	TObjectPtr<class UOnlineSessionsSubsystem> OSS;
+
 	UPROPERTY(BlueprintReadWrite, meta=(BindWidget))
 	TObjectPtr<UWrapBox> RoomList;
 
@@ -49,5 +59,7 @@ protected:
 	TArray<TObjectPtr<URoomItemWidget>> Rooms;
 
 	UPROPERTY(BlueprintReadWrite)
-	TArray<FBlueprintSessionResult> SessionInfos;
+	TArray<FMySessionInfo> SessionInfos;
+
+
 };

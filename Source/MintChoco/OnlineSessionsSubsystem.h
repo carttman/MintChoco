@@ -13,7 +13,7 @@
  */
 
 USTRUCT(BlueprintType)
-struct FSessionInfo
+struct FMySessionInfo
 {
 	GENERATED_BODY()
 
@@ -49,7 +49,7 @@ struct FSessionInfo
 	}
 };
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSearchSignature, const struct FSessionInfo&, SessionInfo);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSearchSignature, const struct FMySessionInfo&, SessionInfo);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSearchLockSignature, bool, bSearching);
 
 UCLASS()
