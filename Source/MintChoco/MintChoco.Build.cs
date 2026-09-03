@@ -20,7 +20,7 @@ public class MintChoco : ModuleRules
 			"UMG",
 			"Slate",
 			"SlateCore",
-			"RHI"
+			"RHI",
 			"OnlineSubsystem",
 			"OnlineSubsystemSteam",
 			"OnlineSubsystemUtils",
