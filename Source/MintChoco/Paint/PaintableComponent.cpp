@@ -21,18 +21,20 @@ namespace
 	const FName BrushSeedParam(TEXT("BrushSeed"));
 	const FName BrushImpactUParam(TEXT("BrushImpactU"));
 	const FName BrushHeightAddParam(TEXT("BrushHeightAdd"));
+	const FName BrushDistRangeParam(TEXT("BrushDistRange"));
 	const FName PreviousPaintParam(TEXT("PreviousPaint"));
-	const FName PaintRenderTargetParam(TEXT("PaintRT"));
-	// The relief custom node reads the id buffer through its own TextureObjectParameter. It must
-	// NOT share PaintRT's name: an override on a name used by both a sampler parameter and a
-	// texture-object parameter only reaches the sampler one.
+	// The surface reads the paint buffer through a TextureObjectParameter. Keep that name unique:
+	// an override on a name shared by a sampler parameter and a texture-object parameter only
+	// reaches the sampler one.
 	const FName PaintIdMapParam(TEXT("PaintIdMap"));
 	const FName PaintTexelSizeParam(TEXT("PaintTexelSize"));
+	const FName PaintDistRangeParam(TEXT("PaintDistRange"));
 	const FName PositionMapParam(TEXT("PositionMap"));
 	const FName BoundsMinParam(TEXT("BoundsMin"));
 	const FName BoundsSizeParam(TEXT("BoundsSize"));
 	const FName PaintEdgeFadeParam(TEXT("PaintEdgeFade"));
 	const FName FadeTexelsParam(TEXT("FadeTexels"));
+	const FName SeamFractionParam(TEXT("SeamFraction"));
 }
 
 UPaintableComponent::UPaintableComponent()
@@ -62,6 +64,7 @@ void UPaintableComponent::BeginPlay()
 	FrontBufferIndex = 0;
 
 	BrushMID = UMaterialInstanceDynamic::Create(BrushMaterial, this);
+	BrushMID->SetScalarParameterValue(BrushDistRangeParam, PaintDistanceRange);
 
 	// An unset SurfaceMaterial means "keep what the mesh already has and blend paint into it",
 	// so the original look survives instead of being replaced by a stand-in.
@@ -75,10 +78,11 @@ void UPaintableComponent::BeginPlay()
 	}
 
 	SurfaceMID = UMaterialInstanceDynamic::Create(BaseMaterial, this);
-	SurfaceMID->SetTextureParameterValue(PaintRenderTargetParam, GetPaintRenderTarget());
 	SurfaceMID->SetTextureParameterValue(PaintIdMapParam, GetPaintRenderTarget());
-	// The relief blur in MF_PaintOverlay measures its taps in texels, so it needs the actual size.
+	// The paint reads filter the buffer by hand in texel units, so they need the actual size.
 	SurfaceMID->SetScalarParameterValue(PaintTexelSizeParam, 1.0f / RenderTargetResolution);
+	// The reads decode the brush's distance encoding, so both sides must agree on its range.
+	SurfaceMID->SetScalarParameterValue(PaintDistRangeParam, PaintDistanceRange);
 	TargetMesh->SetMaterial(SurfaceMaterialSlot, SurfaceMID);
 
 	PositionBaker = NewObject<UPositionMapBaker>(this);
@@ -113,7 +117,7 @@ UTextureRenderTarget2D* UPaintableComponent::CreateIdBuffer(UObject* Outer, int3
 	// settings fixed before the resource is created: bilinear filtering would invent team IDs
 	// on every splat boundary, and sRGB would corrupt the ID -> byte round trip.
 	const auto Buffer = NewObject<UTextureRenderTarget2D>(Outer);
-	// R stores the team id, G accumulates deposited paint height, B the distance to the
+	// R stores the paint id, G accumulates deposited paint height, B the distance to the
 	// nearest paint edge in texels, encoded as 1 - d / PaintDistanceRange so that a cleared
 	// or default texel (B = 0) reads as "far".
 	Buffer->RenderTargetFormat = RTF_RGBA8;
@@ -228,7 +232,6 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 
 	if (SurfaceMID)
 	{
-		SurfaceMID->SetTextureParameterValue(PaintRenderTargetParam, Back);
 		SurfaceMID->SetTextureParameterValue(PaintIdMapParam, Back);
 	}
 }
@@ -336,6 +339,7 @@ void UPaintableComponent::BakeEdgeFade(UTextureRenderTarget2D* PositionMap)
 
 	EdgeFadeMID->SetTextureParameterValue(PositionMapParam, PositionMap);
 	EdgeFadeMID->SetScalarParameterValue(FadeTexelsParam, EdgeFadeTexels);
+	EdgeFadeMID->SetScalarParameterValue(SeamFractionParam, EdgeFadeSeamFraction);
 
 	// The map only depends on the unwrap, never on the paint, so one draw per bake is enough.
 	UKismetRenderingLibrary::DrawMaterialToRenderTarget(this, EdgeFadeRenderTarget, EdgeFadeMID);

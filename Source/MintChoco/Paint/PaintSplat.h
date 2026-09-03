@@ -11,7 +11,7 @@
 inline constexpr uint8 PaintIdCount = 8;
 inline constexpr uint8 PaintIdNone = PaintIdCount - 1;
 
-/** Clear color that fills an id buffer with PaintIdNone in its R8 encoding. */
+/** Clear color that fills a paint buffer with PaintIdNone in R, no height and "far" in B. */
 inline const FLinearColor PaintIdNoneColor(PaintIdNone / 255.0f, 0.0f, 0.0f);
 
 /**
