@@ -8,7 +8,8 @@
 
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
-class UMeshComponent;
+class UPositionMapBaker;
+class UStaticMeshComponent;
 class UTextureRenderTarget2D;
 
 /**
@@ -44,23 +45,27 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/**
-	 * Fills in a splat from a trace or collision hit against this component's owner.
-	 *
-	 * The UV lookup lives here rather than in the caller because the UV layout is a property of
-	 * the surface, not of whatever threw paint at it. A click trace, a paintball and a mop all
-	 * arrive with an FHitResult and should not each need to know the channel.
+	 * Fills in a splat from a trace or collision hit. A click trace, a paintball and a mop all
+	 * arrive with an FHitResult and produce this same struct; only the values differ.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Paint")
-	bool BuildSplatFromHit(
+	FPaintSplat BuildSplatFromHit(
 		const FHitResult& Hit,
 		FVector IncidentVelocity,
 		uint8 PaintId,
-		float Volume,
-		FPaintSplat& OutSplat) const;
+		float Volume) const;
 
 	/** Draws one splat into the render target. */
 	UFUNCTION(BlueprintCallable, Category = "Paint")
 	void ApplySplat(const FPaintSplat& Splat);
+
+	/**
+	 * Applies one splat to every paintable surface within the splat's world radius. The
+	 * world-space brush makes this trivial: every component tests its own texels against the
+	 * same sphere, so a splat landing near an actor boundary simply paints both sides.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Paint", meta = (WorldContext = "WorldContextObject"))
+	static void ApplySplatInRadius(const UObject* WorldContextObject, const FPaintSplat& Splat, float WorldRadius);
 
 	UFUNCTION(BlueprintCallable, Category = "Paint")
 	void ClearPaint();
@@ -76,24 +81,31 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Paint")
 	UTextureRenderTarget2D* GetPaintRenderTarget() const { return PaintRenderTargets[FrontBufferIndex]; }
 
+	/** Bounds-normalized local position per texel. Null until the baker has delivered. */
+	UFUNCTION(BlueprintPure, Category = "Paint")
+	UTextureRenderTarget2D* GetPositionRenderTarget() const;
+
 protected:
 	/** Square resolution of the paint render target. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
 	int32 RenderTargetResolution = 1024;
 
-	/**
-	 * UV channel the paint is addressed in.
-	 *
-	 * Channel 0 of the engine's basic shapes maps every face onto the same 0-1 square, so
-	 * painting one face of a cube would paint all six. The lightmap channel is a real
-	 * non-overlapping unwrap, which is what painting needs. This whole property disappears once
-	 * painting moves to a world-position unwrap.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
-	int32 PaintUVChannel = 1;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
 	TObjectPtr<UMaterialInterface> BrushMaterial;
+
+	/**
+	 * Unlit material whose WPO flattens the mesh into its UV layout while the emissive outputs
+	 * the pre-offset local position, normalized to the object bounds (M_PaintUnwrap).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
+	TObjectPtr<UMaterialInterface> UnwrapMaterial;
+
+	/**
+	 * World-space size of the plane the mesh unwraps onto during the bake. The value itself is
+	 * arbitrary; it only has to match the capture's ortho width, which BakePositionMap guarantees.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
+	float UnwrapPlaneSize = 1000.0f;
 
 	/**
 	 * Optional override. Leave it unset to keep whatever material the mesh already has and simply
@@ -107,27 +119,63 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
 	int32 SurfaceMaterialSlot = 0;
 
-	/** Radius in UV units for a splat of unit volume arriving at zero speed. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
-	float BaseRadius = 0.05f;
+	/**
+	 * Unlit material that writes, per texel, how close the unwrap island edge is (M_PaintEdgeFade).
+	 * Displacement is scaled by it: at a hard edge the neighbouring faces rise along different
+	 * vertex normals, so any height left there tears the mesh open.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
+	TObjectPtr<UMaterialInterface> EdgeFadeMaterial;
 
-	/** UV radius added per cm/s of impact speed. */
+	/** Width of the displacement fade at island edges, in paint texels. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning", meta = (ClampMin = "1"))
+	float EdgeFadeTexels = 8.0f;
+
+	/** Radius in cm for a splat of unit volume arriving at zero speed. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
-	float RadiusPerSpeed = 0.000005f;
+	float BaseRadius = 25.0f;
+
+	/** cm of radius added per cm/s of impact speed. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
+	float RadiusPerSpeed = 0.005f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
-	float MaxRadius = 0.25f;
+	float MaxRadius = 120.0f;
 
 	/** Upper bound on 1 / cos(incidence). Without it a grazing hit stretches to infinity. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
 	float MaxStretch = 3.0f;
 
+	/**
+	 * Fraction of the stretch-added radius the splat center slides along the tangent. 0 keeps
+	 * the ellipse centered on the contact; 1 keeps the near edge pinned there instead.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
+	float CenterShiftScale = 0.5f;
+
+	/**
+	 * Below this stretch the stamp is visually round, so aligning it to the incident tangent
+	 * just repeats one orientation every click; such splats spin from the seed instead.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
+	float MinAlignedStretch = 1.2f;
+
 private:
-	UMeshComponent* FindTargetMesh() const;
-	UTextureRenderTarget2D* CreateIdBuffer();
+	static UTextureRenderTarget2D* CreateIdBuffer(UObject* Outer, int32 Resolution);
+	static UTextureRenderTarget2D* CreateFadeBuffer(UObject* Outer, int32 Resolution);
+
+	UStaticMeshComponent* FindTargetMesh() const;
+	void OnPositionMapBaked(UTextureRenderTarget2D* PositionMap);
+	void BakeEdgeFade(UTextureRenderTarget2D* PositionMap);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTarget2D> PaintRenderTargets[2];
+
+	UPROPERTY(Transient)
+	TObjectPtr<UTextureRenderTarget2D> EdgeFadeRenderTarget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> EdgeFadeMID;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> BrushMID;
@@ -135,5 +183,14 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> SurfaceMID;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> TargetMesh;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UPositionMapBaker> PositionBaker;
+
 	int32 FrontBufferIndex = 0;
+
+	/** True once the position map has baked and every MID parameter is in place. */
+	bool bPaintReady = false;
 };

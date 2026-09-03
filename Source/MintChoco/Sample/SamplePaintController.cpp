@@ -10,10 +10,12 @@
 #include "InputMappingContext.h"
 #include "Paint/PaintSplat.h"
 #include "Paint/PaintableComponent.h"
+#include "Sample/SampleSeedWidget.h"
 
 ASamplePaintController::ASamplePaintController()
 {
 	bShowMouseCursor = false;
+	SeedWidgetClass = USampleSeedWidget::StaticClass();
 }
 
 void ASamplePaintController::BeginPlay()
@@ -30,6 +32,17 @@ void ASamplePaintController::BeginPlay()
 		if (CrosshairWidget)
 		{
 			CrosshairWidget->AddToViewport();
+		}
+	}
+
+	NextSeed = FMath::Rand();
+
+	if (IsLocalPlayerController() && SeedWidgetClass)
+	{
+		SeedWidget = CreateWidget<USampleSeedWidget>(this, SeedWidgetClass);
+		if (SeedWidget)
+		{
+			SeedWidget->AddToViewport();
 		}
 	}
 }
@@ -85,6 +98,36 @@ void ASamplePaintController::SetupInputComponent()
 				&ASamplePaintController::OnCycleTeamTriggered);
 		}
 	}
+
+	// Typing into the seed box needs a cursor and UI focus, which the paint viewport otherwise
+	// owns. Tab flips between the two on demand instead of forcing an input mode at startup.
+	InputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &ASamplePaintController::OnToggleUIFocus);
+}
+
+void ASamplePaintController::OnToggleUIFocus()
+{
+	bUIFocused = !bUIFocused;
+	bShowMouseCursor = bUIFocused;
+	if (bUIFocused)
+	{
+		FInputModeGameAndUI InputMode;
+		InputMode.SetHideCursorDuringCapture(false);
+		SetInputMode(InputMode);
+	}
+	else
+	{
+		SetInputMode(FInputModeGameOnly());
+	}
+}
+
+void ASamplePaintController::SetSeedOverride(bool bInUseFixedSeed, int32 InFixedSeed)
+{
+	bUseFixedSeed = bInUseFixedSeed;
+	NextSeed = bInUseFixedSeed ? InFixedSeed : FMath::Rand();
+	if (SeedWidget)
+	{
+		SeedWidget->SetDisplayedSeed(NextSeed);
+	}
 }
 
 void ASamplePaintController::OnCycleTeamTriggered(const FInputActionValue& Value)
@@ -110,7 +153,7 @@ void ASamplePaintController::OnPaintTriggered()
 		return;
 	}
 
-	if (PaintAtHit(Hit, Direction) && bDrawDebugTrace)
+	if (PaintAtHit(Hit, Direction, HeightPerSplat) && bDrawDebugTrace)
 	{
 		DrawDebugLine(GetWorld(), Hit.TraceStart, Hit.ImpactPoint, FColor::Cyan, false, 2.0f);
 		DrawDebugDirectionalArrow(
@@ -137,7 +180,7 @@ void ASamplePaintController::OnContinuousPaintTriggered()
 		return;
 	}
 
-	if (PaintAtHit(Hit, Direction))
+	if (PaintAtHit(Hit, Direction, HeightPerSplatHeld))
 	{
 		StrokeAnchor = Hit.ImpactPoint;
 		bStrokeAnchorValid = true;
@@ -158,15 +201,12 @@ bool ASamplePaintController::TracePaintTarget(FHitResult& OutHit, FVector& OutDi
 	OutDirection = ViewRotation.Vector();
 	const FVector TraceEnd = ViewLocation + OutDirection * TraceDistance;
 
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(SamplePaintTrace), /*bTraceComplex=*/true, GetPawn());
-	// Both of these are required for FindCollisionUV to return anything but (0,0). The project
-	// also needs Physics -> Support UV From Hit Results enabled.
-	Params.bReturnFaceIndex = true;
+	const FCollisionQueryParams Params(SCENE_QUERY_STAT(SamplePaintTrace), /*bTraceComplex=*/false, GetPawn());
 
 	return GetWorld()->LineTraceSingleByChannel(OutHit, ViewLocation, TraceEnd, ECC_Visibility, Params);
 }
 
-bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Direction)
+bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Direction, float HeightAdd)
 {
 	UPaintableComponent* Paintable = Hit.GetActor()
 		? Hit.GetActor()->FindComponentByClass<UPaintableComponent>()
@@ -180,13 +220,30 @@ bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Di
 	// its real impact velocity here instead - that single substitution is the whole difference.
 	const FVector IncidentVelocity = Direction * NominalImpactSpeed;
 
-	FPaintSplat Splat;
-	if (!Paintable->BuildSplatFromHit(Hit, IncidentVelocity, TeamId, SplatVolume, Splat))
+	auto Splat = Paintable->BuildSplatFromHit(
+		Hit,
+		IncidentVelocity,
+		TeamId,
+		SplatVolume);
+
+	// The widget always shows the seed the NEXT splat will use: a pinned seed just stays,
+	// a free-running one rerolls on every use and the mirror updates with it.
+	Splat.HeightAdd = HeightAdd;
+	Splat.Seed = NextSeed;
+	if (!bUseFixedSeed)
 	{
-		return false;
+		NextSeed = FMath::Rand();
+		if (SeedWidget)
+		{
+			SeedWidget->SetDisplayedSeed(NextSeed);
+		}
 	}
 
-	Paintable->ApplySplat(Splat);
+	// The brush is a world-space ellipsoid, so every paintable inside its extent takes the same
+	// splat. The query radius comes from the hit surface's own tuning - a compromise that
+	// holds until tuning moves off the surface and onto the paint source.
+	const float WorldRadius = Paintable->ComputeSplatShape(Splat).GetWorldExtent();
+	UPaintableComponent::ApplySplatInRadius(this, Splat, WorldRadius);
 
 	return true;
 }

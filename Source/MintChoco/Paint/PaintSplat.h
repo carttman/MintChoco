@@ -11,6 +11,9 @@
 inline constexpr uint8 PaintIdCount = 8;
 inline constexpr uint8 PaintIdNone = PaintIdCount - 1;
 
+/** Clear color that fills an id buffer with PaintIdNone in its R8 encoding. */
+inline const FLinearColor PaintIdNoneColor(PaintIdNone / 255.0f, 0.0f, 0.0f);
+
 /**
  * A single paint contact event. Every paint source - a debug click trace, a paintball
  * projectile, a mop dragged along a wall - produces this same struct; only the rate and
@@ -33,10 +36,6 @@ struct FPaintSplat
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
 	FVector IncidentVelocity = FVector::ZeroVector;
 
-	/** Contact point in the surface's UV space. Only meaningful while painting is UV-based. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
-	FVector2D SurfaceUV = FVector2D::ZeroVector;
-
 	/** Id this splat writes into the buffer. PaintIdNone erases back to "unpainted". */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint", meta = (ClampMin = "0", ClampMax = "7"))
 	uint8 PaintId = 0;
@@ -44,6 +43,10 @@ struct FPaintSplat
 	/** How much paint this contact deposits. A mop tick deposits far less than a paintball. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
 	float Volume = 1.0f;
+
+	/** Fraction of the max paint height this contact adds; the buffer accumulates with saturation. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint", meta = (ClampMin = "0", ClampMax = "1"))
+	float HeightAdd = 0.35f;
 
 	/** Drives shape variation. Shared across clients so every machine draws the same splat. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
@@ -56,7 +59,7 @@ struct FPaintSplatShape
 {
 	GENERATED_BODY()
 
-	/** Radius in UV units while painting is UV-based. */
+	/** Radius in world cm. ApplySplat converts it into the painted surface's local space. */
 	UPROPERTY(BlueprintReadOnly, Category = "Paint")
 	float Radius = 0.0f;
 
@@ -67,4 +70,11 @@ struct FPaintSplatShape
 	/** Surface-tangent direction the splat stretches along. Zero for a head-on hit. */
 	UPROPERTY(BlueprintReadOnly, Category = "Paint")
 	FVector TangentDirection = FVector::ZeroVector;
+
+	/** cm the splat center slides along TangentDirection. A grazing hit lands "ahead" of contact. */
+	UPROPERTY(BlueprintReadOnly, Category = "Paint")
+	float CenterShift = 0.0f;
+
+	/** Farthest painted point from the contact, in world cm. This is the overlap query radius. */
+	float GetWorldExtent() const { return CenterShift + Radius * Stretch; }
 };

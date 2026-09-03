@@ -8,6 +8,7 @@
 
 class UInputAction;
 class UInputMappingContext;
+class USampleSeedWidget;
 class UUserWidget;
 
 /**
@@ -25,6 +26,17 @@ class MINTCHOCO_API ASamplePaintController : public APlayerController
 public:
 	ASamplePaintController();
 
+	/** Debug seed control: pin every splat to one seed, or return to a fresh seed per splat. */
+	UFUNCTION(BlueprintCallable, Category = "Sample|Paint")
+	void SetSeedOverride(bool bInUseFixedSeed, int32 InFixedSeed);
+
+	UFUNCTION(BlueprintPure, Category = "Sample|Paint")
+	bool IsUsingFixedSeed() const { return bUseFixedSeed; }
+
+	/** Seed the next splat will use. The debug widget mirrors this value. */
+	UFUNCTION(BlueprintPure, Category = "Sample|Paint")
+	int32 GetNextSeed() const { return NextSeed; }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
@@ -33,6 +45,7 @@ protected:
 	void OnContinuousPaintTriggered();
 	void OnContinuousPaintReleased();
 	void OnCycleTeamTriggered(const FInputActionValue& Value);
+	void OnToggleUIFocus();
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|Input")
 	TObjectPtr<UInputMappingContext> PaintMappingContext;
@@ -50,6 +63,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI")
 	TSubclassOf<UUserWidget> CrosshairWidgetClass;
+
+	/** Defaults to the C++ widget, which builds its own layout; a UMG subclass restyles it. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI")
+	TSubclassOf<USampleSeedWidget> SeedWidgetClass;
 
 	/** Paint id written by the next click. 0-3 are player teams; 7 (PaintIdNone) erases. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample|Paint", meta = (ClampMin = "0", ClampMax = "7"))
@@ -72,6 +89,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample|Paint")
 	float SplatVolume = 1.0f;
 
+	/** Height fraction a single click deposits. Reaches the max after a few repeat clicks. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample|Paint", meta = (ClampMin = "0", ClampMax = "1"))
+	float HeightPerSplat = 0.35f;
+
+	/** Height fraction each splat of a held stroke deposits; with ContinuousSpacing this sets the fill rate. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample|Paint", meta = (ClampMin = "0", ClampMax = "1"))
+	float HeightPerSplatHeld = 0.12f;
+
 	/**
 	 * World-space distance the aim point must travel before a held stroke deposits the next splat.
 	 * Every splat costs a full-target draw, so spacing them is what keeps a stroke affordable;
@@ -86,11 +111,17 @@ protected:
 
 private:
 	bool TracePaintTarget(FHitResult& OutHit, FVector& OutDirection) const;
-	bool PaintAtHit(const FHitResult& Hit, const FVector& Direction);
+	bool PaintAtHit(const FHitResult& Hit, const FVector& Direction, float HeightAdd);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> CrosshairWidget;
 
+	UPROPERTY(Transient)
+	TObjectPtr<USampleSeedWidget> SeedWidget;
+
 	FVector StrokeAnchor = FVector::ZeroVector;
 	bool bStrokeAnchorValid = false;
+	bool bUIFocused = false;
+	bool bUseFixedSeed = false;
+	int32 NextSeed = 0;
 };

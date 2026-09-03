@@ -1,18 +1,38 @@
 #include "Paint/PaintableComponent.h"
 
-#include "Components/MeshComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/Engine.h"
+#include "Engine/OverlapResult.h"
 #include "Engine/TextureRenderTarget2D.h"
-#include "Kismet/GameplayStatics.h"
+#include "Engine/World.h"
 #include "Kismet/KismetRenderingLibrary.h"
 #include "Materials/MaterialInstanceDynamic.h"
+
+#include "Paint/PositionMapBaker.h"
 
 namespace
 {
 	const FName BrushPaintIdParam(TEXT("BrushPaintId"));
-	const FName BrushCenterParam(TEXT("BrushCenter"));
-	const FName BrushRadiusParam(TEXT("BrushRadius"));
+	const FName BrushCenterParam(TEXT("BrushCenterLocal"));
+	const FName BrushRadiusParam(TEXT("BrushRadiusLocal"));
+	const FName BrushAxisUParam(TEXT("BrushAxisULocal"));
+	const FName BrushAxisVParam(TEXT("BrushAxisVLocal"));
+	const FName BrushStretchParam(TEXT("BrushStretch"));
+	const FName BrushSeedParam(TEXT("BrushSeed"));
+	const FName BrushImpactUParam(TEXT("BrushImpactU"));
+	const FName BrushHeightAddParam(TEXT("BrushHeightAdd"));
 	const FName PreviousPaintParam(TEXT("PreviousPaint"));
 	const FName PaintRenderTargetParam(TEXT("PaintRT"));
+	// The relief custom node reads the id buffer through its own TextureObjectParameter. It must
+	// NOT share PaintRT's name: an override on a name used by both a sampler parameter and a
+	// texture-object parameter only reaches the sampler one.
+	const FName PaintIdMapParam(TEXT("PaintIdMap"));
+	const FName PaintTexelSizeParam(TEXT("PaintTexelSize"));
+	const FName PositionMapParam(TEXT("PositionMap"));
+	const FName BoundsMinParam(TEXT("BoundsMin"));
+	const FName BoundsSizeParam(TEXT("BoundsSize"));
+	const FName PaintEdgeFadeParam(TEXT("PaintEdgeFade"));
+	const FName FadeTexelsParam(TEXT("FadeTexels"));
 }
 
 UPaintableComponent::UPaintableComponent()
@@ -30,18 +50,18 @@ void UPaintableComponent::BeginPlay()
 		return;
 	}
 
-	PaintRenderTargets[0] = CreateIdBuffer();
-	PaintRenderTargets[1] = CreateIdBuffer();
+	TargetMesh = FindTargetMesh();
+	if (!TargetMesh)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s: no StaticMeshComponent on the owner to paint onto."), *GetReadableName());
+		return;
+	}
+
+	PaintRenderTargets[0] = CreateIdBuffer(this, RenderTargetResolution);
+	PaintRenderTargets[1] = CreateIdBuffer(this, RenderTargetResolution);
 	FrontBufferIndex = 0;
 
 	BrushMID = UMaterialInstanceDynamic::Create(BrushMaterial, this);
-
-	UMeshComponent* TargetMesh = FindTargetMesh();
-	if (!TargetMesh)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("%s: no MeshComponent on the owner to paint onto."), *GetReadableName());
-		return;
-	}
 
 	// An unset SurfaceMaterial means "keep what the mesh already has and blend paint into it",
 	// so the original look survives instead of being replaced by a stand-in.
@@ -56,77 +76,146 @@ void UPaintableComponent::BeginPlay()
 
 	SurfaceMID = UMaterialInstanceDynamic::Create(BaseMaterial, this);
 	SurfaceMID->SetTextureParameterValue(PaintRenderTargetParam, GetPaintRenderTarget());
+	SurfaceMID->SetTextureParameterValue(PaintIdMapParam, GetPaintRenderTarget());
+	// The relief blur in MF_PaintOverlay measures its taps in texels, so it needs the actual size.
+	SurfaceMID->SetScalarParameterValue(PaintTexelSizeParam, 1.0f / RenderTargetResolution);
 	TargetMesh->SetMaterial(SurfaceMaterialSlot, SurfaceMID);
+
+	PositionBaker = NewObject<UPositionMapBaker>(this);
+	PositionBaker->OnBaked.BindUObject(this, &UPaintableComponent::OnPositionMapBaked);
+	PositionBaker->Initialize(TargetMesh, UnwrapMaterial, RenderTargetResolution, UnwrapPlaneSize);
+	PositionBaker->RequestBake();
 }
 
 void UPaintableComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	bPaintReady = false;
 	PaintRenderTargets[0] = nullptr;
 	PaintRenderTargets[1] = nullptr;
+	EdgeFadeRenderTarget = nullptr;
+	EdgeFadeMID = nullptr;
 	BrushMID = nullptr;
 	SurfaceMID = nullptr;
+	TargetMesh = nullptr;
+
+	if (PositionBaker)
+	{
+		PositionBaker->Shutdown();
+		PositionBaker = nullptr;
+	}
 
 	Super::EndPlay(EndPlayReason);
 }
 
-UTextureRenderTarget2D* UPaintableComponent::CreateIdBuffer()
+UTextureRenderTarget2D* UPaintableComponent::CreateIdBuffer(UObject* Outer, int32 Resolution)
 {
 	// Built by hand instead of CreateRenderTarget2D because the ID buffer needs its sampler
 	// settings fixed before the resource is created: bilinear filtering would invent team IDs
 	// on every splat boundary, and sRGB would corrupt the ID -> byte round trip.
-	UTextureRenderTarget2D* const Buffer = NewObject<UTextureRenderTarget2D>(this);
-	Buffer->RenderTargetFormat = RTF_R8;
-	Buffer->ClearColor = FLinearColor(PaintIdNone / 255.0f, 0.0f, 0.0f);
+	const auto Buffer = NewObject<UTextureRenderTarget2D>(Outer);
+	// R stores the team id, G accumulates deposited paint height, B the distance to the
+	// nearest paint edge in texels, encoded as 1 - d / PaintDistanceRange so that a cleared
+	// or default texel (B = 0) reads as "far".
+	Buffer->RenderTargetFormat = RTF_RGBA8;
+	Buffer->ClearColor = PaintIdNoneColor;
 	Buffer->Filter = TF_Nearest;
 	Buffer->SRGB = false;
-	Buffer->InitAutoFormat(RenderTargetResolution, RenderTargetResolution);
+	Buffer->InitAutoFormat(Resolution, Resolution);
 	Buffer->UpdateResourceImmediate(true);
 
 	return Buffer;
 }
 
-bool UPaintableComponent::BuildSplatFromHit(
+UTextureRenderTarget2D* UPaintableComponent::CreateFadeBuffer(UObject* Outer, int32 Resolution)
+{
+	// A plain scalar, so unlike the id buffer it can be filtered by the sampler. White means
+	// "no fade", which is also what the surface material assumes until the bake delivers.
+	const auto Buffer = NewObject<UTextureRenderTarget2D>(Outer);
+	Buffer->RenderTargetFormat = RTF_R8;
+	Buffer->ClearColor = FLinearColor::White;
+	Buffer->Filter = TF_Bilinear;
+	Buffer->SRGB = false;
+	Buffer->InitAutoFormat(Resolution, Resolution);
+	Buffer->UpdateResourceImmediate(true);
+
+	return Buffer;
+}
+
+FPaintSplat UPaintableComponent::BuildSplatFromHit(
 	const FHitResult& Hit,
 	FVector IncidentVelocity,
 	uint8 PaintId,
-	float Volume,
-	FPaintSplat& OutSplat) const
+	float Volume) const
 {
-	FVector2D SurfaceUV = FVector2D::ZeroVector;
-	if (!UGameplayStatics::FindCollisionUV(Hit, PaintUVChannel, SurfaceUV))
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("%s: FindCollisionUV failed on UV channel %d. Check Physics -> Support UV From Hit "
-				 "Results, and that the trace used Trace Complex with Return Face Index."),
-			*GetReadableName(), PaintUVChannel);
-		return false;
-	}
-
-	OutSplat.Location = Hit.ImpactPoint;
-	OutSplat.Normal = Hit.ImpactNormal;
-	OutSplat.IncidentVelocity = IncidentVelocity;
-	OutSplat.SurfaceUV = SurfaceUV;
-	OutSplat.PaintId = PaintId;
-	OutSplat.Volume = Volume;
-	OutSplat.Seed = FMath::Rand();
-
-	return true;
+	FPaintSplat Splat;
+	Splat.Location = Hit.ImpactPoint;
+	Splat.Normal = Hit.ImpactNormal;
+	Splat.IncidentVelocity = IncidentVelocity;
+	Splat.PaintId = PaintId;
+	Splat.Volume = Volume;
+	Splat.Seed = FMath::Rand();
+	return Splat;
 }
 
 void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 {
-	if (!PaintRenderTargets[0] || !PaintRenderTargets[1] || !BrushMID)
-	{
-		return;
-	}
+	if (!bPaintReady) return;
 
-	const FPaintSplatShape Shape = ComputeSplatShape(Splat);
+	const auto Shape = ComputeSplatShape(Splat);
+
+	// The stamp needs a full 2D frame on the surface, not just a stretch axis. A near-round
+	// stamp gains nothing from tangent alignment - it would just repeat one orientation every
+	// click - so its rotation comes from the replicated seed instead: every client derives the
+	// same frame and stamps the same shape.
+	const FVector Normal = Splat.Normal.GetSafeNormal();
+	FVector AxisU = Shape.TangentDirection;
+	if (Shape.Stretch < MinAlignedStretch || AxisU.IsNearlyZero())
+	{
+		const FRandomStream Stream(Splat.Seed);
+		const FVector Reference = FMath::Abs(Normal.Z) < 0.9f ? FVector::UpVector : FVector::ForwardVector;
+		const FVector Base = FVector::CrossProduct(Normal, Reference).GetSafeNormal();
+		AxisU = Base.RotateAngleAxis(Stream.FRand() * 360.0f, Normal);
+	}
+	const FVector AxisV = FVector::CrossProduct(Normal, AxisU);
+
+	const auto& MeshTransform = TargetMesh->GetComponentTransform();
+	const auto ShiftedCenter = Splat.Location + Shape.TangentDirection * Shape.CenterShift;
+	const auto LocalCenter = MeshTransform.InverseTransformPosition(ShiftedCenter);
+	// A direction only needs the rotation undone; scale would just be normalized away again.
+	const auto LocalAxisU = MeshTransform.InverseTransformVectorNoScale(AxisU);
+	const auto LocalAxisV = MeshTransform.InverseTransformVectorNoScale(AxisV);
+	// Uniform scale assumed
+	const float LocalRadius = Shape.Radius / MeshTransform.GetScale3D().X;
 
 	// The brush writes the id as a normalized byte; the R8 target stores it back as exactly PaintId.
-	BrushMID->SetScalarParameterValue(BrushPaintIdParam, Splat.PaintId / 255.0f);
+	BrushMID->SetScalarParameterValue(
+		BrushPaintIdParam,
+		Splat.PaintId / 255.0f);
 	BrushMID->SetVectorParameterValue(
-		BrushCenterParam, FLinearColor(Splat.SurfaceUV.X, Splat.SurfaceUV.Y, 0.0f, 0.0f));
-	BrushMID->SetScalarParameterValue(BrushRadiusParam, Shape.Radius);
+		BrushCenterParam,
+		FLinearColor(LocalCenter));
+	BrushMID->SetScalarParameterValue(
+		BrushRadiusParam,
+		LocalRadius);
+	BrushMID->SetVectorParameterValue(
+		BrushAxisUParam,
+		FLinearColor(LocalAxisU));
+	BrushMID->SetVectorParameterValue(
+		BrushAxisVParam,
+		FLinearColor(LocalAxisV));
+	BrushMID->SetScalarParameterValue(
+		BrushStretchParam,
+		Shape.Stretch);
+	// Wrapped so sin()-based hashing in the shader keeps its precision for typed-in seeds.
+	BrushMID->SetScalarParameterValue(
+		BrushSeedParam,
+		static_cast<float>(Splat.Seed % 65536));
+	// The center slid ahead of the contact, so in stamp space the impact sits behind the
+	// origin: its u coordinate, normalized by the stamp's long axis, anchors the spike field.
+	BrushMID->SetScalarParameterValue(
+		BrushImpactUParam,
+		-Shape.CenterShift / FMath::Max(Shape.Radius * Shape.Stretch, UE_KINDA_SMALL_NUMBER));
+	BrushMID->SetScalarParameterValue(BrushHeightAddParam, Splat.HeightAdd);
 	BrushMID->SetTextureParameterValue(PreviousPaintParam, GetPaintRenderTarget());
 
 	UTextureRenderTarget2D* const Back = PaintRenderTargets[1 - FrontBufferIndex];
@@ -140,6 +229,44 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 	if (SurfaceMID)
 	{
 		SurfaceMID->SetTextureParameterValue(PaintRenderTargetParam, Back);
+		SurfaceMID->SetTextureParameterValue(PaintIdMapParam, Back);
+	}
+}
+
+void UPaintableComponent::ApplySplatInRadius(
+	const UObject* WorldContextObject, const FPaintSplat& Splat, float WorldRadius)
+{
+	UWorld* const World =
+		GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::LogAndReturnNull);
+	if (!World)
+	{
+		return;
+	}
+
+	TArray<FOverlapResult> Overlaps;
+	World->OverlapMultiByChannel(
+		Overlaps, Splat.Location, FQuat::Identity, ECC_Visibility,
+		FCollisionShape::MakeSphere(WorldRadius));
+
+	// Overlap results repeat an actor once per overlapping component, so dedupe on the
+	// paintable itself before drawing.
+	TSet<UPaintableComponent*> Painted;
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		const AActor* const Actor = Overlap.GetActor();
+		UPaintableComponent* const Paintable =
+			Actor ? Actor->FindComponentByClass<UPaintableComponent>() : nullptr;
+		if (!Paintable)
+		{
+			continue;
+		}
+
+		bool bAlreadyPainted = false;
+		Painted.Add(Paintable, &bAlreadyPainted);
+		if (!bAlreadyPainted)
+		{
+			Paintable->ApplySplat(Splat);
+		}
 	}
 }
 
@@ -149,10 +276,70 @@ void UPaintableComponent::ClearPaint()
 	{
 		if (Buffer)
 		{
-			UKismetRenderingLibrary::ClearRenderTarget2D(
-				this, Buffer, FLinearColor(PaintIdNone / 255.0f, 0.0f, 0.0f));
+			UKismetRenderingLibrary::ClearRenderTarget2D(this, Buffer, PaintIdNoneColor);
 		}
 	}
+}
+
+UTextureRenderTarget2D* UPaintableComponent::GetPositionRenderTarget() const
+{
+	return PositionBaker ? PositionBaker->GetPositionMap() : nullptr;
+}
+
+void UPaintableComponent::OnPositionMapBaked(UTextureRenderTarget2D* PositionMap)
+{
+	// The baker only exists once BeginPlay fully succeeded, and EndPlay tears it down before
+	// releasing the MIDs, so a null here is a programmer error rather than a designer one.
+	check(BrushMID && SurfaceMID && TargetMesh);
+
+	// Identity transform in, local bounds out - the same box the material's ObjectLocalBounds
+	// node reads, which is what makes the un-normalize in the brush line up.
+	const auto LocalBounds = TargetMesh->CalcBounds(FTransform::Identity).GetBox();
+
+	BrushMID->SetTextureParameterValue(PositionMapParam, PositionMap);
+	BrushMID->SetVectorParameterValue(
+		BoundsMinParam,
+		FLinearColor(LocalBounds.Min));
+	BrushMID->SetVectorParameterValue(
+		BoundsSizeParam,
+		FLinearColor(LocalBounds.GetSize()));
+
+	// Only the brush needs the map, but the surface getting it too is what lets the
+	// M_DebugPosition override work with zero extra plumbing.
+	SurfaceMID->SetTextureParameterValue(PositionMapParam, PositionMap);
+	// The paint normal differentiates the position map, so it needs the un-normalize scale too.
+	SurfaceMID->SetVectorParameterValue(
+		BoundsSizeParam,
+		FLinearColor(LocalBounds.GetSize()));
+
+	BakeEdgeFade(PositionMap);
+
+	bPaintReady = true;
+}
+
+void UPaintableComponent::BakeEdgeFade(UTextureRenderTarget2D* PositionMap)
+{
+	if (!EdgeFadeMaterial)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s: EdgeFadeMaterial is unset, displacement will tear at island edges."), *GetReadableName());
+		return;
+	}
+
+	if (!EdgeFadeRenderTarget)
+	{
+		EdgeFadeRenderTarget = CreateFadeBuffer(this, RenderTargetResolution);
+	}
+	if (!EdgeFadeMID)
+	{
+		EdgeFadeMID = UMaterialInstanceDynamic::Create(EdgeFadeMaterial, this);
+	}
+
+	EdgeFadeMID->SetTextureParameterValue(PositionMapParam, PositionMap);
+	EdgeFadeMID->SetScalarParameterValue(FadeTexelsParam, EdgeFadeTexels);
+
+	// The map only depends on the unwrap, never on the paint, so one draw per bake is enough.
+	UKismetRenderingLibrary::DrawMaterialToRenderTarget(this, EdgeFadeRenderTarget, EdgeFadeMID);
+	SurfaceMID->SetTextureParameterValue(PaintEdgeFadeParam, EdgeFadeRenderTarget);
 }
 
 FPaintSplatShape UPaintableComponent::ComputeSplatShape(const FPaintSplat& Splat) const
@@ -172,12 +359,13 @@ FPaintSplatShape UPaintableComponent::ComputeSplatShape(const FPaintSplat& Splat
 		MaxRadius);
 	Shape.Stretch = FMath::Clamp(1.0f / FMath::Max(CosTheta, UE_KINDA_SMALL_NUMBER), 1.0f, MaxStretch);
 	Shape.TangentDirection = (Incident - FVector::DotProduct(Incident, Normal) * Normal).GetSafeNormal();
+	Shape.CenterShift = Shape.Radius * (Shape.Stretch - 1.0f) * CenterShiftScale;
 
 	return Shape;
 }
 
-UMeshComponent* UPaintableComponent::FindTargetMesh() const
+UStaticMeshComponent* UPaintableComponent::FindTargetMesh() const
 {
 	const AActor* Owner = GetOwner();
-	return Owner ? Owner->FindComponentByClass<UMeshComponent>() : nullptr;
+	return Owner ? Owner->FindComponentByClass<UStaticMeshComponent>() : nullptr;
 }
