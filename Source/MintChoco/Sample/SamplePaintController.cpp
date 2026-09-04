@@ -1,6 +1,5 @@
 #include "Sample/SamplePaintController.h"
 
-#include "Blueprint/UserWidget.h"
 #include "DrawDebugHelpers.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -8,8 +7,11 @@
 #include "Engine/LocalPlayer.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
-#include "Paint/PaintCoverageSubsystem.h"
+
+#include "Paint/PaintBrushProfile.h"
+#include "Paint/PaintLog.h"
 #include "Paint/PaintSplat.h"
+#include "Paint/PaintSubsystem.h"
 #include "Paint/PaintableComponent.h"
 #include "Sample/SampleCoverageWidget.h"
 #include "Sample/SampleSeedWidget.h"
@@ -29,91 +31,11 @@ void ASamplePaintController::BeginPlay()
 	// captures the mouse; forcing an input mode here fights the viewport's own focus handling in
 	// PIE, which shows up as the click releasing mouse capture.
 
-	if (IsLocalPlayerController() && CrosshairWidgetClass)
-	{
-		CrosshairWidget = CreateWidget<UUserWidget>(this, CrosshairWidgetClass);
-		if (CrosshairWidget)
-		{
-			CrosshairWidget->AddToViewport();
-		}
-	}
-
 	NextSeed = FMath::Rand();
 
-	if (IsLocalPlayerController() && SeedWidgetClass)
-	{
-		SeedWidget = CreateWidget<USampleSeedWidget>(this, SeedWidgetClass);
-		if (SeedWidget)
-		{
-			SeedWidget->AddToViewport();
-		}
-	}
-
-	if (IsLocalPlayerController() && CoverageWidgetClass)
-	{
-		CoverageWidget = CreateWidget<USampleCoverageWidget>(this, CoverageWidgetClass);
-		if (CoverageWidget)
-		{
-			CoverageWidget->AddToViewport();
-		}
-	}
-}
-
-void ASamplePaintController::PaintDebugText()
-{
-	if (const UPaintCoverageSubsystem* const Coverage = GetCoverageSubsystem())
-	{
-		const TArray<UPaintableComponent*> Paintables = Coverage->GetPaintables();
-		const bool bAnyShown = Paintables.ContainsByPredicate(
-			[](const UPaintableComponent* Paintable) { return Paintable->IsDebugTextDrawn(); });
-		for (UPaintableComponent* const Paintable : Paintables)
-		{
-			Paintable->SetDebugDraw(!bAnyShown, Paintable->AreDebugCellsDrawn());
-		}
-	}
-}
-
-void ASamplePaintController::PaintDebugCells()
-{
-	if (const UPaintCoverageSubsystem* const Coverage = GetCoverageSubsystem())
-	{
-		const TArray<UPaintableComponent*> Paintables = Coverage->GetPaintables();
-		const bool bAnyShown = Paintables.ContainsByPredicate(
-			[](const UPaintableComponent* Paintable) { return Paintable->AreDebugCellsDrawn(); });
-		for (UPaintableComponent* const Paintable : Paintables)
-		{
-			Paintable->SetDebugDraw(Paintable->IsDebugTextDrawn(), !bAnyShown);
-		}
-	}
-}
-
-void ASamplePaintController::PaintCoverage()
-{
-	const UPaintCoverageSubsystem* const Coverage = GetCoverageSubsystem();
-	if (!Coverage)
-	{
-		return;
-	}
-
-	for (const UPaintableComponent* const Paintable : Coverage->GetPaintables())
-	{
-		const FPaintCoverage Surface = Paintable->GetCoverage();
-		UE_LOG(LogTemp, Log, TEXT("%s: %s (%.0f cm^2)"), *Paintable->GetReadableName(), *Surface.ToString(), Surface.TotalArea);
-	}
-
-	const FPaintCoverage World = Coverage->GetWorldCoverage();
-	const FString Summary = FString::Printf(TEXT("World: %s (%.0f cm^2)"), *World.ToString(), World.TotalArea);
-	UE_LOG(LogTemp, Log, TEXT("%s"), *Summary);
-	if (GEngine)
-	{
-		GEngine->AddOnScreenDebugMessage(/*Key=*/1, /*TimeToDisplay=*/8.0f, FColor::White, Summary);
-	}
-}
-
-UPaintCoverageSubsystem* ASamplePaintController::GetCoverageSubsystem() const
-{
-	const UWorld* const World = GetWorld();
-	return World ? World->GetSubsystem<UPaintCoverageSubsystem>() : nullptr;
+	CrosshairWidget = AddLocalWidget(CrosshairWidgetClass);
+	SeedWidget = AddLocalWidget(SeedWidgetClass);
+	CoverageWidget = AddLocalWidget(CoverageWidgetClass);
 }
 
 void ASamplePaintController::SetupInputComponent()
@@ -136,10 +58,11 @@ void ASamplePaintController::SetupInputComponent()
 
 	// Every one of these is an asset reference set on the Blueprint, and an unset one fails
 	// silently as "the button does nothing" - which is expensive to diagnose from the symptom.
-	UE_CLOG(!PaintMappingContext, LogTemp, Warning, TEXT("%s: PaintMappingContext is unset."), *GetName());
-	UE_CLOG(!PaintAction, LogTemp, Warning, TEXT("%s: PaintAction is unset."), *GetName());
-	UE_CLOG(!ContinuousPaintAction, LogTemp, Warning, TEXT("%s: ContinuousPaintAction is unset."), *GetName());
-	UE_CLOG(!CycleTeamAction, LogTemp, Warning, TEXT("%s: CycleTeamAction is unset."), *GetName());
+	UE_CLOG(!PaintMappingContext, LogPaint, Warning, TEXT("%s: PaintMappingContext is unset."), *GetName());
+	UE_CLOG(!PaintAction, LogPaint, Warning, TEXT("%s: PaintAction is unset."), *GetName());
+	UE_CLOG(!ContinuousPaintAction, LogPaint, Warning, TEXT("%s: ContinuousPaintAction is unset."), *GetName());
+	UE_CLOG(!CycleTeamAction, LogPaint, Warning, TEXT("%s: CycleTeamAction is unset."), *GetName());
+	UE_CLOG(!BrushProfile, LogPaint, Warning, TEXT("%s: BrushProfile is unset, clicks will not paint."), *GetName());
 
 	if (UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(InputComponent))
 	{
@@ -192,7 +115,8 @@ void ASamplePaintController::OnToggleUIFocus()
 void ASamplePaintController::SetSeedOverride(bool bInUseFixedSeed, int32 InFixedSeed)
 {
 	bUseFixedSeed = bInUseFixedSeed;
-	NextSeed = bInUseFixedSeed ? InFixedSeed : FMath::Rand();
+	// A splat carries 16 bits of seed, so a typed value is kept in that range where the box can show it.
+	NextSeed = bInUseFixedSeed ? FMath::Clamp(InFixedSeed, 0, static_cast<int32>(MAX_uint16)) : FMath::Rand();
 	if (SeedWidget)
 	{
 		SeedWidget->SetDisplayedSeed(NextSeed);
@@ -277,10 +201,10 @@ bool ASamplePaintController::TracePaintTarget(FHitResult& OutHit, FVector& OutDi
 
 bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Direction, float HeightAdd)
 {
-	UPaintableComponent* Paintable = Hit.GetActor()
-		? Hit.GetActor()->FindComponentByClass<UPaintableComponent>()
-		: nullptr;
-	if (!Paintable)
+	UPaintSubsystem* const Paint = GetPaintSubsystem();
+	// The trace hits anything; only a hit on a paintable surface is worth a splat.
+	const bool bHitPaintable = Hit.GetActor() && Hit.GetActor()->FindComponentByClass<UPaintableComponent>();
+	if (!BrushProfile || !Paint || !bHitPaintable)
 	{
 		return false;
 	}
@@ -289,16 +213,9 @@ bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Di
 	// its real impact velocity here instead - that single substitution is the whole difference.
 	const FVector IncidentVelocity = Direction * NominalImpactSpeed;
 
-	auto Splat = Paintable->BuildSplatFromHit(
-		Hit,
-		IncidentVelocity,
-		TeamId,
-		SplatVolume);
-
 	// The widget always shows the seed the NEXT splat will use: a pinned seed just stays,
 	// a free-running one rerolls on every use and the mirror updates with it.
-	Splat.HeightAdd = HeightAdd;
-	Splat.Seed = NextSeed;
+	const FPaintSplat Splat = BrushProfile->BuildSplat(Hit, IncidentVelocity, TeamId, SplatVolume, HeightAdd, NextSeed);
 	if (!bUseFixedSeed)
 	{
 		NextSeed = FMath::Rand();
@@ -308,11 +225,51 @@ bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Di
 		}
 	}
 
-	// The brush is a world-space ellipsoid, so every paintable inside its extent takes the same
-	// splat. The query radius comes from the hit surface's own tuning - a compromise that
-	// holds until tuning moves off the surface and onto the paint source.
-	const float WorldRadius = Paintable->ComputeSplatShape(Splat).GetWorldExtent();
-	UPaintableComponent::ApplySplatInRadius(this, Splat, WorldRadius);
-
+	Paint->ApplySplat(Splat);
 	return true;
+}
+
+void ASamplePaintController::PaintDebugText()
+{
+	if (UPaintSubsystem* const Paint = GetPaintSubsystem())
+	{
+		Paint->SetDebugDraw(!Paint->IsAnyDebugTextDrawn(), Paint->AreAnyDebugCellsDrawn());
+	}
+}
+
+void ASamplePaintController::PaintDebugCells()
+{
+	if (UPaintSubsystem* const Paint = GetPaintSubsystem())
+	{
+		Paint->SetDebugDraw(Paint->IsAnyDebugTextDrawn(), !Paint->AreAnyDebugCellsDrawn());
+	}
+}
+
+void ASamplePaintController::PaintCoverage()
+{
+	const UPaintSubsystem* const Paint = GetPaintSubsystem();
+	if (!Paint)
+	{
+		return;
+	}
+
+	for (const UPaintableComponent* const Paintable : Paint->GetPaintables())
+	{
+		const FPaintCoverage Surface = Paintable->GetCoverage();
+		UE_LOG(LogPaint, Log, TEXT("%s: %s (%.0f cm^2)"), *Paintable->GetReadableName(), *Surface.ToString(), Surface.TotalArea);
+	}
+
+	const FPaintCoverage World = Paint->GetWorldCoverage();
+	const FString Summary = FString::Printf(TEXT("World: %s (%.0f cm^2)"), *World.ToString(), World.TotalArea);
+	UE_LOG(LogPaint, Log, TEXT("%s"), *Summary);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(/*Key=*/1, /*TimeToDisplay=*/8.0f, FColor::White, Summary);
+	}
+}
+
+UPaintSubsystem* ASamplePaintController::GetPaintSubsystem() const
+{
+	const UWorld* const World = GetWorld();
+	return World ? World->GetSubsystem<UPaintSubsystem>() : nullptr;
 }

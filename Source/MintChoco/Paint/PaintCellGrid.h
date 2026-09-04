@@ -5,6 +5,8 @@
 
 #include "PaintCellGrid.generated.h"
 
+class UStaticMeshComponent;
+
 /** The six ways a piece of surface can face in the painted mesh's local frame. */
 UENUM(BlueprintType)
 enum class EPaintFaceDirection : uint8
@@ -24,11 +26,6 @@ MINTCHOCO_API FVector PaintFaceDirectionVector(EPaintFaceDirection Direction);
 
 /** The direction whose axis the normal leans on most. */
 MINTCHOCO_API EPaintFaceDirection ClassifyPaintFaceDirection(const FVector& Normal);
-
-MINTCHOCO_API const TCHAR* PaintFaceDirectionName(EPaintFaceDirection Direction);
-
-/** Debug color for a paint id. The real team looks live in the materials; this is only for overlays. */
-MINTCHOCO_API FColor PaintIdDebugColor(uint8 PaintId);
 
 /** How much surface each paint id owns. Areas are world cm^2 so surfaces of any scale add up. */
 USTRUCT(BlueprintType)
@@ -79,6 +76,18 @@ public:
 		TArrayView<const uint32> Indices);
 
 	/**
+	 * Builds from the triangles of one material slot of a static mesh, read from LOD 0's CPU
+	 * copy of the vertex and index buffers. WorldCellSize is in cm; UniformScale is the mesh's
+	 * world scale. Logs why and returns false when the mesh offers nothing to build from.
+	 */
+	bool BuildFromMesh(
+		const UStaticMeshComponent& Mesh,
+		int32 MaterialSlot,
+		float WorldCellSize,
+		float UniformScale,
+		const FBox& LocalBounds);
+
+	/**
 	 * Paints every cell whose voxel center lies inside the stamp body and whose direction does
 	 * not face away from the splat. CoreFraction is the part of the stamp radius that counts as
 	 * covered: the brush's main blob spans half the radius, its satellites almost all of it.
@@ -101,9 +110,13 @@ public:
 		TFunctionRef<void(const FVector& SurfaceCenter, EPaintFaceDirection Direction, uint8 PaintId, float Area)> Visitor) const;
 
 private:
+	/** A triangle clipped by up to six voxel planes has at most nine corners. */
+	using FClipPolygon = TArray<FVector, TInlineAllocator<12>>;
+
 	int32 VoxelIndex(const FIntVector& Voxel) const;
 	FIntVector VoxelOf(const FVector& LocalPosition) const;
 	FVector VoxelCenter(const FIntVector& Voxel) const;
+	void DepositClipped(const FClipPolygon& Polygon, int32 Axis, int32 Direction, float AreaScale);
 
 	FVector Origin = FVector::ZeroVector;
 	float CellSize = 25.0f;

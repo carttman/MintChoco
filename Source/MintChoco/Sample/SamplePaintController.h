@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Blueprint/UserWidget.h"
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "InputActionValue.h"
@@ -8,17 +9,18 @@
 
 class UInputAction;
 class UInputMappingContext;
-class UPaintCoverageSubsystem;
+class UPaintBrushProfile;
+class UPaintSubsystem;
 class USampleCoverageWidget;
 class USampleSeedWidget;
-class UUserWidget;
 
 /**
  * Debug paint source for the sample map: traces along the crosshair and emits one splat per click.
  *
- * This is the simplest possible producer of an FPaintSplat. A paintball projectile or a mop fills
- * the same struct from its own impact, so adding them does not change anything downstream - it
- * only adds another source. That is why this controller stays useful as a debug tool afterwards.
+ * This is the simplest possible producer of an FPaintSplat. It holds a brush profile like a
+ * paintball gun or a mop would, asks it to build the splat from the hit, and hands the result to
+ * the paint subsystem; adding a real weapon changes nothing downstream. That is why this
+ * controller stays useful as a debug tool afterwards.
  */
 UCLASS()
 class MINTCHOCO_API ASamplePaintController : public APlayerController
@@ -43,7 +45,7 @@ public:
 	UFUNCTION(Exec)
 	void PaintDebugText();
 
-	/** Console: toggles the coverage cell boxes on every paintable surface. */
+	/** Console: toggles the coverage cell slabs on every paintable surface. */
 	UFUNCTION(Exec)
 	void PaintDebugCells();
 
@@ -85,6 +87,10 @@ protected:
 	/** World coverage readout. Defaults to the C++ widget; a UMG subclass restyles it. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI")
 	TSubclassOf<USampleCoverageWidget> CoverageWidgetClass;
+
+	/** The brush this source stamps with: its material and how a hit becomes a splat shape. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|Paint")
+	TObjectPtr<UPaintBrushProfile> BrushProfile;
 
 	/** Paint id written by the next click. 0-3 are player teams; 7 (PaintIdNone) erases. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample|Paint", meta = (ClampMin = "0", ClampMax = "7"))
@@ -130,7 +136,23 @@ protected:
 private:
 	bool TracePaintTarget(FHitResult& OutHit, FVector& OutDirection) const;
 	bool PaintAtHit(const FHitResult& Hit, const FVector& Direction, float HeightAdd);
-	UPaintCoverageSubsystem* GetCoverageSubsystem() const;
+	UPaintSubsystem* GetPaintSubsystem() const;
+
+	/** Creates a widget for the local player and puts it on screen; null for a remote controller or an unset class. */
+	template <typename T>
+	T* AddLocalWidget(TSubclassOf<T> WidgetClass)
+	{
+		if (!IsLocalPlayerController() || !WidgetClass)
+		{
+			return nullptr;
+		}
+		T* const Widget = CreateWidget<T>(this, WidgetClass);
+		if (Widget)
+		{
+			Widget->AddToViewport();
+		}
+		return Widget;
+	}
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> CrosshairWidget;

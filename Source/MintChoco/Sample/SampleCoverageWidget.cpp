@@ -8,8 +8,8 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/World.h"
 
-#include "Paint/PaintCellGrid.h"
-#include "Paint/PaintCoverageSubsystem.h"
+#include "Paint/PaintDebugDraw.h"
+#include "Paint/PaintSubsystem.h"
 
 TSharedRef<SWidget> USampleCoverageWidget::RebuildWidget()
 {
@@ -54,7 +54,7 @@ void USampleCoverageWidget::BuildRows()
 	for (int32 Id = 0; Id < PaintIdCount; ++Id)
 	{
 		UTextBlock* const Row = WidgetTree->ConstructWidget<UTextBlock>();
-		Row->SetColorAndOpacity(FSlateColor(FLinearColor(PaintIdDebugColor(static_cast<uint8>(Id)))));
+		Row->SetColorAndOpacity(FSlateColor(FLinearColor(PaintDebug::IdColor(static_cast<uint8>(Id)))));
 		Row->SetShadowOffset(FVector2D(1.0f, 1.0f));
 		Rows->AddChildToVerticalBox(Row);
 		RowTexts.Add(Row);
@@ -66,7 +66,7 @@ void USampleCoverageWidget::NativeTick(const FGeometry& MyGeometry, float InDelt
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
 	const UWorld* const World = GetWorld();
-	const UPaintCoverageSubsystem* const Coverage = World ? World->GetSubsystem<UPaintCoverageSubsystem>() : nullptr;
+	const UPaintSubsystem* const Coverage = World ? World->GetSubsystem<UPaintSubsystem>() : nullptr;
 	if (Coverage && RowTexts.Num() == PaintIdCount)
 	{
 		Refresh(Coverage->GetWorldCoverage());

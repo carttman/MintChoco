@@ -9,13 +9,15 @@
 
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
-class UPositionMapBaker;
+class UPaintMapBaker;
 class UStaticMeshComponent;
 class UTextureRenderTarget2D;
 
 /**
- * Gives its owner a paint layer: one render target per component instance, a brush material
- * drawn into it, and a surface material that reads it back.
+ * Gives its owner a paintable surface: one paint buffer per component instance that splats are
+ * stamped into, a surface material that reads it back, and a coverage cell grid that scores it.
+ * The surface knows nothing about brushes - a splat arrives fully resolved (FPaintSplat) and
+ * brings its own brush material - so any source can paint any surface.
  *
  * The render target is a paint buffer, not a color buffer. Per texel, R holds one of the
  * PaintIdCount ids (PaintIdNone meaning "unpainted"), G the accumulated paint height and B the
@@ -36,9 +38,10 @@ class UTextureRenderTarget2D;
  * Two render targets per instance is deliberate. Sharing them between actors is the first thing
  * that breaks once a second paintable surface exists in the level.
  *
- * The gameplay layer rides alongside: a coverage cell grid (FPaintCellGrid) built once from the
- * mesh triangles answers who owns how much surface. ApplySplat hands the brush and the grid the
- * same local stamp, so score and picture cannot drift apart, and the render target is never read.
+ * The gameplay layer rides alongside: the coverage cell grid (FPaintCellGrid), built once from
+ * the mesh triangles, answers who owns how much surface. ApplySplat hands the brush and the grid
+ * the same local stamp, so score and picture cannot drift apart, and the render target is never
+ * read back.
  */
 UCLASS(ClassGroup = (Paint), meta = (BlueprintSpawnableComponent))
 class MINTCHOCO_API UPaintableComponent : public UActorComponent
@@ -52,38 +55,12 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	/**
-	 * Fills in a splat from a trace or collision hit. A click trace, a paintball and a mop all
-	 * arrive with an FHitResult and produce this same struct; only the values differ.
-	 */
-	UFUNCTION(BlueprintCallable, Category = "Paint")
-	FPaintSplat BuildSplatFromHit(
-		const FHitResult& Hit,
-		FVector IncidentVelocity,
-		uint8 PaintId,
-		float Volume) const;
-
-	/** Draws one splat into the render target. */
+	/** Draws one splat into the paint buffer and marks it in the coverage grid. */
 	UFUNCTION(BlueprintCallable, Category = "Paint")
 	void ApplySplat(const FPaintSplat& Splat);
 
-	/**
-	 * Applies one splat to every paintable surface within the splat's world radius. The
-	 * world-space brush makes this trivial: every component tests its own texels against the
-	 * same sphere, so a splat landing near an actor boundary simply paints both sides.
-	 */
-	UFUNCTION(BlueprintCallable, Category = "Paint", meta = (WorldContext = "WorldContextObject"))
-	static void ApplySplatInRadius(const UObject* WorldContextObject, const FPaintSplat& Splat, float WorldRadius);
-
 	UFUNCTION(BlueprintCallable, Category = "Paint")
 	void ClearPaint();
-
-	/**
-	 * Turns a contact event into drawing parameters. All of the incidence-angle behaviour
-	 * lives here, so a paintball and a mop stroke go through exactly the same maths.
-	 */
-	UFUNCTION(BlueprintPure, Category = "Paint")
-	FPaintSplatShape ComputeSplatShape(const FPaintSplat& Splat) const;
 
 	/** The target currently holding the paint. The other one is scratch for the next splat. */
 	UFUNCTION(BlueprintPure, Category = "Paint")
@@ -91,7 +68,7 @@ public:
 
 	/** Bounds-normalized local position per texel. Null until the baker has delivered. */
 	UFUNCTION(BlueprintPure, Category = "Paint")
-	UTextureRenderTarget2D* GetPositionRenderTarget() const;
+	UTextureRenderTarget2D* GetPositionRenderTarget() const { return PositionMap; }
 
 	/** Surface area each paint id owns on this mesh, in world cm^2. */
 	UFUNCTION(BlueprintPure, Category = "Paint|Coverage")
@@ -112,19 +89,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
 	int32 RenderTargetResolution = 1024;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
-	TObjectPtr<UMaterialInterface> BrushMaterial;
-
-	/**
-	 * Unlit material whose WPO flattens the mesh into its UV layout while the emissive outputs
-	 * the pre-offset local position, normalized to the object bounds (M_PaintUnwrap).
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
-	TObjectPtr<UMaterialInterface> UnwrapMaterial;
-
 	/**
 	 * World-space size of the plane the mesh unwraps onto during the bake. The value itself is
-	 * arbitrary; it only has to match the capture's ortho width, which BakePositionMap guarantees.
+	 * arbitrary; it only has to match the capture's ortho width, which the baker guarantees.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
 	float UnwrapPlaneSize = 1000.0f;
@@ -140,14 +107,6 @@ protected:
 	/** Material slot on the owner's mesh that receives the surface material. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
 	int32 SurfaceMaterialSlot = 0;
-
-	/**
-	 * Unlit material that writes, per texel, how close the unwrap island edge is (M_PaintEdgeFade).
-	 * Displacement is scaled by it: at a hard edge the neighbouring faces rise along different
-	 * vertex normals, so any height left there tears the mesh open.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
-	TObjectPtr<UMaterialInterface> EdgeFadeMaterial;
 
 	/** Width of the displacement fade at island edges, in paint texels. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning", meta = (ClampMin = "1"))
@@ -186,61 +145,26 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint|Debug")
 	bool bDrawDebugCoverage = false;
 
-	/** Draws every coverage cell as a box in its paint id's debug color. */
+	/** Draws every coverage cell as a slab on the surface in its paint id's debug color. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint|Debug")
 	bool bDrawDebugCells = false;
 
-	/** Radius in cm for a splat of unit volume arriving at zero speed. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
-	float BaseRadius = 25.0f;
-
-	/** cm of radius added per cm/s of impact speed. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
-	float RadiusPerSpeed = 0.005f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
-	float MaxRadius = 120.0f;
-
-	/** Upper bound on 1 / cos(incidence). Without it a grazing hit stretches to infinity. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
-	float MaxStretch = 3.0f;
-
-	/**
-	 * Fraction of the stretch-added radius the splat center slides along the tangent. 0 keeps
-	 * the ellipse centered on the contact; 1 keeps the near edge pinned there instead.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
-	float CenterShiftScale = 0.5f;
-
-	/**
-	 * Below this stretch the stamp is visually round, so aligning it to the incident tangent
-	 * just repeats one orientation every click; such splats spin from the seed instead.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
-	float MinAlignedStretch = 1.2f;
-
 private:
 	static UTextureRenderTarget2D* CreateIdBuffer(UObject* Outer, int32 Resolution);
-	static UTextureRenderTarget2D* CreateFadeBuffer(UObject* Outer, int32 Resolution);
 
 	UStaticMeshComponent* FindTargetMesh() const;
-	void OnPositionMapBaked(UTextureRenderTarget2D* PositionMap);
-	void BakeEdgeFade(UTextureRenderTarget2D* PositionMap);
-	void BuildCellGrid();
-	FPaintLocalStamp ComputeLocalStamp(const FPaintSplat& Splat, const FPaintSplatShape& Shape) const;
-	void DrawDebugCoverage() const;
+	float GetUniformScale() const;
+	void OnMapsBaked(UTextureRenderTarget2D* InPositionMap, UTextureRenderTarget2D* EdgeFadeMap);
+	UMaterialInstanceDynamic* GetBrushMID(UMaterialInterface* BrushMaterial);
+	void PrimeBrushMID(UMaterialInstanceDynamic& BrushMID) const;
+	FPaintLocalStamp ComputeLocalStamp(const FPaintSplat& Splat) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTarget2D> PaintRenderTargets[2];
 
+	/** One instance per brush material that has painted this surface; splats bring their own brush. */
 	UPROPERTY(Transient)
-	TObjectPtr<UTextureRenderTarget2D> EdgeFadeRenderTarget;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> EdgeFadeMID;
-
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> BrushMID;
+	TMap<TObjectPtr<UMaterialInterface>, TObjectPtr<UMaterialInstanceDynamic>> BrushMIDs;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> SurfaceMID;
@@ -249,7 +173,11 @@ private:
 	TObjectPtr<UStaticMeshComponent> TargetMesh;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UPositionMapBaker> PositionBaker;
+	TObjectPtr<UPaintMapBaker> MapBaker;
+
+	/** Kept after the bake so a brush instance created later can still be primed with it. */
+	UPROPERTY(Transient)
+	TObjectPtr<UTextureRenderTarget2D> PositionMap;
 
 	FPaintCellGrid CellGrid;
 
@@ -258,6 +186,6 @@ private:
 
 	int32 FrontBufferIndex = 0;
 
-	/** True once the position map has baked and every MID parameter is in place. */
+	/** True once the maps have baked and every surface parameter is in place. */
 	bool bPaintReady = false;
 };
