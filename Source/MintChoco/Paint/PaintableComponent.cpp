@@ -1,13 +1,19 @@
 #include "Paint/PaintableComponent.h"
 
 #include "Components/StaticMeshComponent.h"
+#include "DrawDebugHelpers.h"
 #include "Engine/Engine.h"
 #include "Engine/OverlapResult.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
 #include "Kismet/KismetRenderingLibrary.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Rendering/PositionVertexBuffer.h"
+#include "Rendering/StaticMeshVertexBuffer.h"
+#include "StaticMeshResources.h"
 
+#include "Paint/PaintCoverageSubsystem.h"
 #include "Paint/PositionMapBaker.h"
 
 namespace
@@ -39,7 +45,9 @@ namespace
 
 UPaintableComponent::UPaintableComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	// Ticking only serves the debug overlays, so it stays off until one of them is on.
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
 }
 
 void UPaintableComponent::BeginPlay()
@@ -58,6 +66,19 @@ void UPaintableComponent::BeginPlay()
 		UE_LOG(LogTemp, Warning, TEXT("%s: no StaticMeshComponent on the owner to paint onto."), *GetReadableName());
 		return;
 	}
+
+	// Identity transform in, local bounds out - the same box the material's ObjectLocalBounds
+	// node reads, which is what makes the un-normalize in the brush line up.
+	MeshLocalBounds = TargetMesh->CalcBounds(FTransform::Identity).GetBox();
+
+	// The grid needs only the mesh, so it is ready long before the position map; splats still
+	// wait for bPaintReady, so nothing gets scored that was not drawn.
+	BuildCellGrid();
+	if (const auto Coverage = GetWorld()->GetSubsystem<UPaintCoverageSubsystem>())
+	{
+		Coverage->RegisterPaintable(this);
+	}
+	SetComponentTickEnabled(bDrawDebugCoverage || bDrawDebugCells);
 
 	PaintRenderTargets[0] = CreateIdBuffer(this, RenderTargetResolution);
 	PaintRenderTargets[1] = CreateIdBuffer(this, RenderTargetResolution);
@@ -93,6 +114,14 @@ void UPaintableComponent::BeginPlay()
 
 void UPaintableComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (const auto World = GetWorld())
+	{
+		if (const auto Coverage = World->GetSubsystem<UPaintCoverageSubsystem>())
+		{
+			Coverage->UnregisterPaintable(this);
+		}
+	}
+
 	bPaintReady = false;
 	PaintRenderTargets[0] = nullptr;
 	PaintRenderTargets[1] = nullptr;
@@ -166,30 +195,7 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 	if (!bPaintReady) return;
 
 	const auto Shape = ComputeSplatShape(Splat);
-
-	// The stamp needs a full 2D frame on the surface, not just a stretch axis. A near-round
-	// stamp gains nothing from tangent alignment - it would just repeat one orientation every
-	// click - so its rotation comes from the replicated seed instead: every client derives the
-	// same frame and stamps the same shape.
-	const FVector Normal = Splat.Normal.GetSafeNormal();
-	FVector AxisU = Shape.TangentDirection;
-	if (Shape.Stretch < MinAlignedStretch || AxisU.IsNearlyZero())
-	{
-		const FRandomStream Stream(Splat.Seed);
-		const FVector Reference = FMath::Abs(Normal.Z) < 0.9f ? FVector::UpVector : FVector::ForwardVector;
-		const FVector Base = FVector::CrossProduct(Normal, Reference).GetSafeNormal();
-		AxisU = Base.RotateAngleAxis(Stream.FRand() * 360.0f, Normal);
-	}
-	const FVector AxisV = FVector::CrossProduct(Normal, AxisU);
-
-	const auto& MeshTransform = TargetMesh->GetComponentTransform();
-	const auto ShiftedCenter = Splat.Location + Shape.TangentDirection * Shape.CenterShift;
-	const auto LocalCenter = MeshTransform.InverseTransformPosition(ShiftedCenter);
-	// A direction only needs the rotation undone; scale would just be normalized away again.
-	const auto LocalAxisU = MeshTransform.InverseTransformVectorNoScale(AxisU);
-	const auto LocalAxisV = MeshTransform.InverseTransformVectorNoScale(AxisV);
-	// Uniform scale assumed
-	const float LocalRadius = Shape.Radius / MeshTransform.GetScale3D().X;
+	const FPaintLocalStamp Stamp = ComputeLocalStamp(Splat, Shape);
 
 	// The brush writes the id as a normalized byte; the R8 target stores it back as exactly PaintId.
 	BrushMID->SetScalarParameterValue(
@@ -197,19 +203,19 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 		Splat.PaintId / 255.0f);
 	BrushMID->SetVectorParameterValue(
 		BrushCenterParam,
-		FLinearColor(LocalCenter));
+		FLinearColor(Stamp.Center));
 	BrushMID->SetScalarParameterValue(
 		BrushRadiusParam,
-		LocalRadius);
+		Stamp.Radius);
 	BrushMID->SetVectorParameterValue(
 		BrushAxisUParam,
-		FLinearColor(LocalAxisU));
+		FLinearColor(Stamp.AxisU));
 	BrushMID->SetVectorParameterValue(
 		BrushAxisVParam,
-		FLinearColor(LocalAxisV));
+		FLinearColor(Stamp.AxisV));
 	BrushMID->SetScalarParameterValue(
 		BrushStretchParam,
-		Shape.Stretch);
+		Stamp.Stretch);
 	// Wrapped so sin()-based hashing in the shader keeps its precision for typed-in seeds.
 	BrushMID->SetScalarParameterValue(
 		BrushSeedParam,
@@ -234,6 +240,10 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 	{
 		SurfaceMID->SetTextureParameterValue(PaintIdMapParam, Back);
 	}
+
+	// Same stamp the brush just drew, so ownership can only differ from the picture by the
+	// stamp's satellites and the cell resolution.
+	CellGrid.Mark(Stamp, Splat.PaintId, CellStampFraction);
 }
 
 void UPaintableComponent::ApplySplatInRadius(
@@ -282,6 +292,7 @@ void UPaintableComponent::ClearPaint()
 			UKismetRenderingLibrary::ClearRenderTarget2D(this, Buffer, PaintIdNoneColor);
 		}
 	}
+	CellGrid.ClearPaint();
 }
 
 UTextureRenderTarget2D* UPaintableComponent::GetPositionRenderTarget() const
@@ -295,9 +306,7 @@ void UPaintableComponent::OnPositionMapBaked(UTextureRenderTarget2D* PositionMap
 	// releasing the MIDs, so a null here is a programmer error rather than a designer one.
 	check(BrushMID && SurfaceMID && TargetMesh);
 
-	// Identity transform in, local bounds out - the same box the material's ObjectLocalBounds
-	// node reads, which is what makes the un-normalize in the brush line up.
-	const auto LocalBounds = TargetMesh->CalcBounds(FTransform::Identity).GetBox();
+	const auto& LocalBounds = MeshLocalBounds;
 
 	BrushMID->SetTextureParameterValue(PositionMapParam, PositionMap);
 	BrushMID->SetVectorParameterValue(
@@ -372,4 +381,179 @@ UStaticMeshComponent* UPaintableComponent::FindTargetMesh() const
 {
 	const AActor* Owner = GetOwner();
 	return Owner ? Owner->FindComponentByClass<UStaticMeshComponent>() : nullptr;
+}
+
+FPaintLocalStamp UPaintableComponent::ComputeLocalStamp(const FPaintSplat& Splat, const FPaintSplatShape& Shape) const
+{
+	// The stamp needs a full 2D frame on the surface, not just a stretch axis. A near-round
+	// stamp gains nothing from tangent alignment - it would just repeat one orientation every
+	// click - so its rotation comes from the replicated seed instead: every client derives the
+	// same frame and stamps the same shape.
+	const FVector Normal = Splat.Normal.GetSafeNormal();
+	FVector AxisU = Shape.TangentDirection;
+	if (Shape.Stretch < MinAlignedStretch || AxisU.IsNearlyZero())
+	{
+		const FRandomStream Stream(Splat.Seed);
+		const FVector Reference = FMath::Abs(Normal.Z) < 0.9f ? FVector::UpVector : FVector::ForwardVector;
+		const FVector Base = FVector::CrossProduct(Normal, Reference).GetSafeNormal();
+		AxisU = Base.RotateAngleAxis(Stream.FRand() * 360.0f, Normal);
+	}
+	const FVector AxisV = FVector::CrossProduct(Normal, AxisU);
+
+	const auto& MeshTransform = TargetMesh->GetComponentTransform();
+	const auto ShiftedCenter = Splat.Location + Shape.TangentDirection * Shape.CenterShift;
+
+	FPaintLocalStamp Stamp;
+	Stamp.Center = MeshTransform.InverseTransformPosition(ShiftedCenter);
+	// A direction only needs the rotation undone; scale would just be normalized away again.
+	Stamp.AxisU = MeshTransform.InverseTransformVectorNoScale(AxisU);
+	Stamp.AxisV = MeshTransform.InverseTransformVectorNoScale(AxisV);
+	Stamp.Normal = MeshTransform.InverseTransformVectorNoScale(Normal);
+	// Uniform scale assumed
+	Stamp.Radius = Shape.Radius / MeshTransform.GetScale3D().X;
+	Stamp.Stretch = Shape.Stretch;
+	return Stamp;
+}
+
+void UPaintableComponent::BuildCellGrid()
+{
+	const UStaticMesh* const Mesh = TargetMesh->GetStaticMesh();
+	const FStaticMeshRenderData* const RenderData = Mesh ? Mesh->GetRenderData() : nullptr;
+	if (!RenderData || RenderData->LODResources.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s: no render data on the mesh, coverage disabled."), *GetReadableName());
+		return;
+	}
+
+	// LOD 0 is the Nanite fallback on a Nanite mesh, which is plenty for cells this coarse. In a
+	// cooked build these buffers only exist on the CPU if the mesh asset has Allow CPU Access on.
+	const auto& LOD = RenderData->LODResources[0];
+	const auto& PositionBuffer = LOD.VertexBuffers.PositionVertexBuffer;
+	const auto& VertexBuffer = LOD.VertexBuffers.StaticMeshVertexBuffer;
+	const auto IndexView = LOD.IndexBuffer.GetArrayView();
+	const uint32 VertexCount = PositionBuffer.GetNumVertices();
+	if (VertexCount == 0 || IndexView.Num() == 0)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("%s: mesh geometry is not CPU-readable (enable Allow CPU Access on %s), coverage disabled."),
+			*GetReadableName(), *GetNameSafe(Mesh));
+		return;
+	}
+
+	// Only the slot that shows paint counts; a second material on the mesh is not paintable.
+	TArray<uint32> Indices;
+	for (const FStaticMeshSection& Section : LOD.Sections)
+	{
+		const int32 End = Section.FirstIndex + Section.NumTriangles * 3;
+		if (Section.MaterialIndex != SurfaceMaterialSlot || End > IndexView.Num())
+		{
+			continue;
+		}
+		Indices.Reserve(Indices.Num() + Section.NumTriangles * 3);
+		for (int32 Index = Section.FirstIndex; Index < End; ++Index)
+		{
+			Indices.Add(IndexView[Index]);
+		}
+	}
+	if (Indices.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("%s: material slot %d has no triangles, coverage disabled."),
+			*GetReadableName(), SurfaceMaterialSlot);
+		return;
+	}
+
+	TArray<FVector3f> Normals;
+	if (VertexBuffer.GetNumVertices() == VertexCount)
+	{
+		Normals.SetNumUninitialized(VertexCount);
+		for (uint32 Vertex = 0; Vertex < VertexCount; ++Vertex)
+		{
+			Normals[Vertex] = FVector3f(VertexBuffer.VertexTangentZ(Vertex));
+		}
+	}
+	const TArrayView<const FVector3f> Positions(
+		static_cast<const FVector3f*>(PositionBuffer.GetVertexData()), VertexCount);
+
+	// Uniform scale assumed, as everywhere else in the component.
+	const float Scale = TargetMesh->GetComponentTransform().GetScale3D().X;
+	CellGrid.Build(MeshLocalBounds, CellSize / Scale, Scale * Scale, Positions, Normals, Indices);
+
+	const FIntVector& Dims = CellGrid.GetDims();
+	UE_LOG(LogTemp, Log, TEXT("%s: cell grid %d x %d x %d, %d surface cells, %.0f cm^2."),
+		*GetReadableName(), Dims.X, Dims.Y, Dims.Z, CellGrid.GetSurfaceCellCount(), CellGrid.GetCoverage().TotalArea);
+}
+
+void UPaintableComponent::SetDebugDraw(bool bText, bool bCells)
+{
+	bDrawDebugCoverage = bText;
+	bDrawDebugCells = bCells;
+	SetComponentTickEnabled(bText || bCells);
+}
+
+void UPaintableComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (TargetMesh && CellGrid.IsBuilt())
+	{
+		DrawDebugCoverage();
+	}
+}
+
+void UPaintableComponent::DrawDebugCoverage() const
+{
+#if ENABLE_DRAW_DEBUG
+	const UWorld* const World = GetWorld();
+	const FTransform& MeshTransform = TargetMesh->GetComponentTransform();
+	const FVector LocalCenter = MeshLocalBounds.GetCenter();
+	const FVector LocalExtent = MeshLocalBounds.GetExtent();
+	const float Scale = MeshTransform.GetScale3D().X;
+
+	// Duration 0 lives exactly one frame, so re-issuing every tick keeps the text current
+	// without ever stacking stale copies.
+	if (bDrawDebugCoverage)
+	{
+		const FString Label = GetOwner() ? GetOwner()->GetActorNameOrLabel() : GetName();
+		DrawDebugString(
+			World, MeshTransform.TransformPosition(LocalCenter),
+			FString::Printf(TEXT("%s  %s"), *Label, *CellGrid.GetCoverage().ToString()),
+			nullptr, FColor::White, 0.0f, true);
+
+		constexpr float MarginWorld = 20.0f;
+		for (int32 Direction = 0; Direction < PaintFaceDirectionCount; ++Direction)
+		{
+			const auto Face = static_cast<EPaintFaceDirection>(Direction);
+			const FPaintCoverage Coverage = CellGrid.GetCoverage(Face);
+			if (Coverage.TotalArea <= 0.0f)
+			{
+				continue;
+			}
+			const FVector Axis = PaintFaceDirectionVector(Face);
+			const double Reach = FVector::DotProduct(Axis.GetAbs(), LocalExtent) + MarginWorld / Scale;
+			DrawDebugString(
+				World, MeshTransform.TransformPosition(LocalCenter + Axis * Reach),
+				FString::Printf(TEXT("%s  %s"), PaintFaceDirectionName(Face), *Coverage.ToString()),
+				nullptr, PaintIdDebugColor(PaintIdNone), 0.0f, true);
+		}
+	}
+
+	if (bDrawDebugCells)
+	{
+		// A cell is a patch of surface, so it is drawn as a slab centered on that surface, facing
+		// its direction, rather than as the voxel it lives in (which straddles the surface). Thick
+		// enough to stand clear of the displaced paint, which would otherwise swallow a thin one.
+		const float HalfCell = CellGrid.GetCellSize() * Scale * 0.45f;
+		const FVector Extent(HalfCell, HalfCell, HalfCell * 0.5f);
+		CellGrid.ForEachSurfaceCell([&](const FVector& SurfaceCenter, EPaintFaceDirection Direction, uint8 PaintId, float)
+		{
+			const bool bPainted = PaintId != PaintIdNone;
+			const FQuat FaceRotation = FRotationMatrix::MakeFromZ(PaintFaceDirectionVector(Direction)).ToQuat();
+			DrawDebugBox(
+				World, MeshTransform.TransformPosition(SurfaceCenter), Extent, MeshTransform.GetRotation() * FaceRotation,
+				bPainted ? PaintIdDebugColor(PaintId) : FColor(70, 70, 70),
+				false, 0.0f, 0, bPainted ? 1.0f : 0.0f);
+		});
+	}
+#endif
 }

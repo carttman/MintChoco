@@ -43,7 +43,9 @@ Each of these cost real debugging time once.
 ### Arrays and pins
 
 - `ObjectTools.set_properties` on an array property: **grow** by exactly one element
-  per call, passing the existing elements back verbatim as read; shrink only with the
+  per call, **re-reading the array right before each append** (the editor rewrites
+  GUIDs and float rounding on write, and a stale copy is rejected as "elements
+  changed alongside the size change"); shrink only with the
   surviving elements unchanged (remove-and-edit in one call is "ambiguous"); in-place
   edits of any size work in one call. To replace element 0 and shrink, first rotate in
   place, then drop the tail. A fresh Custom node already holds one unnamed input.
@@ -60,6 +62,10 @@ Each of these cost real debugging time once.
 - `BreakMaterialAttributes` exposes Refraction as **RG only** (float2). Pixel-frequency
   carriers through a layer stack: Anisotropy (1), Refraction (2), PixelDepthOffset (1),
   Opacity (1), Tangent (3) — every look layer must pass each one through Break → Make.
+  In use: Anisotropy / Refraction.rg / PixelDepthOffset = per-team signed distances,
+  Opacity = consumed coverage `S`, EmissiveColor.r = thin-paint opacity (slab Emissive
+  is deliberately unwired), Tangent = per-look `(SecondRoughness, weight, WetCoat)`
+  written by the looks rather than passed through.
 - `MaterialTools.connect_to_output` / `get_property_input` silently ignore
   `MP_Displacement`, and `MaterialEditorOnlyData` exposes no `FExpressionInput`
   properties. That one wire is dragged by the developer, and material editor edits
@@ -76,7 +82,17 @@ Each of these cost real debugging time once.
 - `MaterialTools` object references need the full object path (`/Game/X/M_Foo.M_Foo`);
   a bare package path is rejected. Pins without a name (Transform, MaterialLayerOutput)
   are addressed as `"None"` in `connect_expressions`. `ProgrammaticToolset` runs
-  `execute_tool_script` with a `run()` that returns a dict.
+  `execute_tool_script` with a `run()` that returns a dict; `execute_tool` and
+  `call_tool` need the full dotted toolset path
+  (`editor_toolset.toolsets.material.MaterialTools.get_expressions`), and
+  `ObjectTools` takes `instance` + `properties` / `values` (a JSON string).
+- `MaterialInstanceTools.set_scalar_parameter` / `set_vector_parameter` only write
+  **GlobalParameter** entries, so a Material Layer parameter (same name in several
+  slots) never lands. Write layer overrides through `ObjectTools.set_properties` on
+  `ScalarParameterValues` / `VectorParameterValues` with
+  `parameterInfo {name, association: LayerParameter, index}` (0 = Background, then
+  layers in stack order) and a zero `expressionGUId` — the UI writes zero GUIDs too.
+  One append per call. `ExpressionGUID` on parameter nodes is unreadable.
 - `UInputMappingContext.Mappings` is deprecated and invisible to the editor UI.
   Read and write `DefaultKeyMappings.mappings` instead.
 
@@ -113,7 +129,14 @@ Each of these cost real debugging time once.
 - `TextureTools.import_file` never overwrites. Reimporting means: unhook referencers,
   delete, import, re-hook — deleting also nulls sampler defaults that pointed at it.
 - Duplicated parameter nodes with the same name are one parameter; keep every copy's
-  default identical or only one wins.
+  default identical or only one wins. This also holds across functions: a parameter
+  declared inside two Material Functions surfaces once on the master, which is the
+  safe way to feed a value into a function (adding a FunctionInput leaves the existing
+  call nodes' pins stale).
+- `Config/DefaultEditor.ini` regrows `[/Script/AdvancedPreviewScene.SharedProfiles]`
+  whenever an asset editor saves preview-scene settings (`USharedProfiles` is
+  `defaultconfig`; `UAssetViewerSettings::Save` writes the three engine profiles).
+  Commit it once instead of reverting it.
 - A paintable mesh needs a unique UV1: `M_PaintUnwrap` and every paint read use
   TexCoord 1, and a missing channel silently pads with the last one (UV0). Art meshes
   arrive with UV0 only (`LightMapCoordinateIndex 0`,
@@ -123,6 +146,13 @@ Each of these cost real debugging time once.
 
 ### Nanite tessellation displacement (UE 5.8)
 
+- Substrate: a slab stacked on top through `SubstrateVerticalLayering` may only use the
+  SimpleVolume SSS type (the node help says so); Diffusion SSS survives only on the
+  bottom slab. So paint stays the bottom slab and the wet coat is the top:
+  `VL(Top = Weight(coat, Tangent.B), Bottom = body)`. The stack carries per-look
+  `(SecondRoughness, SecondRoughnessWeight, WetCoat)` on **Tangent** (pixel-frequency,
+  lerped by `BlendMaterialAttributes` in `MF_PaintTeamBlend`); a look that leaves
+  `Make.Tangent` unwired leaks the vertex tangent into those slab inputs.
 - Tessellation is **on by default** (`r.Nanite.AllowTessellation` no longer exists;
   `r.Nanite.Tessellation`, `ProgrammableRaster`, `ComputeRasterization` all default 1;
   `r.Nanite.DicingRate` is the density knob). The material needs

@@ -8,6 +8,8 @@
 
 class UInputAction;
 class UInputMappingContext;
+class UPaintCoverageSubsystem;
+class USampleCoverageWidget;
 class USampleSeedWidget;
 class UUserWidget;
 
@@ -36,6 +38,18 @@ public:
 	/** Seed the next splat will use. The debug widget mirrors this value. */
 	UFUNCTION(BlueprintPure, Category = "Sample|Paint")
 	int32 GetNextSeed() const { return NextSeed; }
+
+	/** Console: toggles the floating coverage text over every paintable surface. */
+	UFUNCTION(Exec)
+	void PaintDebugText();
+
+	/** Console: toggles the coverage cell boxes on every paintable surface. */
+	UFUNCTION(Exec)
+	void PaintDebugCells();
+
+	/** Console: logs each surface's coverage and the world total. */
+	UFUNCTION(Exec)
+	void PaintCoverage();
 
 protected:
 	virtual void BeginPlay() override;
@@ -67,6 +81,10 @@ protected:
 	/** Defaults to the C++ widget, which builds its own layout; a UMG subclass restyles it. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI")
 	TSubclassOf<USampleSeedWidget> SeedWidgetClass;
+
+	/** World coverage readout. Defaults to the C++ widget; a UMG subclass restyles it. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI")
+	TSubclassOf<USampleCoverageWidget> CoverageWidgetClass;
 
 	/** Paint id written by the next click. 0-3 are player teams; 7 (PaintIdNone) erases. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample|Paint", meta = (ClampMin = "0", ClampMax = "7"))
@@ -112,12 +130,16 @@ protected:
 private:
 	bool TracePaintTarget(FHitResult& OutHit, FVector& OutDirection) const;
 	bool PaintAtHit(const FHitResult& Hit, const FVector& Direction, float HeightAdd);
+	UPaintCoverageSubsystem* GetCoverageSubsystem() const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> CrosshairWidget;
 
 	UPROPERTY(Transient)
 	TObjectPtr<USampleSeedWidget> SeedWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<USampleCoverageWidget> CoverageWidget;
 
 	FVector StrokeAnchor = FVector::ZeroVector;
 	bool bStrokeAnchorValid = false;

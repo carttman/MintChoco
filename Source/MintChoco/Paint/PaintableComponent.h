@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Paint/PaintCellGrid.h"
 #include "Paint/PaintSplat.h"
 
 #include "PaintableComponent.generated.h"
@@ -34,6 +35,10 @@ class UTextureRenderTarget2D;
  *
  * Two render targets per instance is deliberate. Sharing them between actors is the first thing
  * that breaks once a second paintable surface exists in the level.
+ *
+ * The gameplay layer rides alongside: a coverage cell grid (FPaintCellGrid) built once from the
+ * mesh triangles answers who owns how much surface. ApplySplat hands the brush and the grid the
+ * same local stamp, so score and picture cannot drift apart, and the render target is never read.
  */
 UCLASS(ClassGroup = (Paint), meta = (BlueprintSpawnableComponent))
 class MINTCHOCO_API UPaintableComponent : public UActorComponent
@@ -45,6 +50,7 @@ public:
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	/**
 	 * Fills in a splat from a trace or collision hit. A click trace, a paintball and a mop all
@@ -86,6 +92,20 @@ public:
 	/** Bounds-normalized local position per texel. Null until the baker has delivered. */
 	UFUNCTION(BlueprintPure, Category = "Paint")
 	UTextureRenderTarget2D* GetPositionRenderTarget() const;
+
+	/** Surface area each paint id owns on this mesh, in world cm^2. */
+	UFUNCTION(BlueprintPure, Category = "Paint|Coverage")
+	FPaintCoverage GetCoverage() const { return CellGrid.GetCoverage(); }
+
+	/** Coverage of the part of the mesh that faces one local direction. */
+	UFUNCTION(BlueprintPure, Category = "Paint|Coverage")
+	FPaintCoverage GetFaceCoverage(EPaintFaceDirection Direction) const { return CellGrid.GetCoverage(Direction); }
+
+	UFUNCTION(BlueprintCallable, Category = "Paint|Debug")
+	void SetDebugDraw(bool bText, bool bCells);
+
+	bool IsDebugTextDrawn() const { return bDrawDebugCoverage; }
+	bool AreDebugCellsDrawn() const { return bDrawDebugCells; }
 
 protected:
 	/** Square resolution of the paint render target. */
@@ -148,6 +168,28 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning", meta = (ClampMin = "1"))
 	float PaintDistanceRange = 4.0f;
 
+	/**
+	 * World-space edge of one coverage cell. Cells are the gameplay layer's unit of ownership;
+	 * the paint buffer keeps its texel resolution regardless.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Coverage", meta = (ClampMin = "5"))
+	float CellSize = 25.0f;
+
+	/**
+	 * Fraction of the splat radius that claims a cell. The stamp's main blob spans half the
+	 * radius, so 0.5 follows the body; the satellite droplets reach almost to 1.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Coverage", meta = (ClampMin = "0.1", ClampMax = "1"))
+	float CellStampFraction = 0.5f;
+
+	/** Floating text over the mesh: total coverage and one line per local face direction. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint|Debug")
+	bool bDrawDebugCoverage = false;
+
+	/** Draws every coverage cell as a box in its paint id's debug color. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint|Debug")
+	bool bDrawDebugCells = false;
+
 	/** Radius in cm for a splat of unit volume arriving at zero speed. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
 	float BaseRadius = 25.0f;
@@ -184,6 +226,9 @@ private:
 	UStaticMeshComponent* FindTargetMesh() const;
 	void OnPositionMapBaked(UTextureRenderTarget2D* PositionMap);
 	void BakeEdgeFade(UTextureRenderTarget2D* PositionMap);
+	void BuildCellGrid();
+	FPaintLocalStamp ComputeLocalStamp(const FPaintSplat& Splat, const FPaintSplatShape& Shape) const;
+	void DrawDebugCoverage() const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTextureRenderTarget2D> PaintRenderTargets[2];
@@ -205,6 +250,11 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UPositionMapBaker> PositionBaker;
+
+	FPaintCellGrid CellGrid;
+
+	/** The mesh's own bounds, the box the position map is normalized to and the grid is laid over. */
+	FBox MeshLocalBounds = FBox(ForceInit);
 
 	int32 FrontBufferIndex = 0;
 

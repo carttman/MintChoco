@@ -78,3 +78,22 @@ struct FPaintSplatShape
 	/** Farthest painted point from the contact, in world cm. This is the overlap query radius. */
 	float GetWorldExtent() const { return CenterShift + Radius * Stretch; }
 };
+
+/**
+ * The splat expressed in the painted mesh's local frame. The brush shader and the coverage cell
+ * grid both consume this one struct, which is what keeps the two layers agreeing on where a
+ * splat landed.
+ */
+struct FPaintLocalStamp
+{
+	FVector Center = FVector::ZeroVector;
+
+	/** Unit axes of the stamp plane; U is the stretched axis. */
+	FVector AxisU = FVector::ForwardVector;
+	FVector AxisV = FVector::RightVector;
+	FVector Normal = FVector::UpVector;
+
+	/** Half-extent along AxisV in local units; along AxisU the stamp spans Radius * Stretch. */
+	float Radius = 0.0f;
+	float Stretch = 1.0f;
+};

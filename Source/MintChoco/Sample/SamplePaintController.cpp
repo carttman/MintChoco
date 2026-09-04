@@ -8,14 +8,17 @@
 #include "Engine/LocalPlayer.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
+#include "Paint/PaintCoverageSubsystem.h"
 #include "Paint/PaintSplat.h"
 #include "Paint/PaintableComponent.h"
+#include "Sample/SampleCoverageWidget.h"
 #include "Sample/SampleSeedWidget.h"
 
 ASamplePaintController::ASamplePaintController()
 {
 	bShowMouseCursor = false;
 	SeedWidgetClass = USampleSeedWidget::StaticClass();
+	CoverageWidgetClass = USampleCoverageWidget::StaticClass();
 }
 
 void ASamplePaintController::BeginPlay()
@@ -45,6 +48,72 @@ void ASamplePaintController::BeginPlay()
 			SeedWidget->AddToViewport();
 		}
 	}
+
+	if (IsLocalPlayerController() && CoverageWidgetClass)
+	{
+		CoverageWidget = CreateWidget<USampleCoverageWidget>(this, CoverageWidgetClass);
+		if (CoverageWidget)
+		{
+			CoverageWidget->AddToViewport();
+		}
+	}
+}
+
+void ASamplePaintController::PaintDebugText()
+{
+	if (const UPaintCoverageSubsystem* const Coverage = GetCoverageSubsystem())
+	{
+		const TArray<UPaintableComponent*> Paintables = Coverage->GetPaintables();
+		const bool bAnyShown = Paintables.ContainsByPredicate(
+			[](const UPaintableComponent* Paintable) { return Paintable->IsDebugTextDrawn(); });
+		for (UPaintableComponent* const Paintable : Paintables)
+		{
+			Paintable->SetDebugDraw(!bAnyShown, Paintable->AreDebugCellsDrawn());
+		}
+	}
+}
+
+void ASamplePaintController::PaintDebugCells()
+{
+	if (const UPaintCoverageSubsystem* const Coverage = GetCoverageSubsystem())
+	{
+		const TArray<UPaintableComponent*> Paintables = Coverage->GetPaintables();
+		const bool bAnyShown = Paintables.ContainsByPredicate(
+			[](const UPaintableComponent* Paintable) { return Paintable->AreDebugCellsDrawn(); });
+		for (UPaintableComponent* const Paintable : Paintables)
+		{
+			Paintable->SetDebugDraw(Paintable->IsDebugTextDrawn(), !bAnyShown);
+		}
+	}
+}
+
+void ASamplePaintController::PaintCoverage()
+{
+	const UPaintCoverageSubsystem* const Coverage = GetCoverageSubsystem();
+	if (!Coverage)
+	{
+		return;
+	}
+
+	for (const UPaintableComponent* const Paintable : Coverage->GetPaintables())
+	{
+		const FPaintCoverage Surface = Paintable->GetCoverage();
+		UE_LOG(LogTemp, Log, TEXT("%s: %s (%.0f cm^2)"), *Paintable->GetReadableName(), *Surface.ToString(), Surface.TotalArea);
+	}
+
+	const FPaintCoverage World = Coverage->GetWorldCoverage();
+	const FString Summary = FString::Printf(TEXT("World: %s (%.0f cm^2)"), *World.ToString(), World.TotalArea);
+	UE_LOG(LogTemp, Log, TEXT("%s"), *Summary);
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(/*Key=*/1, /*TimeToDisplay=*/8.0f, FColor::White, Summary);
+	}
+}
+
+UPaintCoverageSubsystem* ASamplePaintController::GetCoverageSubsystem() const
+{
+	const UWorld* const World = GetWorld();
+	return World ? World->GetSubsystem<UPaintCoverageSubsystem>() : nullptr;
 }
 
 void ASamplePaintController::SetupInputComponent()
