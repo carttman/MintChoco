@@ -21,6 +21,7 @@ public class MintChoco : ModuleRules
 			"Slate",
 			"SlateCore",
 			"RHI",
+			"Niagara",
 			"OnlineSubsystem",
 			"OnlineSubsystemSteam",
 			"OnlineSubsystemUtils",
