@@ -20,6 +20,16 @@ void ALobbyPlayerController::Server_HandleReadyButton_Implementation()
 		LobbyGameMode->TryStartGame();
 }
 
+void ALobbyPlayerController::Server_HandleTeamButton_Implementation(int32 TeamId)
+{
+	if (HasAuthority() == false)
+		return;
+
+	ALobbyPlayerState* LobbyPlayerState = Cast<ALobbyPlayerState>(GetPawn()->GetPlayerState());
+	if (LobbyPlayerState)
+		LobbyPlayerState->Multicast_Team(TeamId);
+}
+
 void ALobbyPlayerController::Server_HandleChangeUsername_Implementation(const FText& InNickname)
 {
 	if (HasAuthority() == false)
@@ -32,3 +42,4 @@ void ALobbyPlayerController::Server_HandleChangeUsername_Implementation(const FT
 		LobbyPlayerState->RefreshLobbyUI();
 	}
 }
+

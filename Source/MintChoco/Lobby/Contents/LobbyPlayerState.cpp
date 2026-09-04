@@ -24,6 +24,13 @@ void ALobbyPlayerState::ClientInitialize(AController* C)
 	SetNickname();
 }
 
+void ALobbyPlayerState::Multicast_Team_Implementation(int32 TeamId)
+{
+	Team = TeamId;
+
+	RefreshLobbyUI();
+}
+
 void ALobbyPlayerState::Multicast_Ready_Implementation()
 {
 	Ready = true;

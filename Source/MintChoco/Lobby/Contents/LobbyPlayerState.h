@@ -22,6 +22,8 @@ public:
 	UFUNCTION(NetMulticast, Reliable)
 	void Multicast_Ready();
 
+	UFUNCTION(NetMulticast, Reliable)
+	void Multicast_Team(int32 TeamId);
 public:
 	UFUNCTION(BlueprintImplementableEvent)
 	void BP_RefreshLobbyUI();
@@ -45,4 +47,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing=OnRep_NicknameChange)
 	FText Nickname;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated)
+	int32 Team;
 };

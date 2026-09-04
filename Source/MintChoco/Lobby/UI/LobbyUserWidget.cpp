@@ -25,6 +25,25 @@ void ULobbyUserWidget::RefreshUI()
 	bool IsReady = PlayerState->Ready;
 	bool IsServer = UKismetSystemLibrary::IsServer(this);
 	bool IsLocalPlayer = false;
+	FText TeamText;
+
+	if (PlayerState->Team == 0)
+	{
+		TeamText = FText::FromString("Mint");
+
+		FColor MintColor = FColor(62, 180, 137, 255);
+		Txt_Team->SetColorAndOpacity(FSlateColor(MintColor));
+	}
+	else
+	{
+		TeamText = FText::FromString("Choco");
+
+		FColor ChocoColor = FColor::FromHex("#D2691E");
+		Txt_Team->SetColorAndOpacity(FSlateColor(ChocoColor));
+	}
+
+
+	Txt_Team->SetText(TeamText);
 
 	if (APlayerController* PlayerController = PlayerState->GetPlayerController())
 		IsLocalPlayer = PlayerController->IsLocalController();
@@ -35,6 +54,13 @@ void ULobbyUserWidget::RefreshUI()
 	Txt_Ready->SetVisibility(ESlateVisibility::Hidden);
 	Txt_PlayerName->SetVisibility(ESlateVisibility::Hidden);
 	Editable_PlayerName->SetVisibility(ESlateVisibility::Hidden);
+
+	 if (IsLocalPlayer == false)
+	 {
+	 	//Txt_Team->SetVisibility(ESlateVisibility::Hidden);
+		Btn_Mint->SetVisibility(ESlateVisibility::Hidden);
+		Btn_Choco->SetVisibility(ESlateVisibility::Hidden);
+	 }
 
 	// Show Ready Text
 	if (IsReady)
