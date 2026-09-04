@@ -16,6 +16,17 @@ class MINTCHOCO_API AGamePlayerState : public APlayerState
 
 	virtual void GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const override;
 
+public:
+	/**
+	 * 로비에서 정해져 ReceiveCopyProperties로 넘어온 팀. Teams::Mint 또는 Teams::Choco.
+	 * Team이 protected라 게임모드가 직접 읽을 수 없어 여기를 통한다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Team")
+	int32 GetTeam() const { return Team; }
+
+	UFUNCTION(BlueprintPure, Category = "Team")
+	FText GetNickname() const { return Nickname; }
+
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated)
 	FText Nickname;
