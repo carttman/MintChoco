@@ -45,8 +45,7 @@ void UOnlineSessionsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	}
 
 	// PIE에서는 월드마다 별도의 OSS 인스턴스가 존재한다. 월드 없이 IOnlineSubsystem::Get()을
-	// 부르면 모든 PIE 인스턴스가 전역 인스턴스 하나를 공유하게 되어, 한 인스턴스의
-	// CreateSession 완료 델리게이트가 나머지 인스턴스에서도 전부 호출된다.
+	// 부르면 모든 PIE 인스턴스가 전역 인스턴스 하나를 공유하게 됨.
 	if (auto* subsys = Online::GetSubsystem(GetWorld()))
 	{
 		bIsLanSubsystem = FName("NULL") == subsys->GetSubsystemName();
@@ -70,6 +69,8 @@ void UOnlineSessionsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 				this, &UOnlineSessionsSubsystem::OnMyInviteAcceptedComplete);
 		}
 	}
+
+	SetLocalPlayerNickname();
 }
 
 void UOnlineSessionsSubsystem::Deinitialize()
@@ -90,22 +91,6 @@ void UOnlineSessionsSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
-FString UOnlineSessionsSubsystem::GetLocalPlayerNickname() const
-{
-	if (auto* subsys = Online::GetSubsystem(GetWorld()))
-	{
-		if (const IOnlineIdentityPtr identity = subsys->GetIdentityInterface())
-		{
-			const FString nickname = identity->GetPlayerNickname(0);
-			if (false == nickname.IsEmpty())
-			{
-				return nickname;
-			}
-		}
-	}
-
-	return TEXT("Unknown");
-}
 
 void UOnlineSessionsSubsystem::OnMyCreateSession(FString roomName, int32 maxPlayer)
 {
@@ -130,7 +115,7 @@ void UOnlineSessionsSubsystem::OnMyCreateSession(FString roomName, int32 maxPlay
 	settings.Set(FName("ROOM_NAME"), StringBase64Encoder(roomName),
 				 EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	// 호스트 이름은 플랫폼 닉네임을 쓴다. 방 이름과 같은 값이 들어가면 목록에서 구분이 안 된다.
-	settings.Set(FName("HOST_NAME"), StringBase64Encoder(GetLocalPlayerNickname()),
+	settings.Set(FName("HOST_NAME"), StringBase64Encoder(GetLocalPlayerNicknameToFString()),
 				 EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	// Steam은 이 키를 로비 문자열 필터로 번역하므로, 남의 480 로비는 결과에 내려오지 않는다.
 	settings.Set(SETTING_GAME_ID, MINTCHOCO_GAME_ID,
@@ -293,6 +278,21 @@ void UOnlineSessionsSubsystem::OnNetworkFailure(UWorld* World, UNetDriver* NetDr
 	case ENetworkFailure::Type::ConnectionLost:
 		OnMyExitRoom();
 		break;
+	}
+}
+
+void UOnlineSessionsSubsystem::SetLocalPlayerNickname()
+{
+	if (auto* subsys = Online::GetSubsystem(GetWorld()))
+	{
+		if (const IOnlineIdentityPtr identity = subsys->GetIdentityInterface())
+		{
+			const FString nickname = identity->GetPlayerNickname(0);
+			if (false == nickname.IsEmpty())
+			{
+				LocalPlayerNickname = FText::FromString(nickname);
+			}
+		}
 	}
 }
 

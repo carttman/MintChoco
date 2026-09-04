@@ -16,6 +16,7 @@ class MINTCHOCO_API ALobbyPlayerState : public APlayerState
 
 public:
 	virtual void GetLifetimeReplicatedProps(TArray< FLifetimeProperty >& OutLifetimeProps) const override;
+	virtual void ClientInitialize(AController* C) override;
 
 public:
 	UFUNCTION(NetMulticast, Reliable)
@@ -34,6 +35,9 @@ private:
 
 	UFUNCTION(BlueprintCallable)
 	void SetNickname();
+
+	UFUNCTION(Server, Reliable)
+	void Server_SetNickname(const FText& NewNickname);
 
 public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated)
