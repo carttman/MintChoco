@@ -49,6 +49,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Weapon")
 	UPaintWeaponComponent* GetPaintWeapon() const { return PaintWeapon; }
 
+	/**
+	 * PlayerState의 팀을 무기의 페인트 id로 옮긴다.
+	 *
+	 * 빙의 시점, 폰의 PlayerState가 복제된 시점, 팀 값 자체가 복제된 시점
+	 * (AGamePlayerState::OnRep_Team) 세 곳에서 불린다. 팀은 폰이 아니라 PlayerState에
+	 * 실려 오므로 셋의 도착 순서가 보장되지 않는다. 마지막에 무엇이 오든 맞도록
+	 * 여러 번 불려도 안전하게 두었다.
+	 */
+	void ApplyTeamToWeapon();
+
 	// UFUNCTION(BlueprintPure, Category = "Camera")
 	// USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	/**
@@ -129,9 +139,6 @@ protected:
 	void StopDash();
 
 private:
-	/** PlayerState의 팀을 무기의 페인트 id로. 빙의 시점과 PlayerState 복제 시점 양쪽에서 부른다. */
-	void ApplyTeamToWeapon();
-
 	/** 대시 의도를 무브먼트 컴포넌트에 전달한다. 컴포넌트 타입이 틀리면 여기서 드러난다. */
 	void SetDashInput(bool bWantsToDash);
 

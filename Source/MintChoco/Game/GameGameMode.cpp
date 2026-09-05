@@ -115,6 +115,15 @@ void AGameGameMode::ApplyTeamUnitData(APawn* Pawn, const AController* NewPlayer)
 			TEXT("%s: 팀 %d의 UnitData가 없습니다. BP_GameMode의 Team Unit Data를 확인하세요."),
 			*GetNameSafe(NewPlayer), Team);
 	}
+	else
+	{
+		// 로비에서 팀을 고르지 않았거나 ReceiveCopyProperties가 값을 옮기지 못한 경우다.
+		// Team의 기본값이 0이던 시절에는 이 상황이 조용히 민트로 둔갑해 드러나지 않았다.
+		UE_LOG(LogMintChoco, Warning,
+			TEXT("%s: 팀이 정해지지 않은 채 스폰됐습니다(Team=%d). 로비의 팀 선택과 "
+				 "BP_LobbyPlayerState의 ReceiveCopyProperties를 확인하세요."),
+			*GetNameSafe(NewPlayer), Team);
+	}
 }
 
 UUnitDataAsset* AGameGameMode::FindUnitDataForTeam(int32 Team) const

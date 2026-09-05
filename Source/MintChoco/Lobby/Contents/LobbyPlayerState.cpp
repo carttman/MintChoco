@@ -12,6 +12,11 @@ void ALobbyPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 
 	DOREPLIFETIME(ALobbyPlayerState, Ready);
 	DOREPLIFETIME(ALobbyPlayerState, Nickname);
+
+	// Replicated로 선언해 놓고 여기에 빠져 있으면, Net.AutoRegisterReplicatedProperties가
+	// 기본값(true)인 동안에만 우연히 동작한다. 그 cvar를 끄는 순간 COND_Never가 되어
+	// 경고 한 줄 없이 복제가 멈춘다.
+	DOREPLIFETIME(ALobbyPlayerState, Team);
 }
 
 void ALobbyPlayerState::ClientInitialize(AController* C)
