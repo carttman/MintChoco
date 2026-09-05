@@ -158,6 +158,7 @@ Each of these cost real debugging time once.
 | Background shows through where two teams meet | Sequential layer blends lerp twice. Carry the coverage already consumed (`S`) through the stack and use `alpha = cov / (1 − S)` per blend. |
 | Paint reads as a matte sticker with glossy reflections | Flat team colors with a wet roughness. The fix is per-team looks with albedo texture and roughness designed together; for cream/ice cream go Substrate (slab with SSS MFP + fuzz) rather than overwriting attributes. |
 | Paint on an art mesh lands twice or in the wrong place | The mesh has no UV1. TexCoord 1 pads with the last channel, so the unwrap and every read run on the art UV0 with its overlaps and mirroring. Generate Lightmap UVs into index 1 and rebuild. |
+| Other players animate in slow motion on the listen-server host | The anim blueprint derives speed from per-tick position delta. On the server a remotely controlled pawn only moves when a `ServerMove` arrives (`ClientNetSendMoveDeltaTime` 0.0166 = 60 Hz), while the mesh ticks every frame, so the ticks with no displacement drag the average down. Read `Velocity` off the movement component instead — it holds its value between moves, so it is frame-rate independent. `t.MaxFPS 60` making the symptom vanish confirms it. |
 
 ## OnlineSubsystem / Steam sessions
 

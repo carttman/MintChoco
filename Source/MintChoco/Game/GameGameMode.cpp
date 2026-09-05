@@ -11,6 +11,7 @@
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
+#include "MintChoco.h"
 
 AGameGameMode::AGameGameMode()
 {
@@ -82,22 +83,43 @@ APawn* AGameGameMode::SpawnDefaultPawnAtTransform_Implementation(AController* Ne
 		return nullptr;
 	}
 
-	if (AUnit* Unit = Cast<AUnit>(Pawn))
-	{
-		if (UUnitDataAsset* Data = FindUnitDataForTeam(GetTeamOf(NewPlayer)))
-		{
-			Unit->SetUnitData(Data);
-		}
-	}
+	ApplyTeamUnitData(Pawn, NewPlayer);
 
 	UGameplayStatics::FinishSpawningActor(Pawn, SpawnTransform);
 	return Pawn;
 }
 
+void AGameGameMode::ApplyTeamUnitData(APawn* Pawn, const AController* NewPlayer) const
+{
+	AUnit* Unit = Cast<AUnit>(Pawn);
+	if (!Unit)
+	{
+		// 이 주입 방식은 폰이 AUnit일 때만 성립한다. DefaultPawnClass가 다른 폰이면
+		// 팀 설정이 아무리 맞아도 조용히 무시되므로 여기서 드러낸다.
+		UE_LOG(LogMintChoco, Warning,
+			TEXT("%s: DefaultPawnClass가 AUnit이 아니라 %s입니다. 팀별 캐릭터가 적용되지 않습니다."),
+			*GetNameSafe(NewPlayer), *GetNameSafe(Pawn ? Pawn->GetClass() : nullptr));
+		return;
+	}
+
+	const int32 Team = GetTeamOf(NewPlayer);
+
+	if (UUnitDataAsset* Data = FindUnitDataForTeam(Team))
+	{
+		Unit->SetUnitData(Data);
+	}
+	else if (Teams::IsValidId(Team))
+	{
+		// 설정을 빠뜨리면 폰 블루프린트의 기본값으로 양 팀이 같은 캐릭터로 나온다.
+		UE_LOG(LogMintChoco, Warning,
+			TEXT("%s: 팀 %d의 UnitData가 없습니다. BP_GameMode의 Team Unit Data를 확인하세요."),
+			*GetNameSafe(NewPlayer), Team);
+	}
+}
+
 UUnitDataAsset* AGameGameMode::FindUnitDataForTeam(int32 Team) const
 {
-	const TObjectPtr<UUnitDataAsset>* Found = TeamUnitData.Find(Team);
-	return Found ? Found->Get() : nullptr;
+	return TeamUnitData.IsValidIndex(Team) ? TeamUnitData[Team].Get() : nullptr;
 }
 
 void AGameGameMode::GatherPlayerStarts(int32 Team, TArray<APlayerStart*>& OutTeamStarts, TArray<APlayerStart*>& OutNeutralStarts) const

@@ -42,13 +42,19 @@ public:
 
 protected:
 	/**
-	 * 팀별로 스폰할 캐릭터. 비워두면 폰 블루프린트의 UnitData 기본값이 그대로 쓰인다.
+	 * 팀 번호를 인덱스로 쓰는 캐릭터 정의. [0]은 민트, [1]은 초코.
 	 *
-	 * 팀과 캐릭터의 대응이 여기 한 곳에만 있으므로, 나중에 로비에서 캐릭터를 직접
-	 * 고르게 되면 이 조회를 PlayerState의 선택값으로 바꾸는 것으로 끝난다.
+	 * 폰 클래스는 DefaultPawnClass 하나로 고정하고, 스폰된 유닛에 이 데이터를 주입해
+	 * 메시와 애님을 가른다. 그래서 팀이 늘어도 폰 블루프린트는 하나만 관리하면 된다.
+	 *
+	 * TMap이 아니라 배열인 이유는 디테일 패널에서 + 만 누르면 되기 때문이다. 맵은
+	 * 새 항목이 항상 기본 키(0)로 생성돼, 이미 0이 있으면 추가 자체가 거부된다.
+	 * 팀 번호가 0부터 연속이라는 전제에 기대므로 비연속 팀이 생기면 맵으로 되돌려야 한다.
+	 *
+	 * 비어 있으면 폰 블루프린트의 UnitData 기본값이 그대로 쓰인다.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Unit")
-	TMap<int32, TObjectPtr<UUnitDataAsset>> TeamUnitData;
+	TArray<TObjectPtr<UUnitDataAsset>> TeamUnitData;
 
 	/**
 	 * 스폰 지점이 비었는지 검사할 때 쓰는 캡슐 크기. 유닛의 캡슐과 같게 두면 된다.
@@ -69,9 +75,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spawn", meta = (ClampMin = "1"))
 	int32 SpawnCandidatePoolSize = 3;
 
+	/** 해당 팀의 캐릭터 정의. 설정되지 않았으면 nullptr. */
 	UUnitDataAsset* FindUnitDataForTeam(int32 Team) const;
 
 private:
+	/** 스폰된 폰이 AUnit이면 팀에 맞는 캐릭터 정의를 넣는다. 아니면 경고를 남긴다. */
+	void ApplyTeamUnitData(APawn* Pawn, const AController* NewPlayer) const;
+
 	/** 맵의 모든 PlayerStart를 팀 전용 / 중립으로 나눈다. 팀 없는 기본 PlayerStart는 중립. */
 	void GatherPlayerStarts(int32 Team, TArray<APlayerStart*>& OutTeamStarts, TArray<APlayerStart*>& OutNeutralStarts) const;
 
