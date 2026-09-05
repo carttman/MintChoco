@@ -12,12 +12,14 @@ public class MintChoco : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"DeveloperSettings",
 			"InputCore",
 			"EnhancedInput",
 			"UMG",
 			"Slate",
 			"SlateCore",
 			"RHI",
+			"RenderCore",
 			"Niagara",
 			"OnlineSubsystem",
 			"OnlineSubsystemSteam",
@@ -25,12 +27,15 @@ public class MintChoco : ModuleRules
 			"SteamSockets"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] {
+            "AssetRegistry"
+        });
 
 		PublicIncludePaths.AddRange(new string[] {
 			"MintChoco",
 			"MintChoco/Paint",
-			"MintChoco/Sample"
+			"MintChoco/Sample",
+			"MintChoco/Weapons"
 		});
 	}
 }

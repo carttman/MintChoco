@@ -1,19 +1,26 @@
-#include "Paint/PositionMapBaker.h"
+#include "Paint/PaintMapBaker.h"
 
 #include "Components/SceneCaptureComponent2D.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
+#include "Kismet/KismetRenderingLibrary.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "PipelineStateCache.h"
 #include "RHI.h"
 #include "TextureResource.h"
 #include "TimerManager.h"
 
+#include "Paint/PaintLog.h"
+#include "Paint/PaintSettings.h"
+
 namespace
 {
 	const FName UnwrapOriginParam(TEXT("UnwrapOrigin"));
 	const FName UnwrapSizeParam(TEXT("UnwrapSize"));
+	const FName EdgeFadePositionMapParam(TEXT("PositionMap"));
+	const FName FadeTexelsParam(TEXT("FadeTexels"));
+	const FName SeamFractionParam(TEXT("SeamFraction"));
 
 	constexpr float BakePollInterval = 0.1f;
 	constexpr float MaxBakeWaitSeconds = 3.0f;
@@ -21,24 +28,27 @@ namespace
 	constexpr float BakeRetryInterval = 0.5f;
 }
 
-void UPositionMapBaker::Initialize(
+void UPaintMapBaker::Initialize(
 	UStaticMeshComponent* InSourceMesh,
-	UMaterialInterface* InUnwrapMaterial,
 	int32 InResolution,
-	float InPlaneSize)
+	float InPlaneSize,
+	float InFadeTexels,
+	float InSeamFraction)
 {
 	SourceMesh = InSourceMesh;
-	UnwrapMaterial = InUnwrapMaterial;
 	Resolution = InResolution;
 	PlaneSize = InPlaneSize;
+	FadeTexels = InFadeTexels;
+	SeamFraction = InSeamFraction;
 }
 
-void UPositionMapBaker::RequestBake()
+void UPaintMapBaker::RequestBake()
 {
+	UMaterialInterface* const UnwrapMaterial = UPaintSettings::Get().UnwrapMaterial.LoadSynchronous();
 	if (!SourceMesh || !UnwrapMaterial)
 	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("%s: baking needs a source mesh and an unwrap material."), *GetName());
+		UE_LOG(LogPaint, Warning,
+			TEXT("%s: baking needs a source mesh and the Unwrap Material from Project Settings > Game > Paint."), *GetName());
 		return;
 	}
 
@@ -66,16 +76,16 @@ void UPositionMapBaker::RequestBake()
 	BakeWaitElapsed = 0.0f;
 	LastAttemptElapsed = -BakeRetryInterval;
 	GetWorld()->GetTimerManager().SetTimer(
-		BakeWaitHandle, this, &UPositionMapBaker::TryBake, BakePollInterval, true);
+		BakeWaitHandle, this, &UPaintMapBaker::TryBake, BakePollInterval, true);
 }
 
-void UPositionMapBaker::TryBake()
+void UPaintMapBaker::TryBake()
 {
 	BakeWaitElapsed += BakePollInterval;
 
 	if (BakeWaitElapsed >= MaxBakePollSeconds)
 	{
-		UE_LOG(LogTemp, Warning,
+		UE_LOG(LogPaint, Warning,
 			TEXT("%s: gave up waiting for a valid position map after %.0fs."), *GetName(), MaxBakePollSeconds);
 		GetWorld()->GetTimerManager().ClearTimer(BakeWaitHandle);
 		return;
@@ -98,11 +108,12 @@ void UPositionMapBaker::TryBake()
 	if (IsPositionMapValid())
 	{
 		GetWorld()->GetTimerManager().ClearTimer(BakeWaitHandle);
-		OnBaked.ExecuteIfBound(PositionRenderTarget);
+		BakeEdgeFade();
+		OnBaked.ExecuteIfBound(PositionRenderTarget, EdgeFadeRenderTarget);
 	}
 }
 
-bool UPositionMapBaker::IsPositionMapValid() const
+bool UPaintMapBaker::IsPositionMapValid() const
 {
 	if (!PositionRenderTarget)
 	{
@@ -134,7 +145,7 @@ bool UPositionMapBaker::IsPositionMapValid() const
 	return false;
 }
 
-void UPositionMapBaker::Bake()
+void UPaintMapBaker::Bake()
 {
 	if (!ProxyMesh || !UnwrapMID)
 	{
@@ -153,7 +164,34 @@ void UPositionMapBaker::Bake()
 	Capture->CaptureScene();
 }
 
-void UPositionMapBaker::EnsurePositionBuffer()
+void UPaintMapBaker::BakeEdgeFade()
+{
+	UMaterialInterface* const EdgeFadeMaterial = UPaintSettings::Get().EdgeFadeMaterial.LoadSynchronous();
+	if (!EdgeFadeMaterial)
+	{
+		UE_LOG(LogPaint, Warning,
+			TEXT("%s: Edge Fade Material is unset in Project Settings > Game > Paint, displacement will tear at island edges."), *GetName());
+		return;
+	}
+
+	if (!EdgeFadeRenderTarget)
+	{
+		EdgeFadeRenderTarget = CreateFadeBuffer(this, Resolution);
+	}
+	if (!EdgeFadeMID)
+	{
+		EdgeFadeMID = UMaterialInstanceDynamic::Create(EdgeFadeMaterial, this);
+	}
+
+	EdgeFadeMID->SetTextureParameterValue(EdgeFadePositionMapParam, PositionRenderTarget);
+	EdgeFadeMID->SetScalarParameterValue(FadeTexelsParam, FadeTexels);
+	EdgeFadeMID->SetScalarParameterValue(SeamFractionParam, SeamFraction);
+
+	// The map only depends on the unwrap, never on the paint, so one draw per bake is enough.
+	UKismetRenderingLibrary::DrawMaterialToRenderTarget(this, EdgeFadeRenderTarget, EdgeFadeMID);
+}
+
+void UPaintMapBaker::EnsurePositionBuffer()
 {
 	if (!PositionRenderTarget)
 	{
@@ -161,7 +199,7 @@ void UPositionMapBaker::EnsurePositionBuffer()
 	}
 }
 
-void UPositionMapBaker::EnsureCaptureComponent()
+void UPaintMapBaker::EnsureCaptureComponent()
 {
 	// The capture is born pointing at the buffer, so the buffer has to exist first.
 	EnsurePositionBuffer();
@@ -172,7 +210,7 @@ void UPositionMapBaker::EnsureCaptureComponent()
 	}
 }
 
-UTextureRenderTarget2D* UPositionMapBaker::CreatePositionBuffer(UObject* Outer, int32 Resolution)
+UTextureRenderTarget2D* UPaintMapBaker::CreatePositionBuffer(UObject* Outer, int32 Resolution)
 {
 	// Nearest for the same reason as the id buffer: bilinear across a UV island boundary would
 	// blend two unrelated surface positions into one that exists nowhere on the mesh.
@@ -187,7 +225,22 @@ UTextureRenderTarget2D* UPositionMapBaker::CreatePositionBuffer(UObject* Outer, 
 	return Buffer;
 }
 
-USceneCaptureComponent2D* UPositionMapBaker::CreateCaptureComponent(
+UTextureRenderTarget2D* UPaintMapBaker::CreateFadeBuffer(UObject* Outer, int32 Resolution)
+{
+	// A plain scalar, so unlike the id buffer it can be filtered by the sampler. White means
+	// "no fade", which is also what the surface material assumes until the bake delivers.
+	const auto Buffer = NewObject<UTextureRenderTarget2D>(Outer);
+	Buffer->RenderTargetFormat = RTF_R8;
+	Buffer->ClearColor = FLinearColor::White;
+	Buffer->Filter = TF_Bilinear;
+	Buffer->SRGB = false;
+	Buffer->InitAutoFormat(Resolution, Resolution);
+	Buffer->UpdateResourceImmediate(true);
+
+	return Buffer;
+}
+
+USceneCaptureComponent2D* UPaintMapBaker::CreateCaptureComponent(
 	UStaticMeshComponent* ProxyMesh, float OrthoWidth, UTextureRenderTarget2D* Target)
 {
 	// The unwrap plane sits at the owner: frustum culling still uses the original primitive
@@ -207,7 +260,7 @@ USceneCaptureComponent2D* UPositionMapBaker::CreateCaptureComponent(
 	return Capture;
 }
 
-void UPositionMapBaker::Shutdown()
+void UPaintMapBaker::Shutdown()
 {
 	if (UWorld* const World = GetWorld())
 	{
@@ -224,5 +277,7 @@ void UPositionMapBaker::Shutdown()
 		ProxyMesh = nullptr;
 	}
 	UnwrapMID = nullptr;
+	EdgeFadeMID = nullptr;
 	PositionRenderTarget = nullptr;
+	EdgeFadeRenderTarget = nullptr;
 }

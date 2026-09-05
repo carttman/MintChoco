@@ -9,6 +9,7 @@
 
 class UCameraComponent;
 class UEnhancedInputLocalPlayerSubsystem;
+class UPaintWeaponComponent;
 class UNiagaraComponent;
 class USpringArmComponent;
 class UUnitInputConfig;
@@ -39,10 +40,17 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void PossessedBy(AController* NewController) override;
+	virtual void OnRep_PlayerState() override;
 
 	UFUNCTION(BlueprintPure, Category = "Unit")
 	const UUnitDataAsset* GetUnitData() const { return UnitData; }
 
+	UFUNCTION(BlueprintPure, Category = "Weapon")
+	UPaintWeaponComponent* GetPaintWeapon() const { return PaintWeapon; }
+
+	// UFUNCTION(BlueprintPure, Category = "Camera")
+	// USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	/**
 	 * 캐싱하지 않고 매번 GetCharacterMovement()에서 구한다.
 	 *
@@ -98,8 +106,19 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UUnitInputConfig> InputConfig;
 
+	/**
+	 * 페인트 무기. 모든 유닛이 하나씩 든다.
+	 *
+	 * 무엇을 쏘는지는 컴포넌트의 Profile(무기 프로필 에셋)이 정하고, 이 클래스는
+	 * 방아쇠와 팀 색만 넘긴다. 무기 교체는 Profile 교체이지 컴포넌트 교체가 아니다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<UPaintWeaponComponent> PaintWeapon;
+
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
+	void StartFire();
+	void StopFire();
 
 	/**
 	 * 홀드형 입력이라 Started와 Completed로 나눠 바인딩한다. Triggered는 눌린 동안
@@ -110,6 +129,9 @@ protected:
 	void StopDash();
 
 private:
+	/** PlayerState의 팀을 무기의 페인트 id로. 빙의 시점과 PlayerState 복제 시점 양쪽에서 부른다. */
+	void ApplyTeamToWeapon();
+
 	/** 대시 의도를 무브먼트 컴포넌트에 전달한다. 컴포넌트 타입이 틀리면 여기서 드러난다. */
 	void SetDashInput(bool bWantsToDash);
 
