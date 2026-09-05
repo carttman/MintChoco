@@ -24,7 +24,7 @@ struct FInputActionValue;
  *
  * 그래서 이 클래스 안에는 "지금 민트인가?"를 묻는 분기가 있어서는 안 된다.
  * 그런 분기가 하나라도 생겼다면 그 값이 UnitData로 가야 한다는 뜻이다.
- * 모든 연출은 예외 없이 PlayActionFeedback()을 통과한다.
+ * 연출은 UnitData의 ActionFeedback에서 꺼내 쓰며, 어느 캐릭터인지 묻지 않는다.
  */
 UCLASS()
 class MINTCHOCO_API AUnit : public ACharacter
@@ -62,12 +62,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Unit|Dash")
 	bool IsDashing() const { return bIsDashing; }
 
-	UFUNCTION(BlueprintPure, Category = "Camera")
-	USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
-
-	UFUNCTION(BlueprintPure, Category = "Camera")
-	UCameraComponent* GetFollowCamera() const { return FollowCamera; }
-
 	/**
 	 * 서버 전용. 런타임에 캐릭터를 교체한다.
 	 *
@@ -76,22 +70,6 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Unit")
 	void SetUnitData(UUnitDataAsset* NewUnitData);
-
-	/**
-	 * 동작 하나의 연출(몽타주 + 이펙트 + 사운드)을 한 번에 재생한다.
-	 * 캐릭터별 차이가 드러나는 유일한 지점이며, 호출부는 어느 캐릭터인지 알 필요가 없다.
-	 *
-	 * 판정이 아니라 연출이므로 어느 머신에서 돌릴지는 호출하는 쪽이 정한다.
-	 * 보통 로컬에서 즉시 한 번, 나머지 클라이언트는 멀티캐스트로 한 번이다.
-	 *
-	 * @return 재생된 몽타주의 길이. 몽타주가 없으면 0.
-	 */
-	UFUNCTION(BlueprintCallable, Category = "Unit|Feedback")
-	float PlayActionFeedback(EUnitAction Action);
-
-	/** 소켓이 지정되지 않은 이펙트를 지정한 위치에 띄운다. 피격 지점 등에 쓴다. */
-	UFUNCTION(BlueprintCallable, Category = "Unit|Feedback")
-	float PlayActionFeedbackAtLocation(EUnitAction Action, const FVector& WorldLocation);
 
 protected:
 	/**

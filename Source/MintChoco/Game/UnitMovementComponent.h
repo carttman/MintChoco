@@ -37,8 +37,6 @@ public:
 	 */
 	void SetWantsToDash(bool bNewWantsToDash);
 
-	bool WantsToDash() const { return bWantsToDash != 0; }
-
 	/** 실제로 상태가 바뀔 때만 발생한다. 연출과 복제용 플래그가 여기에 물린다. */
 	FOnDashStateChanged OnDashStateChanged;
 

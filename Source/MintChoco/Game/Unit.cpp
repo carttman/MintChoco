@@ -138,7 +138,7 @@ void AUnit::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 		EnhancedInput->BindAction(InputConfig->DashAction, ETriggerEvent::Started, this, &AUnit::StartDash);
 		EnhancedInput->BindAction(InputConfig->DashAction, ETriggerEvent::Completed, this, &AUnit::StopDash);
 
-		// 키를 누른 채 창 포커스를 잃거나 입력이 취소되면 Completed 대신 Canceled가 온다.
+		// 키를 누른 채 매핑 컨텍스트가 재구성되거나 제거되면 Completed 대신 Canceled가 온다.
 		// 이걸 빼면 그 상황에서 대시가 켜진 채로 남는다.
 		EnhancedInput->BindAction(InputConfig->DashAction, ETriggerEvent::Canceled, this, &AUnit::StopDash);
 	}
@@ -341,58 +341,4 @@ void AUnit::ApplyUnitData()
 	{
 		MeshComponent->SetAnimInstanceClass(UnitData->AnimClass);
 	}
-}
-
-float AUnit::PlayActionFeedback(EUnitAction Action)
-{
-	return PlayActionFeedbackAtLocation(Action, GetActorLocation());
-}
-
-float AUnit::PlayActionFeedbackAtLocation(EUnitAction Action, const FVector& WorldLocation)
-{
-	const FUnitActionFeedback* Feedback = UnitData ? UnitData->FindFeedback(Action) : nullptr;
-	if (!Feedback)
-	{
-		return 0.0f;
-	}
-
-	// 몽타주는 루트 모션과 AnimNotify를 통해 게임플레이에 영향을 주므로 서버에서도 돈다.
-	float Duration = 0.0f;
-	if (Feedback->Montage)
-	{
-		Duration = PlayAnimMontage(Feedback->Montage);
-	}
-
-	// 이펙트와 소리는 순수 연출이라 데디케이티드 서버에서는 낭비다.
-	if (GetNetMode() == NM_DedicatedServer)
-	{
-		return Duration;
-	}
-
-	if (Feedback->FX)
-	{
-		if (Feedback->FXSocket.IsNone())
-		{
-			UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-				this, Feedback->FX, WorldLocation, GetActorRotation());
-		}
-		else
-		{
-			UNiagaraFunctionLibrary::SpawnSystemAttached(
-				Feedback->FX,
-				GetMesh(),
-				Feedback->FXSocket,
-				FVector::ZeroVector,
-				FRotator::ZeroRotator,
-				EAttachLocation::SnapToTarget,
-				true);
-		}
-	}
-
-	if (Feedback->Sound)
-	{
-		UGameplayStatics::SpawnSoundAtLocation(this, Feedback->Sound, WorldLocation);
-	}
-
-	return Duration;
 }
