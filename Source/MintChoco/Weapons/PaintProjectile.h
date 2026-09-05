@@ -10,6 +10,9 @@ class UProjectileMovementComponent;
 class USphereComponent;
 class UStaticMeshComponent;
 
+/** Object channel "Paintball" from DefaultEngine.ini: what a ball is, so that balls can be told to ignore each other. */
+inline constexpr ECollisionChannel PaintballChannel = ECC_GameTraceChannel1;
+
 /**
  * A paintball in flight. It carries the profile that launched it and paints with its real impact
  * velocity, which is the one thing a hitscan has to fake. The visual mesh is set on the Blueprint;

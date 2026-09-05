@@ -9,6 +9,7 @@
 
 class UCameraComponent;
 class UEnhancedInputLocalPlayerSubsystem;
+class UPaintWeaponComponent;
 class USpringArmComponent;
 class UUnitInputConfig;
 struct FInputActionValue;
@@ -36,9 +37,14 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	virtual void PossessedBy(AController* NewController) override;
+	virtual void OnRep_PlayerState() override;
 
 	UFUNCTION(BlueprintPure, Category = "Unit")
 	const UUnitDataAsset* GetUnitData() const { return UnitData; }
+
+	UFUNCTION(BlueprintPure, Category = "Weapon")
+	UPaintWeaponComponent* GetPaintWeapon() const { return PaintWeapon; }
 
 	UFUNCTION(BlueprintPure, Category = "Camera")
 	USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
@@ -98,10 +104,24 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UUnitInputConfig> InputConfig;
 
+	/**
+	 * 페인트 무기. 모든 유닛이 하나씩 든다.
+	 *
+	 * 무엇을 쏘는지는 컴포넌트의 Profile(무기 프로필 에셋)이 정하고, 이 클래스는
+	 * 방아쇠와 팀 색만 넘긴다. 무기 교체는 Profile 교체이지 컴포넌트 교체가 아니다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<UPaintWeaponComponent> PaintWeapon;
+
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
+	void StartFire();
+	void StopFire();
 
 private:
+	/** PlayerState의 팀을 무기의 페인트 id로. 빙의 시점과 PlayerState 복제 시점 양쪽에서 부른다. */
+	void ApplyTeamToWeapon();
+
 	/**
 	 * 컨텍스트를 넣어준 서브시스템. EndPlay 시점에는 Controller가 이미 떨어져 나갔을
 	 * 수 있어 다시 찾아갈 수 없으므로, 넣을 때 기억해 두고 그대로 되돌린다.

@@ -11,6 +11,8 @@ class UInputAction;
 class UInputMappingContext;
 class UPaintBrushProfile;
 class UPaintSubsystem;
+class UPaintWeaponComponent;
+class UPaintWeaponProfile;
 class USampleCoverageWidget;
 class USampleSeedWidget;
 
@@ -21,6 +23,10 @@ class USampleSeedWidget;
  * paintball gun or a mop would, asks it to build the splat from the hit, and hands the result to
  * the paint subsystem; adding a real weapon changes nothing downstream. That is why this
  * controller stays useful as a debug tool afterwards.
+ *
+ * The possessed unit carries the weapon and pulls its own trigger; this controller only picks
+ * what the weapon fires. 1..9 select a shipped weapon profile, and while one is selected the
+ * click is the unit's; 0 clears the profile and returns the click to the hitscan brush.
  */
 UCLASS()
 class MINTCHOCO_API ASamplePaintController : public APlayerController
@@ -39,7 +45,11 @@ public:
 
 	/** Seed the next splat will use. The debug widget mirrors this value. */
 	UFUNCTION(BlueprintPure, Category = "Sample|Paint")
-	int32 GetNextSeed() const { return NextSeed; }
+	int32 GetNextSeed() const;
+
+	/** Selects WeaponProfiles[Index - 1] on the pawn's weapon; 0 or out of range returns the click to the hitscan brush. */
+	UFUNCTION(BlueprintCallable, Exec, Category = "Sample|Weapon")
+	void PaintWeapon(int32 Index);
 
 	/** Console: toggles the floating coverage text over every paintable surface. */
 	UFUNCTION(Exec)
@@ -56,8 +66,10 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
+	virtual void OnPossess(APawn* InPawn) override;
 
 	void OnPaintTriggered();
+	void OnSelectWeaponKey(FKey Key);
 	void OnContinuousPaintTriggered();
 	void OnContinuousPaintReleased();
 	void OnCycleTeamTriggered(const FInputActionValue& Value);
@@ -66,6 +78,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|Input")
 	TObjectPtr<UInputMappingContext> PaintMappingContext;
 
+	/**
+	 * The same fire action the unit binds (IA_Fire from the gameplay context), so one button is
+	 * the trigger everywhere: the unit fires its weapon, and this controller stamps the hitscan
+	 * brush only while no weapon profile is selected.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|Input")
 	TObjectPtr<UInputAction> PaintAction;
 
@@ -91,6 +108,13 @@ protected:
 	/** The brush this source stamps with: its material and how a hit becomes a splat shape. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|Paint")
 	TObjectPtr<UPaintBrushProfile> BrushProfile;
+
+	/** Profiles behind the number keys, 1 first. Empty: every profile under WeaponProfileFolder, by name. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|Weapon")
+	TArray<TObjectPtr<UPaintWeaponProfile>> WeaponProfiles;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|Weapon")
+	FString WeaponProfileFolder = TEXT("/Game/Blueprints/Weapons/Profiles");
 
 	/** Paint id written by the next click. 0-3 are player teams; 7 (PaintIdNone) erases. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample|Paint", meta = (ClampMin = "0", ClampMax = "7"))
@@ -138,6 +162,16 @@ private:
 	bool PaintAtHit(const FHitResult& Hit, const FVector& Direction, float HeightAdd);
 	UPaintSubsystem* GetPaintSubsystem() const;
 
+	/** Binds to the pawn's weapon component and carries the selected profile and team over. */
+	void BindWeapon(APawn* InPawn);
+	void LoadWeaponProfilesFromFolder();
+	/** Whether the click currently goes through the weapon rather than the hitscan brush. */
+	bool IsWeaponSelected() const;
+	void ShowMessage(const FString& Message) const;
+
+	UFUNCTION()
+	void OnWeaponFired(int32 Seed);
+
 	/** Creates a widget for the local player and puts it on screen; null for a remote controller or an unset class. */
 	template <typename T>
 	T* AddLocalWidget(TSubclassOf<T> WidgetClass)
@@ -162,6 +196,13 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<USampleCoverageWidget> CoverageWidget;
+
+	/** The possessed pawn's weapon; re-resolved on every possess, null for a pawn without one. */
+	UPROPERTY(Transient)
+	TObjectPtr<UPaintWeaponComponent> Weapon;
+
+	/** Index into WeaponProfiles, or INDEX_NONE for the hitscan brush. Survives a respawn. */
+	int32 SelectedWeaponIndex = INDEX_NONE;
 
 	FVector StrokeAnchor = FVector::ZeroVector;
 	bool bStrokeAnchorValid = false;

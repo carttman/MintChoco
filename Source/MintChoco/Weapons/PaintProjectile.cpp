@@ -28,10 +28,14 @@ APaintProjectile::APaintProjectile()
 	Sphere = CreateDefaultSubobject<USphereComponent>(TEXT("Sphere"));
 	SetRootComponent(Sphere);
 	Sphere->InitSphereRadius(6.0f);
-	// The project defines no projectile profile. BlockAllDynamic hits paintable meshes and pawns
-	// alike; only the camera probe is excused so a ball never shoves the spring arm.
+	// BlockAllDynamic hits paintable meshes and pawns alike. The camera probe is excused so a ball
+	// never shoves the spring arm, and other balls are excused because every pellet of a shot
+	// leaves the same muzzle point: overlapping at birth, they would otherwise hit each other on
+	// their first move and die before flying.
 	Sphere->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+	Sphere->SetCollisionObjectType(PaintballChannel);
 	Sphere->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	Sphere->SetCollisionResponseToChannel(PaintballChannel, ECR_Ignore);
 	Sphere->SetNotifyRigidBodyCollision(true);
 	Sphere->OnComponentHit.AddDynamic(this, &APaintProjectile::OnHit);
 

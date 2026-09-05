@@ -9,6 +9,8 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
+#include "Game/GamePlayerState.h"
+#include "Game/TeamTypes.h"
 #include "Game/UnitInputConfig.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -17,6 +19,7 @@
 #include "MintChoco.h"
 #include "Net/UnrealNetwork.h"
 #include "NiagaraFunctionLibrary.h"
+#include "Weapons/PaintWeaponComponent.h"
 
 AUnit::AUnit()
 {
@@ -55,6 +58,31 @@ AUnit::AUnit()
 
 	// 붐이 이미 회전을 처리했으므로 카메라가 다시 하면 이중으로 돈다.
 	FollowCamera->bUsePawnControlRotation = false;
+
+	PaintWeapon = CreateDefaultSubobject<UPaintWeaponComponent>(TEXT("PaintWeapon"));
+}
+
+void AUnit::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+	ApplyTeamToWeapon();
+}
+
+void AUnit::OnRep_PlayerState()
+{
+	Super::OnRep_PlayerState();
+	ApplyTeamToWeapon();
+}
+
+void AUnit::ApplyTeamToWeapon()
+{
+	// 팀 번호가 곧 페인트 id다(민트 0, 초코 1). 팀이 없는 PlayerState(샘플 맵)는
+	// 건드리지 않아, 다른 곳에서 정해 준 id가 남는다.
+	const AGamePlayerState* GamePlayerState = GetPlayerState<AGamePlayerState>();
+	if (PaintWeapon && GamePlayerState && Teams::IsValidId(GamePlayerState->GetTeam()))
+	{
+		PaintWeapon->SetPaintId(static_cast<uint8>(GamePlayerState->GetTeam()));
+	}
 }
 
 void AUnit::PostInitializeComponents()
@@ -110,6 +138,25 @@ void AUnit::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	{
 		EnhancedInput->BindAction(InputConfig->LookAction, ETriggerEvent::Triggered, this, &AUnit::Look);
 	}
+
+	// 연사와 붓은 누르고 있는 동안 계속 나가야 하므로 놓는 쪽도 묶는다.
+	// Canceled는 다른 입력이 이 액션을 가로챘을 때이며, 그때도 방아쇠는 놓여야 한다.
+	if (InputConfig->FireAction)
+	{
+		EnhancedInput->BindAction(InputConfig->FireAction, ETriggerEvent::Started, this, &AUnit::StartFire);
+		EnhancedInput->BindAction(InputConfig->FireAction, ETriggerEvent::Completed, this, &AUnit::StopFire);
+		EnhancedInput->BindAction(InputConfig->FireAction, ETriggerEvent::Canceled, this, &AUnit::StopFire);
+	}
+}
+
+void AUnit::StartFire()
+{
+	PaintWeapon->PullTrigger();
+}
+
+void AUnit::StopFire()
+{
+	PaintWeapon->ReleaseTrigger();
 }
 
 void AUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)

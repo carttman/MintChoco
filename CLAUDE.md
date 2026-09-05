@@ -48,7 +48,9 @@ Each of these cost real debugging time once.
   changed alongside the size change"); shrink only with the
   surviving elements unchanged (remove-and-edit in one call is "ambiguous"); in-place
   edits of any size work in one call. To replace element 0 and shrink, first rotate in
-  place, then drop the tail. A fresh Custom node already holds one unnamed input.
+  place, then drop the tail. The shrink call must spell out every field the read
+  returned on each survivor (`PlayerMappableKeySettings: "None"` included); an omitted
+  field counts as a change and the removal is rejected as ambiguous. A fresh Custom node already holds one unnamed input.
   Inside a `ProgrammaticToolset` script, one `execute_tool` call per step obeys these
   rules while still batching the round-trips.
 - `MaterialTools.get_expression_inputs` mislabels a multi-output source: it prints

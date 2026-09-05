@@ -44,4 +44,11 @@ public:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UInputAction> LookAction;
+
+	/**
+	 * Bool. 누르면 페인트 무기의 방아쇠를 당기고, 떼면 놓는다.
+	 * 단발·연사·연속 중 무엇이 되는지는 무기 프로필이 정하므로 액션은 하나면 된다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UInputAction> FireAction;
 };

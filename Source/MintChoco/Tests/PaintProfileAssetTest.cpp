@@ -95,6 +95,12 @@ bool FPaintProfileAssetTest::RunTest(const FString& Parameters)
 		}
 		TestTrue(*FString::Printf(TEXT("%s: MuzzleSpeed is positive"), *Name), Scatter->MuzzleSpeed > 0.0f);
 		TestTrue(*FString::Printf(TEXT("%s: PelletsPerShot is at least one"), *Name), Scatter->PelletsPerShot >= 1);
+		if (Scatter->Pattern == EPaintScatterPattern::HorizontalFan)
+		{
+			// A fan of one pellet or of zero width is a cone in disguise; it should say so.
+			TestTrue(*FString::Printf(TEXT("%s: a fan needs several pellets"), *Name), Scatter->PelletsPerShot >= 2);
+			TestTrue(*FString::Printf(TEXT("%s: FanHalfAngleDeg is positive"), *Name), Scatter->FanHalfAngleDeg > 0.0f);
+		}
 	}
 
 	for (const FAssetData& Data : Weapons)
