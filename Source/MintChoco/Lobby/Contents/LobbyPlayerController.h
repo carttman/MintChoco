@@ -19,5 +19,8 @@ public:
 	void Server_HandleReadyButton();
 
 	UFUNCTION(BlueprintCallable, Server, Reliable)
+	void Server_HandleTeamButton(int32 TeamId);
+
+	UFUNCTION(BlueprintCallable, Server, Reliable)
 	void Server_HandleChangeUsername(const FText& InNickname);
 };

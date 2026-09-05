@@ -33,6 +33,15 @@ protected:
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
 	TObjectPtr<UTextBlock> Txt_PlayerName;
 
+	UPROPERTY(BlueprintReadWrite, meta=(BindWidget))
+	TObjectPtr<UTextBlock> Txt_Team;
+
+	UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
+	TObjectPtr<UButton> Btn_Mint;
+
+	UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
+	TObjectPtr<UButton> Btn_Choco;
+
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
 	TObjectPtr<UEditableTextBox> Editable_PlayerName;
 
@@ -41,6 +50,7 @@ protected:
 
 	UPROPERTY(BlueprintReadWrite, meta = (BindWidget))
 	TObjectPtr<UButton> Btn_KickPlayer;
+
 
 protected:
 	UPROPERTY(BlueprintReadWrite)

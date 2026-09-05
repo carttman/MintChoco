@@ -19,8 +19,7 @@ class MINTCHOCO_API URoomListWidget : public UUserWidget
 {
 	GENERATED_BODY()
 
-public:
-	virtual bool Initialize() override;
+protected:
 	virtual void NativeConstruct() override;
 
 	// UFUNCTION(BlueprintCallable)
@@ -29,12 +28,15 @@ public:
 	// UFUNCTION(BlueprintCallable)
 	// void RefreshUI();
 
+private:
 	UFUNCTION()
 	void OnMyFindRoom();
 
 	UFUNCTION()
 	void AddItemWidget(const struct FMySessionInfo& SessionInfo);
 
+	UFUNCTION()
+	void OnSetRefreshBtn(bool flag);
 protected:
 	UPROPERTY()
 	TObjectPtr<class UOnlineSessionsSubsystem> OSS;

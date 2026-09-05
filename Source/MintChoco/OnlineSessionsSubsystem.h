@@ -52,7 +52,7 @@ struct FMySessionInfo
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSearchSignature, const struct FMySessionInfo&, SessionInfo);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSearchLockSignature, bool, bSearching);
 
-UCLASS()
+UCLASS(BlueprintType)
 class MINTCHOCO_API UOnlineSessionsSubsystem : public UGameInstanceSubsystem
 {
 	GENERATED_BODY()
@@ -75,7 +75,8 @@ private:
 
 public:
 	IOnlineSessionPtr SessionInterface;
-	FString MySessionName = TEXT("CHJ");
+	// NULL 서브시스템(= LAN)으로 동작 중인지. Initialize에서 월드별 인스턴스를 보고 캐시한다.
+	bool bIsLanSubsystem = false;
 
 	FSearchSignature OnSearchComplete;
 	FSearchLockSignature OnSearchLockComplete;
@@ -85,6 +86,10 @@ public:
 	FDelegateHandle JoinSessionDelegateHandle;
 	FDelegateHandle DestroySessionDelegateHandle;
 	FDelegateHandle UserInviteDelegateHandle;
+
+	// 광고할 호스트 이름(플랫폼 닉네임). 못 얻으면 "Unknown".
+	// UFUNCTION(BlueprintCallable)
+	// FString GetLocalPlayerNickname() const;
 
 	// 방생성 요청
 	void OnMyCreateSession(FString roomName, int32 maxPlayer);
@@ -110,7 +115,16 @@ public:
 
 	void OnNetworkFailure(UWorld* World, UNetDriver* NetDriver, ENetworkFailure::Type ErrorType, const FString& String);
 
+private:
+	FText LocalPlayerNickname;
 
+	void SetLocalPlayerNickname();
+public:
+	UFUNCTION(BlueprintCallable)
+	FText GetLocalPlayerNicknameToFText() const{ return LocalPlayerNickname;};
+	FString GetLocalPlayerNicknameToFString() const{ return LocalPlayerNickname.ToString();};
+
+private:
 	FString StringBase64Encoder(const FString& str);
 	FString StringBase64Decoder(const FString& str);
 };
