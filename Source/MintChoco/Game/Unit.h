@@ -7,6 +7,12 @@
 #include "Game/UnitDataAsset.h"
 #include "Unit.generated.h"
 
+class UCameraComponent;
+class UEnhancedInputLocalPlayerSubsystem;
+class USpringArmComponent;
+class UUnitInputConfig;
+struct FInputActionValue;
+
 /**
  * 플레이어와 AI가 함께 쓰는 유일한 유닛 클래스.
  *
@@ -27,10 +33,18 @@ public:
 	AUnit();
 
 	virtual void PostInitializeComponents() override;
+	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	UFUNCTION(BlueprintPure, Category = "Unit")
 	const UUnitDataAsset* GetUnitData() const { return UnitData; }
+
+	UFUNCTION(BlueprintPure, Category = "Camera")
+	USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
+
+	UFUNCTION(BlueprintPure, Category = "Camera")
+	UCameraComponent* GetFollowCamera() const { return FollowCamera; }
 
 	/**
 	 * 서버 전용. 런타임에 캐릭터를 교체한다.
@@ -72,4 +86,25 @@ protected:
 
 	/** 메시와 애님 클래스를 UnitData에 맞춘다. 서버와 클라이언트 양쪽에서 돈다. */
 	void ApplyUnitData();
+
+	/** 카메라 붐. 컨트롤 회전을 그대로 따라가므로 캐릭터의 회전과 무관하게 돈다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+	TObjectPtr<USpringArmComponent> CameraBoom;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+	TObjectPtr<UCameraComponent> FollowCamera;
+
+	/** 조작에 쓰이는 입력 에셋. 비어 있으면 이 유닛은 플레이어 입력을 받지 못한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	TObjectPtr<UUnitInputConfig> InputConfig;
+
+	void Move(const FInputActionValue& Value);
+	void Look(const FInputActionValue& Value);
+
+private:
+	/**
+	 * 컨텍스트를 넣어준 서브시스템. EndPlay 시점에는 Controller가 이미 떨어져 나갔을
+	 * 수 있어 다시 찾아갈 수 없으므로, 넣을 때 기억해 두고 그대로 되돌린다.
+	 */
+	TWeakObjectPtr<UEnhancedInputLocalPlayerSubsystem> AppliedInputSubsystem;
 };
