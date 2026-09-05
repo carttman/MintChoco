@@ -33,20 +33,7 @@ public class MintChoco : ModuleRules
 		PublicIncludePaths.AddRange(new string[] {
 			"MintChoco",
 			"MintChoco/Paint",
-			"MintChoco/Sample",
-			"MintChoco/Variant_Platforming",
-			"MintChoco/Variant_Platforming/Animation",
-			"MintChoco/Variant_Combat",
-			"MintChoco/Variant_Combat/AI",
-			"MintChoco/Variant_Combat/Animation",
-			"MintChoco/Variant_Combat/Gameplay",
-			"MintChoco/Variant_Combat/Interfaces",
-			"MintChoco/Variant_Combat/UI",
-			"MintChoco/Variant_SideScrolling",
-			"MintChoco/Variant_SideScrolling/AI",
-			"MintChoco/Variant_SideScrolling/Gameplay",
-			"MintChoco/Variant_SideScrolling/Interfaces",
-			"MintChoco/Variant_SideScrolling/UI"
+			"MintChoco/Sample"
 		});
 
 		// Uncomment if you are using Slate UI
