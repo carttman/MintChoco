@@ -18,7 +18,7 @@ namespace
 {
 	const FName UnwrapOriginParam(TEXT("UnwrapOrigin"));
 	const FName UnwrapSizeParam(TEXT("UnwrapSize"));
-	const FName PositionMapParam(TEXT("PositionMap"));
+	const FName EdgeFadePositionMapParam(TEXT("PositionMap"));
 	const FName FadeTexelsParam(TEXT("FadeTexels"));
 	const FName SeamFractionParam(TEXT("SeamFraction"));
 
@@ -183,7 +183,7 @@ void UPaintMapBaker::BakeEdgeFade()
 		EdgeFadeMID = UMaterialInstanceDynamic::Create(EdgeFadeMaterial, this);
 	}
 
-	EdgeFadeMID->SetTextureParameterValue(PositionMapParam, PositionRenderTarget);
+	EdgeFadeMID->SetTextureParameterValue(EdgeFadePositionMapParam, PositionRenderTarget);
 	EdgeFadeMID->SetScalarParameterValue(FadeTexelsParam, FadeTexels);
 	EdgeFadeMID->SetScalarParameterValue(SeamFractionParam, SeamFraction);
 

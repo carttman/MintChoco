@@ -29,12 +29,15 @@ public class MintChoco : ModuleRules
 			"SteamSockets"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] {
+            "AssetRegistry"
+        });
 
 		PublicIncludePaths.AddRange(new string[] {
 			"MintChoco",
 			"MintChoco/Paint",
 			"MintChoco/Sample",
+			"MintChoco/Weapons",
 			"MintChoco/Variant_Platforming",
 			"MintChoco/Variant_Platforming/Animation",
 			"MintChoco/Variant_Combat",

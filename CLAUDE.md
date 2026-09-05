@@ -95,6 +95,10 @@ Each of these cost real debugging time once.
   One append per call. `ExpressionGUID` on parameter nodes is unreadable.
 - `UInputMappingContext.Mappings` is deprecated and invisible to the editor UI.
   Read and write `DefaultKeyMappings.mappings` instead.
+- A nested USTRUCT writes in one `set_properties` call
+  (`{"Deposit": {"BrushProfile": {"refPath": ...}, "SplatVolume": 1}}`), but
+  `get_properties` returns its members camelCased (`brushProfile`), so compare by value,
+  not by key, when reading back.
 
 ### Verifying
 
@@ -111,6 +115,10 @@ Each of these cost real debugging time once.
 - There is no console-command or editor-python route: `ProgrammaticToolset` only
   orchestrates registered tools, and `EditorAppToolset.SearchCVars` only reads.
   `try/except` inside a script does not reliably catch `execute_tool` failures.
+- Automation tests run headless without MCP, even while the editor is open:
+  `UnrealEditor-Cmd.exe <uproject> -ExecCmds="Automation RunTests MintChoco.Paint; Quit"
+  -unattended -nullrhi -abslog=<log>`; grep the log for `Test Completed. Result=`.
+  The `HttpListener unable to bind 127.0.0.1:8000` line is the second instance and harmless.
 - A new UPROPERTY is invisible to `ObjectTools` until the module is rebuilt and the
   editor restarted; setting it earlier just fails. After a UPROPERTY or struct-layout
   change, hot reload re-instances classes unreliably — restart before trusting PIE.
