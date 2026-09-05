@@ -10,8 +10,10 @@
 class UCameraComponent;
 class UEnhancedInputLocalPlayerSubsystem;
 class UPaintWeaponComponent;
+class UNiagaraComponent;
 class USpringArmComponent;
 class UUnitInputConfig;
+class UUnitMovementComponent;
 struct FInputActionValue;
 
 /**
@@ -23,7 +25,7 @@ struct FInputActionValue;
  *
  * 그래서 이 클래스 안에는 "지금 민트인가?"를 묻는 분기가 있어서는 안 된다.
  * 그런 분기가 하나라도 생겼다면 그 값이 UnitData로 가야 한다는 뜻이다.
- * 모든 연출은 예외 없이 PlayActionFeedback()을 통과한다.
+ * 연출은 UnitData의 ActionFeedback에서 꺼내 쓰며, 어느 캐릭터인지 묻지 않는다.
  */
 UCLASS()
 class MINTCHOCO_API AUnit : public ACharacter
@@ -31,7 +33,8 @@ class MINTCHOCO_API AUnit : public ACharacter
 	GENERATED_BODY()
 
 public:
-	AUnit();
+	/** 무브먼트 컴포넌트를 UUnitMovementComponent로 바꾸기 위해 ObjectInitializer를 받는다. */
+	explicit AUnit(const FObjectInitializer& ObjectInitializer);
 
 	virtual void PostInitializeComponents() override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
@@ -46,11 +49,26 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Weapon")
 	UPaintWeaponComponent* GetPaintWeapon() const { return PaintWeapon; }
 
-	UFUNCTION(BlueprintPure, Category = "Camera")
-	USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
+	// UFUNCTION(BlueprintPure, Category = "Camera")
+	// USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
+	/**
+	 * 캐싱하지 않고 매번 GetCharacterMovement()에서 구한다.
+	 *
+	 * 생성자에서 캐싱하면, 블루프린트가 상속받은 무브먼트 컴포넌트를 자기 템플릿으로
+	 * 다시 인스턴스화할 때 캐시가 버려진 컴포넌트를 가리킨 채 남는다. 그 상태에서
+	 * 대시 플래그를 세우면 실제로 캐릭터를 움직이는 컴포넌트가 아닌 쪽에 쓰이므로,
+	 * 크래시 없이 속도만 그대로인 증상이 된다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Unit")
+	UUnitMovementComponent* GetUnitMovement() const;
 
-	UFUNCTION(BlueprintPure, Category = "Camera")
-	UCameraComponent* GetFollowCamera() const { return FollowCamera; }
+	/**
+	 * 대시 중인지. 애님 블루프린트가 이 값으로 스프린트 상태를 고른다.
+	 *
+	 * 소유 클라이언트는 예측된 값을 즉시 보고, 나머지 클라이언트는 복제로 받는다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Unit|Dash")
+	bool IsDashing() const { return bIsDashing; }
 
 	/**
 	 * 서버 전용. 런타임에 캐릭터를 교체한다.
@@ -60,22 +78,6 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Unit")
 	void SetUnitData(UUnitDataAsset* NewUnitData);
-
-	/**
-	 * 동작 하나의 연출(몽타주 + 이펙트 + 사운드)을 한 번에 재생한다.
-	 * 캐릭터별 차이가 드러나는 유일한 지점이며, 호출부는 어느 캐릭터인지 알 필요가 없다.
-	 *
-	 * 판정이 아니라 연출이므로 어느 머신에서 돌릴지는 호출하는 쪽이 정한다.
-	 * 보통 로컬에서 즉시 한 번, 나머지 클라이언트는 멀티캐스트로 한 번이다.
-	 *
-	 * @return 재생된 몽타주의 길이. 몽타주가 없으면 0.
-	 */
-	UFUNCTION(BlueprintCallable, Category = "Unit|Feedback")
-	float PlayActionFeedback(EUnitAction Action);
-
-	/** 소켓이 지정되지 않은 이펙트를 지정한 위치에 띄운다. 피격 지점 등에 쓴다. */
-	UFUNCTION(BlueprintCallable, Category = "Unit|Feedback")
-	float PlayActionFeedbackAtLocation(EUnitAction Action, const FVector& WorldLocation);
 
 protected:
 	/**
@@ -118,9 +120,42 @@ protected:
 	void StartFire();
 	void StopFire();
 
+	/**
+	 * 홀드형 입력이라 Started와 Completed로 나눠 바인딩한다. Triggered는 눌린 동안
+	 * 값 true로 계속 발생할 뿐 뗄 때 false를 내지 않으므로, 하나로 처리하면 해제가
+	 * 영영 오지 않는다.
+	 */
+	void StartDash();
+	void StopDash();
+
 private:
 	/** PlayerState의 팀을 무기의 페인트 id로. 빙의 시점과 PlayerState 복제 시점 양쪽에서 부른다. */
 	void ApplyTeamToWeapon();
+
+	/** 대시 의도를 무브먼트 컴포넌트에 전달한다. 컴포넌트 타입이 틀리면 여기서 드러난다. */
+	void SetDashInput(bool bWantsToDash);
+
+	/** 실제로 대시 상태가 바뀔 때 무브먼트 컴포넌트가 알려준다. */
+	void HandleDashStateChanged(bool bDashing);
+
+	UFUNCTION()
+	void OnRep_IsDashing();
+
+	/** 대시 트레일을 켜고 끈다. 데디케이티드 서버에서는 아무것도 하지 않는다. */
+	void UpdateDashEffects(bool bDashing);
+
+	/**
+	 * 연출과 애니메이션용 대시 상태.
+	 *
+	 * 대시 의도 자체는 압축 플래그로 서버까지만 가고 다른 클라이언트에는 닿지 않는다.
+	 * 그래서 서버가 이 값을 복제해 준다. 소유자는 이미 예측으로 알고 있으므로 제외한다.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_IsDashing)
+	bool bIsDashing = false;
+
+	/** 지속되는 트레일이라 시작할 때 만들고 끝날 때 직접 꺼야 한다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> DashTrailComponent;
 
 	/**
 	 * 컨텍스트를 넣어준 서브시스템. EndPlay 시점에는 Controller가 이미 떨어져 나갔을

@@ -12,16 +12,20 @@
 #include "Game/GamePlayerState.h"
 #include "Game/TeamTypes.h"
 #include "Game/UnitInputConfig.h"
+#include "Game/UnitMovementComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputActionValue.h"
 #include "Kismet/GameplayStatics.h"
 #include "MintChoco.h"
 #include "Net/UnrealNetwork.h"
+#include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "Weapons/PaintWeaponComponent.h"
 
-AUnit::AUnit()
+AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UUnitMovementComponent>(
+		ACharacter::CharacterMovementComponentName))
 {
 	// 유닛 자체가 매 프레임 할 일은 없다. 이동은 CharacterMovement가 돌리고,
 	// 발사와 스킬은 각자의 컴포넌트가 필요한 동안만 틱한다.
@@ -37,8 +41,7 @@ AUnit::AUnit()
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationRoll = false;
 
-	UCharacterMovementComponent* Movement = GetCharacterMovement();
-	Movement->bOrientRotationToMovement = false;
+	GetCharacterMovement()->bOrientRotationToMovement = false;
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
@@ -93,6 +96,25 @@ void AUnit::PostInitializeComponents()
 	// 여기서 보이는 값은 클라이언트에서도 블루프린트 기본값이므로, 런타임에
 	// 교체된 경우는 OnRep_UnitData가 뒤이어 처리한다.
 	ApplyUnitData();
+
+	// 소유 클라이언트에서는 입력이, 서버에서는 압축 플래그가 이 알림을 낸다.
+	// 어느 쪽이든 실제로 상태가 바뀔 때만 한 번씩 온다.
+	if (UUnitMovementComponent* Movement = GetUnitMovement())
+	{
+		Movement->OnDashStateChanged.AddUObject(this, &AUnit::HandleDashStateChanged);
+	}
+	else
+	{
+		UE_LOG(LogMintChoco, Error,
+			TEXT("%s: 무브먼트 컴포넌트가 UUnitMovementComponent가 아닙니다(현재 %s). 대시가 동작하지 않습니다. ")
+			TEXT("블루프린트를 열어 컴파일 후 저장하면 상속 컴포넌트가 갱신됩니다."),
+			*GetNameSafe(this), *GetNameSafe(GetCharacterMovement()->GetClass()));
+	}
+}
+
+UUnitMovementComponent* AUnit::GetUnitMovement() const
+{
+	return Cast<UUnitMovementComponent>(GetCharacterMovement());
 }
 
 void AUnit::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -137,6 +159,25 @@ void AUnit::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	if (InputConfig->LookAction)
 	{
 		EnhancedInput->BindAction(InputConfig->LookAction, ETriggerEvent::Triggered, this, &AUnit::Look);
+	}
+
+	if (InputConfig->DashAction)
+	{
+		EnhancedInput->BindAction(InputConfig->DashAction, ETriggerEvent::Started, this, &AUnit::StartDash);
+		EnhancedInput->BindAction(InputConfig->DashAction, ETriggerEvent::Completed, this, &AUnit::StopDash);
+
+		// 키를 누른 채 매핑 컨텍스트가 재구성되거나 제거되면 Completed 대신 Canceled가 온다.
+		// 이걸 빼면 그 상황에서 대시가 켜진 채로 남는다.
+		EnhancedInput->BindAction(InputConfig->DashAction, ETriggerEvent::Canceled, this, &AUnit::StopDash);
+	}
+
+	if (InputConfig->JumpAction)
+	{
+		EnhancedInput->BindAction(InputConfig->JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
+
+		// ACharacter::Jump는 bPressedJump를 세울 뿐이라 StopJumping이 없으면
+		// 계속 눌린 상태로 남아 착지할 때마다 다시 점프한다.
+		EnhancedInput->BindAction(InputConfig->JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
 	}
 
 	// 연사와 붓은 누르고 있는 동안 계속 나가야 하므로 놓는 쪽도 묶는다.
@@ -203,11 +244,111 @@ void AUnit::Look(const FInputActionValue& Value)
 	AddControllerPitchInput(LookInput.Y);
 }
 
+void AUnit::StartDash()
+{
+	SetDashInput(true);
+}
+
+void AUnit::StopDash()
+{
+	SetDashInput(false);
+}
+
+void AUnit::SetDashInput(bool bWantsToDash)
+{
+	UUnitMovementComponent* Movement = GetUnitMovement();
+	if (!Movement)
+	{
+		return;
+	}
+
+	// 속도를 여기서 건드리지 않는다. 의도만 세우면 압축 플래그를 통해 서버까지 가고,
+	// 실제 속도는 양쪽의 GetMaxSpeed()가 같은 규칙으로 계산한다.
+	Movement->SetWantsToDash(bWantsToDash);
+}
+
+void AUnit::HandleDashStateChanged(bool bDashing)
+{
+	// 서버만 다른 클라이언트에게 알릴 수 있다. 소유 클라이언트는 자기 예측으로
+	// 이미 알고 있으므로 복제에서 제외되어 있다.
+	if (HasAuthority())
+	{
+		bIsDashing = bDashing;
+	}
+
+	UpdateDashEffects(bDashing);
+}
+
+void AUnit::OnRep_IsDashing()
+{
+	UpdateDashEffects(bIsDashing);
+}
+
+void AUnit::UpdateDashEffects(bool bDashing)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	if (!bDashing)
+	{
+		if (DashTrailComponent)
+		{
+			// 이미 태어난 파티클은 수명대로 사라지도록 새 스폰만 멈춘다.
+			DashTrailComponent->Deactivate();
+			DashTrailComponent = nullptr;
+		}
+		return;
+	}
+
+	if (DashTrailComponent)
+	{
+		return;
+	}
+
+	const FUnitActionFeedback* Feedback = UnitData ? UnitData->FindFeedback(EUnitAction::Dash) : nullptr;
+	if (!Feedback)
+	{
+		return;
+	}
+
+	// 몽타주와 소리는 진입 순간의 일회성 연출이라 공용 경로를 그대로 쓴다.
+	if (Feedback->Montage)
+	{
+		PlayAnimMontage(Feedback->Montage);
+	}
+
+	if (Feedback->Sound)
+	{
+		UGameplayStatics::SpawnSoundAttached(Feedback->Sound, GetRootComponent());
+	}
+
+	// 트레일만 따로 붙잡는다. 지속되는 이펙트라 끝날 때 직접 꺼야 하기 때문이다.
+	if (Feedback->FX)
+	{
+		DashTrailComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+			Feedback->FX,
+			GetMesh(),
+			Feedback->FXSocket,
+			FVector::ZeroVector,
+			FRotator::ZeroRotator,
+			EAttachLocation::SnapToTarget,
+			// Deactivate 후 남은 파티클이 다 사라지면 스스로 정리된다. false로 두면
+			// 대시할 때마다 꺼진 컴포넌트가 메시에 하나씩 쌓인다.
+			true);
+	}
+}
+
 void AUnit::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AUnit, UnitData);
+
+	// 소유자는 예측으로 이미 알고 있다. 보내면 자기가 아는 값을 한 번 더 받을 뿐이고,
+	// 지연 때문에 오히려 예측을 되돌리게 된다.
+	DOREPLIFETIME_CONDITION(AUnit, bIsDashing, COND_SkipOwner);
 }
 
 void AUnit::SetUnitData(UUnitDataAsset* NewUnitData)
@@ -247,58 +388,4 @@ void AUnit::ApplyUnitData()
 	{
 		MeshComponent->SetAnimInstanceClass(UnitData->AnimClass);
 	}
-}
-
-float AUnit::PlayActionFeedback(EUnitAction Action)
-{
-	return PlayActionFeedbackAtLocation(Action, GetActorLocation());
-}
-
-float AUnit::PlayActionFeedbackAtLocation(EUnitAction Action, const FVector& WorldLocation)
-{
-	const FUnitActionFeedback* Feedback = UnitData ? UnitData->FindFeedback(Action) : nullptr;
-	if (!Feedback)
-	{
-		return 0.0f;
-	}
-
-	// 몽타주는 루트 모션과 AnimNotify를 통해 게임플레이에 영향을 주므로 서버에서도 돈다.
-	float Duration = 0.0f;
-	if (Feedback->Montage)
-	{
-		Duration = PlayAnimMontage(Feedback->Montage);
-	}
-
-	// 이펙트와 소리는 순수 연출이라 데디케이티드 서버에서는 낭비다.
-	if (GetNetMode() == NM_DedicatedServer)
-	{
-		return Duration;
-	}
-
-	if (Feedback->FX)
-	{
-		if (Feedback->FXSocket.IsNone())
-		{
-			UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-				this, Feedback->FX, WorldLocation, GetActorRotation());
-		}
-		else
-		{
-			UNiagaraFunctionLibrary::SpawnSystemAttached(
-				Feedback->FX,
-				GetMesh(),
-				Feedback->FXSocket,
-				FVector::ZeroVector,
-				FRotator::ZeroRotator,
-				EAttachLocation::SnapToTarget,
-				true);
-		}
-	}
-
-	if (Feedback->Sound)
-	{
-		UGameplayStatics::SpawnSoundAtLocation(this, Feedback->Sound, WorldLocation);
-	}
-
-	return Duration;
 }
