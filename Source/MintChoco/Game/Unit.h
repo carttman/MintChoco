@@ -9,9 +9,12 @@
 
 class UCameraComponent;
 class UEnhancedInputLocalPlayerSubsystem;
+class UInkBottleComponent;
+class UInkTankComponent;
 class UPaintWeaponComponent;
 class UNiagaraComponent;
 class USpringArmComponent;
+class UStaticMeshComponent;
 class UUnitInputConfig;
 class UUnitMovementComponent;
 struct FInputActionValue;
@@ -49,8 +52,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Weapon")
 	UPaintWeaponComponent* GetPaintWeapon() const { return PaintWeapon; }
 
+	UFUNCTION(BlueprintPure, Category = "Ink")
+	UInkTankComponent* GetInkTank() const { return InkTank; }
+
 	/**
-	 * PlayerState의 팀을 무기의 페인트 id로 옮긴다.
+	 * PlayerState의 팀을 무기의 페인트 id와 잉크병의 색으로 옮긴다.
 	 *
 	 * 빙의 시점, 폰의 PlayerState가 복제된 시점, 팀 값 자체가 복제된 시점
 	 * (AGamePlayerState::OnRep_Team) 세 곳에서 불린다. 팀은 폰이 아니라 PlayerState에
@@ -124,6 +130,22 @@ protected:
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UPaintWeaponComponent> PaintWeapon;
+
+	/** 잉크 잔량. 무기가 발사마다 여기서 꺼내 쓰고, 등 뒤 병이 이 값을 보여준다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ink")
+	TObjectPtr<UInkTankComponent> InkTank;
+
+	/** 등 뒤 잉크병의 액체. 메시의 InkBottle 소켓에 붙고, 출렁임과 잔량 표시를 스스로 돌린다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ink")
+	TObjectPtr<UInkBottleComponent> InkBottle;
+
+	/** 잉크병 유리. 액체에 딸려 움직일 뿐 로직은 없다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ink")
+	TObjectPtr<UStaticMeshComponent> InkGlass;
+
+	/** 잉크 수면 디스크. 위치와 기울기는 매 틱 InkBottle이 월드 좌표로 놓는다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ink")
+	TObjectPtr<UStaticMeshComponent> InkSurface;
 
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);

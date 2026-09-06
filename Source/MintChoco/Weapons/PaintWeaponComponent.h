@@ -10,6 +10,7 @@
 #include "PaintWeaponComponent.generated.h"
 
 class APawn;
+class UInkTankComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPaintWeaponFiredSignature, int32, Seed);
 
@@ -18,6 +19,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPaintWeaponFiredSignature, int32, S
  * profile's shots at the profile's cadence, from the owner's muzzle towards the owner's view.
  * Everything about what flies and how it paints lives in the profile; this component only
  * decides when to call it and where from, so any pawn that adds it and sets a profile can paint.
+ * When the owner carries an ink tank, every accepted shot also spends the profile's cost from it,
+ * and an empty tank refuses the shot before the profile ever sees it.
  *
  * The owning machine decides when a shot happens (trigger, cadence, stroke spacing); the server
  * decides what it does. A client runs the profile without authority, which only reports whether
@@ -102,6 +105,9 @@ private:
 	bool FireOnce();
 	void OnShotTimer();
 	bool HasAuthority() const;
+	float GetShotCost() const;
+	bool CanAffordShot() const;
+	void SpendShot();
 	void BuildContext(FPaintFireContext& OutContext, const FVector& ViewOrigin, const FVector& ViewDirection) const;
 	FTransform ComputeMuzzleTransform(const FVector& ViewOrigin, const FVector& ViewDirection) const;
 	APawn* GetOwnerPawn() const;
@@ -117,6 +123,9 @@ private:
 	/** Replays the cosmetic side of an accepted shot on machines that have no ball of their own yet. */
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastShotFired(const FPaintShot& Shot);
+
+	/** The owner's ink reserve, found at BeginPlay. Unset means the owner shoots for free. */
+	TWeakObjectPtr<UInkTankComponent> Tank;
 
 	FPaintStrokeState Stroke;
 	FTimerHandle ShotTimer;

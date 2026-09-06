@@ -34,6 +34,7 @@ public class MintChoco : ModuleRules
 
 		PublicIncludePaths.AddRange(new string[] {
 			"MintChoco",
+			"MintChoco/Ink",
 			"MintChoco/Paint",
 			"MintChoco/Sample",
 			"MintChoco/Weapons"

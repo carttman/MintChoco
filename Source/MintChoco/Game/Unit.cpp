@@ -15,6 +15,8 @@
 #include "Game/UnitMovementComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Ink/InkBottleComponent.h"
+#include "Ink/InkTankComponent.h"
 #include "InputActionValue.h"
 #include "Kismet/GameplayStatics.h"
 #include "MintChoco.h"
@@ -63,6 +65,24 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	FollowCamera->bUsePawnControlRotation = false;
 
 	PaintWeapon = CreateDefaultSubobject<UPaintWeaponComponent>(TEXT("PaintWeapon"));
+	InkTank = CreateDefaultSubobject<UInkTankComponent>(TEXT("InkTank"));
+
+	// 병은 스켈레탈 메시의 InkBottle 소켓에 붙는다. 소켓은 메시가 UnitData로 정해진 뒤에야
+	// 존재하므로 여기서는 메시에만 붙이고, ApplyUnitData가 소켓으로 옮긴다. 소켓 위치는
+	// 메시 에셋마다 정하므로 캐릭터가 바뀌어도 코드는 그대로다.
+	InkBottle = CreateDefaultSubobject<UInkBottleComponent>(TEXT("InkBottle"));
+	InkBottle->SetupAttachment(GetMesh());
+
+	InkGlass = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("InkGlass"));
+	InkGlass->SetupAttachment(InkBottle);
+	InkGlass->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	InkGlass->SetGenerateOverlapEvents(false);
+
+	InkSurface = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("InkSurface"));
+	InkSurface->SetupAttachment(InkBottle);
+	InkSurface->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	InkSurface->SetGenerateOverlapEvents(false);
+	InkBottle->SetSurfaceMesh(InkSurface);
 }
 
 void AUnit::PossessedBy(AController* NewController)
@@ -82,9 +102,19 @@ void AUnit::ApplyTeamToWeapon()
 	// 팀 번호가 곧 페인트 id다(민트 0, 초코 1). 팀이 없는 PlayerState(샘플 맵)는
 	// 건드리지 않아, 다른 곳에서 정해 준 id가 남는다.
 	const AGamePlayerState* GamePlayerState = GetPlayerState<AGamePlayerState>();
-	if (PaintWeapon && GamePlayerState && Teams::IsValidId(GamePlayerState->GetTeam()))
+	if (!GamePlayerState || !Teams::IsValidId(GamePlayerState->GetTeam()))
 	{
-		PaintWeapon->SetPaintId(static_cast<uint8>(GamePlayerState->GetTeam()));
+		return;
+	}
+
+	const int32 Team = GamePlayerState->GetTeam();
+	if (PaintWeapon)
+	{
+		PaintWeapon->SetPaintId(static_cast<uint8>(Team));
+	}
+	if (InkBottle)
+	{
+		InkBottle->SetTeam(Team);
 	}
 }
 
@@ -387,5 +417,12 @@ void AUnit::ApplyUnitData()
 	if (UnitData->AnimClass)
 	{
 		MeshComponent->SetAnimInstanceClass(UnitData->AnimClass);
+	}
+
+	// 소켓 이름으로 다시 붙여야 교체된 메시의 소켓을 따라간다. 소켓이 없는 메시면
+	// 메시 원점에 남으므로, 병이 발밑에 보이면 그 메시에 InkBottle 소켓이 빠진 것이다.
+	if (InkBottle)
+	{
+		InkBottle->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("InkBottle"));
 	}
 }

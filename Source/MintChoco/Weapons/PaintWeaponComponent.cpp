@@ -8,6 +8,7 @@
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
+#include "Ink/InkTankComponent.h"
 #include "Paint/PaintLog.h"
 
 UPaintWeaponComponent::UPaintWeaponComponent()
@@ -25,6 +26,7 @@ void UPaintWeaponComponent::BeginPlay()
 	Super::BeginPlay();
 
 	NextSeed = FMath::Rand();
+	Tank = GetOwner() ? GetOwner()->FindComponentByClass<UInkTankComponent>() : nullptr;
 	if (Profile)
 	{
 		Profile->LogUnsetReferences(GetOwner());
@@ -146,9 +148,27 @@ bool UPaintWeaponComponent::HasAuthority() const
 	return Owner && Owner->HasAuthority();
 }
 
+float UPaintWeaponComponent::GetShotCost() const
+{
+	return Profile ? Profile->InkCostPerShot : 0.0f;
+}
+
+bool UPaintWeaponComponent::CanAffordShot() const
+{
+	return !Tank.IsValid() || Tank->CanAfford(GetShotCost());
+}
+
+void UPaintWeaponComponent::SpendShot()
+{
+	if (Tank.IsValid())
+	{
+		Tank->TryConsume(GetShotCost());
+	}
+}
+
 bool UPaintWeaponComponent::FireOnce()
 {
-	if (!bTriggerHeld || !Profile || !GetWorld())
+	if (!bTriggerHeld || !Profile || !GetWorld() || !CanAffordShot())
 	{
 		return false;
 	}
@@ -175,6 +195,9 @@ bool UPaintWeaponComponent::FireOnce()
 		return false;
 	}
 
+	// With authority this is the real spend; the owner's is a prediction the replicated tank corrects.
+	SpendShot();
+
 	if (Context.bAuthority)
 	{
 		MulticastShotFired(Shot);
@@ -193,7 +216,8 @@ bool UPaintWeaponComponent::FireOnce()
 
 void UPaintWeaponComponent::ServerFire_Implementation(int32 Seed, FVector_NetQuantize ViewOrigin, FVector_NetQuantizeNormal ViewDirection)
 {
-	if (!Profile || !GetWorld())
+	// The owner checked its own tank before asking, but only the server's copy is the truth.
+	if (!Profile || !GetWorld() || !CanAffordShot())
 	{
 		return;
 	}
@@ -209,6 +233,7 @@ void UPaintWeaponComponent::ServerFire_Implementation(int32 Seed, FVector_NetQua
 	FPaintShot Shot;
 	if (Profile->Fire(Context, FreshStroke, Shot))
 	{
+		SpendShot();
 		MulticastShotFired(Shot);
 		OnFired.Broadcast(Seed);
 	}
