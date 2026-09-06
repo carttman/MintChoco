@@ -42,6 +42,10 @@ class UTextureRenderTarget2D;
  * the mesh triangles, answers who owns how much surface. ApplySplat hands the brush and the grid
  * the same local stamp, so score and picture cannot drift apart, and the render target is never
  * read back.
+ *
+ * Splats are never dropped: one that arrives before the maps have baked, or while earlier ones
+ * are still waiting, queues up and is drawn a few per tick. A client joining a match in progress
+ * receives the whole splat history at once and the same queue spreads it over frames.
  */
 UCLASS(ClassGroup = (Paint), meta = (BlueprintSpawnableComponent))
 class MINTCHOCO_API UPaintableComponent : public UActorComponent
@@ -55,7 +59,7 @@ public:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-	/** Draws one splat into the paint buffer and marks it in the coverage grid. */
+	/** Draws one splat into the paint buffer and marks it in the coverage grid, now or as soon as the surface is ready. */
 	UFUNCTION(BlueprintCallable, Category = "Paint")
 	void ApplySplat(const FPaintSplat& Splat);
 
@@ -128,6 +132,13 @@ protected:
 	float PaintDistanceRange = 4.0f;
 
 	/**
+	 * How many queued splats one tick draws. Every splat is a full-target draw, so a backlog (a
+	 * late join replaying a whole match) is spread over frames rather than stalling one.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning", meta = (ClampMin = "1"))
+	int32 MaxSplatsPerTick = 16;
+
+	/**
 	 * World-space edge of one coverage cell. Cells are the gameplay layer's unit of ownership;
 	 * the paint buffer keeps its texel resolution regardless.
 	 */
@@ -155,6 +166,8 @@ private:
 	UStaticMeshComponent* FindTargetMesh() const;
 	float GetUniformScale() const;
 	void OnMapsBaked(UTextureRenderTarget2D* InPositionMap, UTextureRenderTarget2D* EdgeFadeMap);
+	void DrawSplat(const FPaintSplat& Splat);
+	void UpdateTickEnabled();
 	UMaterialInstanceDynamic* GetBrushMID(UMaterialInterface* BrushMaterial);
 	void PrimeBrushMID(UMaterialInstanceDynamic& BrushMID) const;
 	FPaintLocalStamp ComputeLocalStamp(const FPaintSplat& Splat) const;
@@ -180,6 +193,9 @@ private:
 	TObjectPtr<UTextureRenderTarget2D> PositionMap;
 
 	FPaintCellGrid CellGrid;
+
+	/** Splats waiting for the maps, or behind others that are; drained in order by the tick. */
+	TArray<FPaintSplat> PendingSplats;
 
 	/** The mesh's own bounds, the box the position map is normalized to and the grid is laid over. */
 	FBox MeshLocalBounds = FBox(ForceInit);

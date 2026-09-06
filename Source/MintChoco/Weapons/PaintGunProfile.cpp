@@ -19,7 +19,7 @@ void UPaintGunProfile::LogUnsetReferences(const UObject* Owner) const
 	}
 }
 
-bool UPaintGunProfile::Fire(const FPaintFireContext& Context, FPaintStrokeState& Stroke) const
+bool UPaintGunProfile::Fire(const FPaintFireContext& Context, FPaintStrokeState& Stroke, FPaintShot& OutShot) const
 {
 	if (!Context.World || !Paintball || !Scatter)
 	{
@@ -47,8 +47,32 @@ bool UPaintGunProfile::Fire(const FPaintFireContext& Context, FPaintStrokeState&
 		Direction = Context.ViewDirection;
 	}
 
+	OutShot.Muzzle = MuzzleLocation;
+	OutShot.Direction = Direction.GetSafeNormal(UE_SMALL_NUMBER, FVector::ForwardVector);
+	OutShot.Seed = Context.Seed;
+	OutShot.PaintId = Context.PaintId;
+
+	// Without authority the shot is only described; the server launches the ball that paints,
+	// and the weapon replays this description as a cosmetic one.
+	if (!Context.bAuthority)
+	{
+		return true;
+	}
+	return Launch(*Context.World, Context.Instigator, OutShot, /*bCosmetic=*/false);
+}
+
+void UPaintGunProfile::PlayCosmetic(UWorld& World, APawn* Instigator, const FPaintShot& Shot) const
+{
+	if (Paintball && Scatter)
+	{
+		Launch(World, Instigator, Shot, /*bCosmetic=*/true);
+	}
+}
+
+bool UPaintGunProfile::Launch(UWorld& World, APawn* Instigator, const FPaintShot& Shot, bool bCosmetic) const
+{
 	TArray<FVector> Directions;
-	Scatter->ComputePelletDirections(Direction, Context.Seed, Directions);
+	Scatter->ComputePelletDirections(Shot.Direction, Shot.Seed, Directions);
 
 	bool bLaunched = false;
 	for (int32 Pellet = 0; Pellet < Directions.Num(); ++Pellet)
@@ -56,11 +80,11 @@ bool UPaintGunProfile::Fire(const FPaintFireContext& Context, FPaintStrokeState&
 		// The first pellet keeps the shot seed so a pinned debug seed still pins its splat; the
 		// rest derive from it and stay just as replayable.
 		const int32 PelletSeed = Pellet == 0
-			? Context.Seed
-			: static_cast<int32>(HashCombineFast(static_cast<uint32>(Context.Seed), static_cast<uint32>(Pellet)));
-		const FTransform SpawnTransform(Directions[Pellet].Rotation(), MuzzleLocation);
-		bLaunched |= Paintball->Launch(*Context.World, SpawnTransform, Context.Instigator,
-			Directions[Pellet] * Scatter->MuzzleSpeed, Context.PaintId, PelletSeed) != nullptr;
+			? Shot.Seed
+			: static_cast<int32>(HashCombineFast(static_cast<uint32>(Shot.Seed), static_cast<uint32>(Pellet)));
+		const FTransform SpawnTransform(Directions[Pellet].Rotation(), Shot.Muzzle);
+		bLaunched |= Paintball->Launch(World, SpawnTransform, Instigator,
+			Directions[Pellet] * Scatter->MuzzleSpeed, Shot.PaintId, PelletSeed, bCosmetic) != nullptr;
 	}
 	return bLaunched;
 }

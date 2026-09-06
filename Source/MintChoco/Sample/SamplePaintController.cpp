@@ -376,6 +376,14 @@ bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Di
 		return false;
 	}
 
+	// This debug click paints straight into the world, which only the server may do; on a client
+	// the number keys (the unit's weapon, which goes through the server) are the way to paint.
+	if (!HasAuthority())
+	{
+		ShowMessage(TEXT("Hitscan brush is local-only; pick a weapon (1-9) to paint over the network"));
+		return false;
+	}
+
 	// A hitscan trace has no speed of its own, so the sample fabricates one. A paintball passes
 	// its real impact velocity here instead - that single substitution is the whole difference.
 	const FVector IncidentVelocity = Direction * NominalImpactSpeed;
@@ -392,7 +400,7 @@ bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Di
 		}
 	}
 
-	Paint->ApplySplat(Splat);
+	Paint->SubmitSplat(Splat);
 	return true;
 }
 

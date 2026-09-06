@@ -26,11 +26,12 @@ public:
 	void LogUnsetReferences(const UObject* Owner) const;
 
 	/**
-	 * Spawns one ball at the transform, already moving. Returns null when ProjectileClass is unset
-	 * or the spawn was refused.
+	 * Spawns one ball at the transform, already moving. A cosmetic ball flies and dies the same
+	 * way but never paints: it is a client's picture of a ball the server owns. Returns null when
+	 * ProjectileClass is unset or the spawn was refused.
 	 */
 	APaintProjectile* Launch(UWorld& World, const FTransform& SpawnTransform, APawn* Instigator,
-		const FVector& Velocity, uint8 PaintId, int32 Seed) const;
+		const FVector& Velocity, uint8 PaintId, int32 Seed, bool bCosmetic) const;
 
 	/** The actor that flies. Its Blueprint sets the mesh; radius and gravity come from here. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball")

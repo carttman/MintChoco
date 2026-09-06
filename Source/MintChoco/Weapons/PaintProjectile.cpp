@@ -49,12 +49,13 @@ APaintProjectile::APaintProjectile()
 	Movement->bInitialVelocityInLocalSpace = false;
 }
 
-void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId, int32 InSeed, const FVector& Velocity)
+void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId, int32 InSeed, const FVector& Velocity, bool bInCosmetic)
 {
 	check(InProfile);
 	Profile = InProfile;
 	PaintId = InPaintId;
 	Seed = InSeed;
+	bCosmetic = bInCosmetic;
 
 	Movement->InitialSpeed = Velocity.Size();
 	Movement->MaxSpeed = 0.0f;
@@ -87,7 +88,7 @@ void APaintProjectile::EndPlay(const EEndPlayReason::Type Reason)
 
 void APaintProjectile::OnHit(UPrimitiveComponent*, AActor*, UPrimitiveComponent*, FVector, const FHitResult& Hit)
 {
-	if (Profile)
+	if (Profile && !bCosmetic)
 	{
 		// The hit fires from inside the move, before the movement component zeroes its velocity,
 		// so this is still the impact velocity; the fallback covers a blocked first step.

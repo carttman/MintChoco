@@ -8,6 +8,7 @@
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/World.h"
 
+#include "Game/GameGameState.h"
 #include "Paint/PaintDebugDraw.h"
 #include "Paint/PaintSubsystem.h"
 
@@ -66,8 +67,17 @@ void USampleCoverageWidget::NativeTick(const FGeometry& MyGeometry, float InDelt
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
 	const UWorld* const World = GetWorld();
-	const UPaintSubsystem* const Coverage = World ? World->GetSubsystem<UPaintSubsystem>() : nullptr;
-	if (Coverage && RowTexts.Num() == PaintIdCount)
+	if (!World || RowTexts.Num() != PaintIdCount)
+	{
+		return;
+	}
+
+	// The score is the server's; a client's own grid only mirrors the splats it has drawn so far.
+	if (const AGameGameState* const GameState = World->GetGameState<AGameGameState>())
+	{
+		Refresh(GameState->GetWorldCoverage());
+	}
+	else if (const UPaintSubsystem* const Coverage = World->GetSubsystem<UPaintSubsystem>())
 	{
 		Refresh(Coverage->GetWorldCoverage());
 	}

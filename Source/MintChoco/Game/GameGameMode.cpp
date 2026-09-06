@@ -4,6 +4,7 @@
 #include "Game/GameGameMode.h"
 
 #include "EngineUtils.h"
+#include "Game/GameGameState.h"
 #include "Game/GamePlayerState.h"
 #include "Game/TeamPlayerStart.h"
 #include "Game/Unit.h"
@@ -16,6 +17,7 @@
 AGameGameMode::AGameGameMode()
 {
 	PlayerStateClass = AGamePlayerState::StaticClass();
+	GameStateClass = AGameGameState::StaticClass();
 }
 
 int32 AGameGameMode::GetTeamOf(const AController* Player) const

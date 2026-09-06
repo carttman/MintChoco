@@ -12,6 +12,7 @@ public class MintChoco : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"NetCore",
 			"DeveloperSettings",
 			"InputCore",
 			"EnhancedInput",

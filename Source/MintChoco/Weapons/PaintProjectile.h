@@ -26,8 +26,12 @@ class MINTCHOCO_API APaintProjectile : public AActor
 public:
 	APaintProjectile();
 
-	/** Call between SpawnActorDeferred and FinishSpawning: the movement component reads the velocity when it initializes. */
-	void Init(const UPaintballProfile* InProfile, uint8 InPaintId, int32 InSeed, const FVector& Velocity);
+	/**
+	 * Call between SpawnActorDeferred and FinishSpawning: the movement component reads the velocity
+	 * when it initializes. A cosmetic ball is a client's picture of one the server owns: it flies
+	 * and dies identically but leaves no paint.
+	 */
+	void Init(const UPaintballProfile* InProfile, uint8 InPaintId, int32 InSeed, const FVector& Velocity, bool bInCosmetic);
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
@@ -51,4 +55,5 @@ private:
 
 	uint8 PaintId = 0;
 	int32 Seed = 0;
+	bool bCosmetic = false;
 };

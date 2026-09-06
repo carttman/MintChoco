@@ -18,7 +18,7 @@ void UPaintStrokeProfile::LogUnsetReferences(const UObject* Owner) const
 		*GetNameSafe(Owner), *GetName());
 }
 
-bool UPaintStrokeProfile::Fire(const FPaintFireContext& Context, FPaintStrokeState& Stroke) const
+bool UPaintStrokeProfile::Fire(const FPaintFireContext& Context, FPaintStrokeState& Stroke, FPaintShot& OutShot) const
 {
 	if (!Context.World)
 	{
@@ -49,11 +49,19 @@ bool UPaintStrokeProfile::Fire(const FPaintFireContext& Context, FPaintStrokeSta
 		return false;
 	}
 
-	if (!Deposit.ApplyHit(Context.World, Hit, Context.ViewDirection * NominalImpactSpeed, Context.PaintId, Context.Seed))
+	OutShot.Muzzle = MuzzleLocation;
+	OutShot.Direction = Context.ViewDirection;
+	OutShot.Seed = Context.Seed;
+	OutShot.PaintId = Context.PaintId;
+
+	// A client only decides that a stamp is due here; the server retraces with the same view and
+	// deposits. The anchor still advances so the client keeps asking at stroke spacing, not every tick.
+	if (Context.bAuthority
+		&& !Deposit.ApplyHit(Context.World, Hit, Context.ViewDirection * NominalImpactSpeed, Context.PaintId, Context.Seed))
 	{
 		return false;
 	}
-	
+
 	Stroke.Anchor = Hit.ImpactPoint;
 	Stroke.bAnchorValid = true;
 	return true;

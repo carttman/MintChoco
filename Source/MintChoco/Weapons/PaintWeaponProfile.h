@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Engine/NetSerialization.h"
 
 #include "PaintWeaponProfile.generated.h"
 
@@ -19,7 +20,10 @@ enum class EPaintFireMode : uint8
 	Continuous
 };
 
-/** One shot's worth of input, sampled by the weapon right before it fires its profile. */
+/**
+ * One shot's worth of input, sampled by the weapon right before it fires its profile. On the
+ * server the view comes from the owning client's RPC, the muzzle from the server's own pawn.
+ */
 struct FPaintFireContext
 {
 	UWorld* World = nullptr;
@@ -29,6 +33,35 @@ struct FPaintFireContext
 	FVector ViewDirection = FVector::ForwardVector;
 	uint8 PaintId = 0;
 	int32 Seed = 0;
+
+	/**
+	 * False on a client: the profile only decides whether this shot would fire and describes it,
+	 * without launching or painting anything. The weapon turns a true result into a server RPC.
+	 */
+	bool bAuthority = true;
+};
+
+/**
+ * What one accepted shot looked like, resolved: enough for another machine to replay its
+ * cosmetic side (the balls that fly) without redoing the aim trace. The seed makes the replayed
+ * scatter identical to the authoritative one.
+ */
+USTRUCT()
+struct FPaintShot
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FVector_NetQuantize Muzzle = FVector::ZeroVector;
+
+	UPROPERTY()
+	FVector_NetQuantizeNormal Direction = FVector::ForwardVector;
+
+	UPROPERTY()
+	int32 Seed = 0;
+
+	UPROPERTY()
+	uint8 PaintId = 0;
 };
 
 /**
@@ -54,9 +87,16 @@ class MINTCHOCO_API UPaintWeaponProfile : public UDataAsset
 	GENERATED_BODY()
 
 public:
-	/** Fires once from the context. Returns true when a splat was produced or a projectile launched. */
-	virtual bool Fire(const FPaintFireContext& Context, FPaintStrokeState& Stroke) const
+	/**
+	 * Fires once from the context. Returns true when the shot was accepted: with authority a splat
+	 * was produced or a projectile launched, without it the shot merely would have been. OutShot
+	 * describes the accepted shot either way.
+	 */
+	virtual bool Fire(const FPaintFireContext& Context, FPaintStrokeState& Stroke, FPaintShot& OutShot) const
 		PURE_VIRTUAL(UPaintWeaponProfile::Fire, return false;);
+
+	/** Replays the visible side of a shot another machine accepted. Nothing here may paint. */
+	virtual void PlayCosmetic(UWorld& World, APawn* Instigator, const FPaintShot& Shot) const {}
 
 	/** Warns once, at equip time, about asset references that would otherwise fail as "nothing happens". */
 	virtual void LogUnsetReferences(const UObject* Owner) const {}
