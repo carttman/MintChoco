@@ -6,7 +6,22 @@
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Interfaces/OnlineSessionInterface.h"
 #include "Interfaces/OnlineSessionDelegates.h"
+#include "OnlineSessionSettings.h"
 #include "OnlineSessionsSubsystem.generated.h"
+
+/**
+ * DestroySession이 끝난 뒤에 이어서 할 일.
+ *
+ * 같은 이름의 세션이 남아 있으면 CreateSession은 실패하고 JoinSession은
+ * AlreadyInSession을 돌려준다. 그래서 먼저 비워야 하는데 파괴가 비동기라,
+ * 원래 요청을 기억해뒀다가 완료 콜백에서 이어서 실행한다.
+ */
+enum class EPendingSessionAction : uint8
+{
+	None,
+	Create,
+	Join,
+};
 
 /**
  *
@@ -116,6 +131,29 @@ public:
 	void OnNetworkFailure(UWorld* World, UNetDriver* NetDriver, ENetworkFailure::Type ErrorType, const FString& String);
 
 private:
+	/** NAME_GameSession이 이미 살아 있는지. 생성·참가 전에 반드시 확인한다. */
+	bool HasExistingSession() const;
+
+	/** 검색 결과 하나로 참가를 시작한다. 목록 클릭과 초대 수락이 함께 쓴다. */
+	void JoinSessionResult(const FOnlineSessionSearchResult& SearchResult);
+
+	/** 기존 세션 정리가 끝난 뒤 실제 요청을 보내는 지점. */
+	void CreateSessionInternal();
+	void JoinSessionInternal();
+
+	void TravelToRoomList();
+
+	EPendingSessionAction PendingAction = EPendingSessionAction::None;
+
+	FString PendingRoomName;
+	int32 PendingMaxPlayer = 0;
+
+	/**
+	 * 참가할 세션. 인덱스가 아니라 결과를 통째로 들고 있는다. 파괴를 기다리는 사이에
+	 * 새 검색이 SessionSearch를 갈아치우면 인덱스는 다른 방을 가리키게 된다.
+	 */
+	FOnlineSessionSearchResult PendingJoinResult;
+
 	FText LocalPlayerNickname;
 
 	void SetLocalPlayerNickname();
