@@ -56,7 +56,7 @@ public:
 	UInkTankComponent* GetInkTank() const { return InkTank; }
 
 	/**
-	 * PlayerState의 팀을 무기의 페인트 id와 잉크병의 색으로 옮긴다.
+	 * PlayerState의 팀을 무기의 페인트 id로 옮긴다. 잉크병은 그 id를 따라 색이 바뀐다.
 	 *
 	 * 빙의 시점, 폰의 PlayerState가 복제된 시점, 팀 값 자체가 복제된 시점
 	 * (AGamePlayerState::OnRep_Team) 세 곳에서 불린다. 팀은 폰이 아니라 PlayerState에
@@ -166,6 +166,10 @@ private:
 
 	/** 실제로 대시 상태가 바뀔 때 무브먼트 컴포넌트가 알려준다. */
 	void HandleDashStateChanged(bool bDashing);
+
+	/** 무기의 페인트 id가 바뀌면(로컬 세팅이든 복제든) 잉크병을 그 팀 색으로 맞춘다. */
+	UFUNCTION()
+	void HandlePaintIdChanged(uint8 PaintId);
 
 	UFUNCTION()
 	void OnRep_IsDashing();

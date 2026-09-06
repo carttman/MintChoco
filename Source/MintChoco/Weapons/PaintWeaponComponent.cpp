@@ -44,6 +44,7 @@ void UPaintWeaponComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(UPaintWeaponComponent, Profile);
+	DOREPLIFETIME(UPaintWeaponComponent, PaintId);
 }
 
 void UPaintWeaponComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -76,6 +77,32 @@ void UPaintWeaponComponent::SetProfile(UPaintWeaponProfile* NewProfile)
 void UPaintWeaponComponent::ServerSetProfile_Implementation(UPaintWeaponProfile* NewProfile)
 {
 	SetProfile(NewProfile);
+}
+
+void UPaintWeaponComponent::SetPaintId(uint8 NewPaintId)
+{
+	if (PaintId == NewPaintId) return;
+
+	PaintId = NewPaintId;
+	OnPaintIdChanged.Broadcast(PaintId);
+
+	// The server paints with its own copy, so an id picked on the owning client has to reach it.
+	// A simulated proxy only mirrors what replication gave it and has no say.
+	const APawn* const Pawn = GetOwnerPawn();
+	if (!HasAuthority() && Pawn && Pawn->IsLocallyControlled())
+	{
+		ServerSetPaintId(NewPaintId);
+	}
+}
+
+void UPaintWeaponComponent::ServerSetPaintId_Implementation(uint8 NewPaintId)
+{
+	SetPaintId(NewPaintId);
+}
+
+void UPaintWeaponComponent::OnRep_PaintId()
+{
+	OnPaintIdChanged.Broadcast(PaintId);
 }
 
 void UPaintWeaponComponent::OnRep_Profile()

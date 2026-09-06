@@ -107,14 +107,18 @@ void AUnit::ApplyTeamToWeapon()
 		return;
 	}
 
-	const int32 Team = GamePlayerState->GetTeam();
+	// 병 색은 무기의 페인트 id를 따라가므로(HandlePaintIdChanged) 여기서 따로 칠하지 않는다.
 	if (PaintWeapon)
 	{
-		PaintWeapon->SetPaintId(static_cast<uint8>(Team));
+		PaintWeapon->SetPaintId(static_cast<uint8>(GamePlayerState->GetTeam()));
 	}
+}
+
+void AUnit::HandlePaintIdChanged(uint8 PaintId)
+{
 	if (InkBottle)
 	{
-		InkBottle->SetTeam(Team);
+		InkBottle->SetTeam(PaintId);
 	}
 }
 
@@ -126,6 +130,14 @@ void AUnit::PostInitializeComponents()
 	// 여기서 보이는 값은 클라이언트에서도 블루프린트 기본값이므로, 런타임에
 	// 교체된 경우는 OnRep_UnitData가 뒤이어 처리한다.
 	ApplyUnitData();
+
+	// 병은 무기의 페인트 id 하나만 본다. 팀(PlayerState)이든 샘플 맵의 휠이든 어디서 정해도
+	// 그 값은 무기에서 복제되므로, 다른 클라이언트의 병도 같은 경로로 색이 맞는다.
+	if (PaintWeapon)
+	{
+		PaintWeapon->OnPaintIdChanged.AddDynamic(this, &AUnit::HandlePaintIdChanged);
+		HandlePaintIdChanged(PaintWeapon->GetPaintId());
+	}
 
 	// 소유 클라이언트에서는 입력이, 서버에서는 압축 플래그가 이 알림을 낸다.
 	// 어느 쪽이든 실제로 상태가 바뀔 때만 한 번씩 온다.
