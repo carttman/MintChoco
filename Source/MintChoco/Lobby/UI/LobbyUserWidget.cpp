@@ -3,11 +3,11 @@
 
 #include "LobbyUserWidget.h"
 #include "Components/TextBlock.h"
-#include "Components/EditableTextBox.h"
 #include "Components/Button.h"
 #include "Lobby/Contents/LobbyPlayerState.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "LobbyWidget.h"
+#include "Components/EditableTextBox.h"
 
 void ULobbyUserWidget::SetInfo(ALobbyPlayerState* InPlayerState)
 {
@@ -22,26 +22,32 @@ void ULobbyUserWidget::RefreshUI()
 		return;
 
 	// Cache Local Variables
+	Editable_PlayerName->SetIsReadOnly(true);
 	bool IsReady = PlayerState->Ready;
 	bool IsServer = UKismetSystemLibrary::IsServer(this);
 	bool IsLocalPlayer = false;
 	FText TeamText;
-
-	if (PlayerState->Team == 0)
+	if (PlayerState->Team == Teams::Mint)
 	{
 		TeamText = FText::FromString("Mint");
 
 		FColor MintColor = FColor(62, 180, 137, 255);
 		Txt_Team->SetColorAndOpacity(FSlateColor(MintColor));
 	}
-	else
+	else if (PlayerState->Team == Teams::Choco)
 	{
 		TeamText = FText::FromString("Choco");
 
 		FColor ChocoColor = FColor::FromHex("#D2691E");
 		Txt_Team->SetColorAndOpacity(FSlateColor(ChocoColor));
 	}
+	else
+	{
+		TeamText = FText::FromString("Select Team!");
 
+		FColor Color = FColor(0, 0, 0, 255);
+		Txt_Team->SetColorAndOpacity(FSlateColor(Color));
+	}
 
 	Txt_Team->SetText(TeamText);
 
@@ -52,7 +58,6 @@ void ULobbyUserWidget::RefreshUI()
 	Btn_Ready->SetVisibility(ESlateVisibility::Hidden);
 	Btn_KickPlayer->SetVisibility(ESlateVisibility::Hidden);
 	Txt_Ready->SetVisibility(ESlateVisibility::Hidden);
-	Txt_PlayerName->SetVisibility(ESlateVisibility::Hidden);
 	Editable_PlayerName->SetVisibility(ESlateVisibility::Hidden);
 
 	 if (IsLocalPlayer == false)
@@ -78,8 +83,6 @@ void ULobbyUserWidget::RefreshUI()
 	Editable_PlayerName->SetText(PlayerState->Nickname);
 	Editable_PlayerName->SetVisibility(ESlateVisibility::Visible);
 
-	if (IsReady)
-		Editable_PlayerName->SetIsReadOnly(true);
-	else
-		Editable_PlayerName->SetIsReadOnly(!IsLocalPlayer);
+	// Txt_PlayerName->SetText(PlayerState->Nickname);
+	// Txt_PlayerName->SetVisibility(ESlateVisibility::Visible);
 }

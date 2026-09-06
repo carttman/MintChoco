@@ -30,16 +30,3 @@ void ALobbyPlayerController::Server_HandleTeamButton_Implementation(int32 TeamId
 		LobbyPlayerState->Multicast_Team(TeamId);
 }
 
-void ALobbyPlayerController::Server_HandleChangeUsername_Implementation(const FText& InNickname)
-{
-	if (HasAuthority() == false)
-		return;
-
-	ALobbyPlayerState* LobbyPlayerState = Cast<ALobbyPlayerState>(GetPawn()->GetPlayerState());
-	if (LobbyPlayerState)
-	{
-		LobbyPlayerState->Nickname = InNickname;
-		LobbyPlayerState->RefreshLobbyUI();
-	}
-}
-

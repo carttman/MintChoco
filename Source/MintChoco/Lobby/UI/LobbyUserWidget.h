@@ -6,8 +6,8 @@
 #include "Blueprint/UserWidget.h"
 #include "LobbyUserWidget.generated.h"
 
-class UTextBlock;
 class UEditableTextBox;
+class UTextBlock;
 class UButton;
 class ALobbyPlayerState;
 
