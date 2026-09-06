@@ -97,6 +97,19 @@ TArray<ALobbyPlayerState*> ULobbyWidget::GetLobbyPlayerStates()
 		}
 	}
 
+	// PlayerArray의 순서는 머신마다 다르다. 클라이언트에서는 PlayerState 액터가 복제되어
+	// 도착한 순서대로 담기기 때문이다. 그래서 그대로 쓰면 각자 다른 순서로 보인다.
+	//
+	// PlayerId는 서버가 입장 순서대로 매기고(AGameSession::RegisterPlayer) COND_InitialOnly로
+	// 복제되므로, PlayerState가 존재하는 시점에는 이미 값이 들어 있다. 이걸로 정렬하면
+	// 모든 화면이 호스트와 같은 순서가 된다.
+	//
+	// TArray<T*>::Sort는 포인터를 역참조해서 프레디케이트에 넘긴다. 위에서 null을 걸렀으므로 안전하다.
+	LobbyPlayerStates.Sort([](const ALobbyPlayerState& A, const ALobbyPlayerState& B)
+	{
+		return A.GetPlayerId() < B.GetPlayerId();
+	});
+
 	return LobbyPlayerStates;
 }
 
