@@ -29,6 +29,6 @@ bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector
 		return false;
 	}
 
-	Paint->ApplySplat(BuildSplat(Hit, IncidentVelocity, PaintId, Seed));
+	Paint->SubmitSplat(BuildSplat(Hit, IncidentVelocity, PaintId, Seed));
 	return true;
 }

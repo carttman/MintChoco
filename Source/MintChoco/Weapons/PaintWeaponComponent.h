@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Engine/NetSerialization.h"
 #include "Engine/TimerHandle.h"
 
 #include "Weapons/PaintWeaponProfile.h"
@@ -18,8 +19,11 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPaintWeaponFiredSignature, int32, S
  * Everything about what flies and how it paints lives in the profile; this component only
  * decides when to call it and where from, so any pawn that adds it and sets a profile can paint.
  *
- * Shots are fired on the machine that pulls the trigger. Every shot already carries a seed, so
- * server authority later means passing that seed in an RPC and replaying the same spread.
+ * The owning machine decides when a shot happens (trigger, cadence, stroke spacing); the server
+ * decides what it does. A client runs the profile without authority, which only reports whether
+ * the shot is due, then sends its seed and view to the server, which fires for real. The
+ * balls other machines see are cosmetic replays of the shot the server accepted: the owner
+ * spawns its own at trigger time, everyone else on the shot multicast.
  */
 UCLASS(ClassGroup = (Paint), meta = (BlueprintSpawnableComponent))
 class MINTCHOCO_API UPaintWeaponComponent : public UActorComponent
@@ -30,6 +34,7 @@ public:
 	UPaintWeaponComponent();
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	/** Swapping while the trigger is held releases it first, so the old profile's stroke never leaks into the new one. */
 	UFUNCTION(BlueprintCallable, Category = "Paint|Weapon")
@@ -78,8 +83,8 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 
-	/** What this weapon fires. Unset means the trigger does nothing. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Weapon")
+	/** What this weapon fires. Unset means the trigger does nothing. Replicated so every machine replays the same balls. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_Profile, Category = "Paint|Weapon")
 	TObjectPtr<UPaintWeaponProfile> Profile;
 
 	/** Socket on the owner's skeletal mesh that shots leave from. Missing socket: the view point, pushed forward by MuzzleFallbackOffset. */
@@ -90,12 +95,28 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Weapon", meta = (ClampMin = "0", ForceUnits = "cm"))
 	float MuzzleFallbackOffset = 60.0f;
 
+	UFUNCTION()
+	void OnRep_Profile();
+
 private:
 	bool FireOnce();
 	void OnShotTimer();
-	bool BuildContext(FPaintFireContext& OutContext) const;
+	bool HasAuthority() const;
+	void BuildContext(FPaintFireContext& OutContext, const FVector& ViewOrigin, const FVector& ViewDirection) const;
+	FTransform ComputeMuzzleTransform(const FVector& ViewOrigin, const FVector& ViewDirection) const;
 	APawn* GetOwnerPawn() const;
 	void GetOwnerView(FVector& OutOrigin, FVector& OutDirection) const;
+
+	/** The owner's shot, fired for real with the server's muzzle and the view the owner aimed with. */
+	UFUNCTION(Server, Reliable)
+	void ServerFire(int32 Seed, FVector_NetQuantize ViewOrigin, FVector_NetQuantizeNormal ViewDirection);
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetProfile(UPaintWeaponProfile* NewProfile);
+
+	/** Replays the cosmetic side of an accepted shot on machines that have no ball of their own yet. */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastShotFired(const FPaintShot& Shot);
 
 	FPaintStrokeState Stroke;
 	FTimerHandle ShotTimer;

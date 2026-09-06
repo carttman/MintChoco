@@ -15,7 +15,7 @@ void UPaintballProfile::LogUnsetReferences(const UObject* Owner) const
 }
 
 APaintProjectile* UPaintballProfile::Launch(UWorld& World, const FTransform& SpawnTransform, APawn* Instigator,
-	const FVector& Velocity, uint8 PaintId, int32 Seed) const
+	const FVector& Velocity, uint8 PaintId, int32 Seed, bool bCosmetic) const
 {
 	if (!ProjectileClass)
 	{
@@ -30,7 +30,7 @@ APaintProjectile* UPaintballProfile::Launch(UWorld& World, const FTransform& Spa
 		return nullptr;
 	}
 
-	Projectile->Init(this, PaintId, Seed, Velocity);
+	Projectile->Init(this, PaintId, Seed, Velocity, bCosmetic);
 	Projectile->FinishSpawning(SpawnTransform);
 	return Projectile;
 }

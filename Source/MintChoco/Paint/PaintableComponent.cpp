@@ -78,7 +78,14 @@ void UPaintableComponent::BeginPlay()
 	{
 		Paint->RegisterPaintable(this);
 	}
-	SetComponentTickEnabled(bDrawDebugCoverage || bDrawDebugCells);
+	UpdateTickEnabled();
+
+	// A dedicated server has no picture to keep, only the score; the grid alone is enough.
+	if (IsRunningDedicatedServer())
+	{
+		bPaintReady = true;
+		return;
+	}
 
 	PaintRenderTargets[0] = CreateIdBuffer(this, RenderTargetResolution);
 	PaintRenderTargets[1] = CreateIdBuffer(this, RenderTargetResolution);
@@ -120,6 +127,7 @@ void UPaintableComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 
 	bPaintReady = false;
+	PendingSplats.Empty();
 	PaintRenderTargets[0] = nullptr;
 	PaintRenderTargets[1] = nullptr;
 	PositionMap = nullptr;
@@ -139,6 +147,17 @@ void UPaintableComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void UPaintableComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (bPaintReady && !PendingSplats.IsEmpty())
+	{
+		const int32 Count = FMath::Min(MaxSplatsPerTick, PendingSplats.Num());
+		for (int32 Index = 0; Index < Count; ++Index)
+		{
+			DrawSplat(PendingSplats[Index]);
+		}
+		PendingSplats.RemoveAt(0, Count, EAllowShrinking::No);
+		UpdateTickEnabled();
+	}
 
 	if (!TargetMesh || !CellGrid.IsBuilt())
 	{
@@ -178,7 +197,37 @@ UTextureRenderTarget2D* UPaintableComponent::CreateIdBuffer(UObject* Outer, int3
 
 void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 {
-	if (!bPaintReady)
+	// A surface that never got past BeginPlay will never be ready, so nothing waits on it.
+	if (!TargetMesh || (!bPaintReady && !MapBaker))
+	{
+		return;
+	}
+
+	if (bPaintReady && PendingSplats.IsEmpty())
+	{
+		DrawSplat(Splat);
+		return;
+	}
+
+	PendingSplats.Add(Splat);
+	UpdateTickEnabled();
+}
+
+void UPaintableComponent::UpdateTickEnabled()
+{
+	SetComponentTickEnabled(bDrawDebugCoverage || bDrawDebugCells || !PendingSplats.IsEmpty());
+}
+
+void UPaintableComponent::DrawSplat(const FPaintSplat& Splat)
+{
+	const FPaintLocalStamp Stamp = ComputeLocalStamp(Splat);
+
+	// Same stamp the brush draws, so ownership can only differ from the picture by the stamp's
+	// satellites and the cell resolution. Marked first: the score exists even where there is no
+	// picture (a dedicated server).
+	CellGrid.Mark(Stamp, Splat.PaintId, CellStampFraction);
+
+	if (!SurfaceMID)
 	{
 		return;
 	}
@@ -188,8 +237,6 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 	{
 		return;
 	}
-
-	const FPaintLocalStamp Stamp = ComputeLocalStamp(Splat);
 
 	// The brush writes the id as a normalized byte; the target stores it back as exactly PaintId.
 	BrushMID->SetScalarParameterValue(BrushPaintIdParam, Splat.PaintId / 255.0f);
@@ -211,14 +258,12 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 
 	FrontBufferIndex = 1 - FrontBufferIndex;
 	SurfaceMID->SetTextureParameterValue(PaintIdMapParam, Back);
-
-	// Same stamp the brush just drew, so ownership can only differ from the picture by the
-	// stamp's satellites and the cell resolution.
-	CellGrid.Mark(Stamp, Splat.PaintId, CellStampFraction);
 }
 
 void UPaintableComponent::ClearPaint()
 {
+	PendingSplats.Empty();
+	UpdateTickEnabled();
 	for (UTextureRenderTarget2D* const Buffer : PaintRenderTargets)
 	{
 		if (Buffer)
@@ -233,7 +278,7 @@ void UPaintableComponent::SetDebugDraw(bool bText, bool bCells)
 {
 	bDrawDebugCoverage = bText;
 	bDrawDebugCells = bCells;
-	SetComponentTickEnabled(bText || bCells);
+	UpdateTickEnabled();
 }
 
 UStaticMeshComponent* UPaintableComponent::FindTargetMesh() const
@@ -271,6 +316,7 @@ void UPaintableComponent::OnMapsBaked(UTextureRenderTarget2D* InPositionMap, UTe
 	}
 
 	bPaintReady = true;
+	UpdateTickEnabled();
 }
 
 UMaterialInstanceDynamic* UPaintableComponent::GetBrushMID(UMaterialInterface* BrushMaterial)

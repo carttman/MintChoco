@@ -3,6 +3,7 @@
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 
+#include "Paint/PaintLog.h"
 #include "Paint/PaintableComponent.h"
 
 void UPaintSubsystem::RegisterPaintable(UPaintableComponent* Paintable)
@@ -19,6 +20,32 @@ void UPaintSubsystem::UnregisterPaintable(UPaintableComponent* Paintable)
 	{
 		return !Entry.IsValid() || Entry.Get() == Paintable;
 	});
+}
+
+void UPaintSubsystem::SubmitSplat(const FPaintSplat& Splat)
+{
+	if (GetWorld()->GetNetMode() == NM_Client)
+	{
+		UE_LOG(LogPaint, Warning, TEXT("a client tried to submit a splat; only the server paints, so it was dropped."));
+		return;
+	}
+
+	if (OnSplatSubmitted.IsBound())
+	{
+		OnSplatSubmitted.Execute(Splat);
+	}
+	else
+	{
+		ApplySplat(Splat);
+	}
+}
+
+void UPaintSubsystem::ClearPaint()
+{
+	for (const auto Paintable : GetPaintables())
+	{
+		Paintable->ClearPaint();
+	}
 }
 
 void UPaintSubsystem::ApplySplat(const FPaintSplat& Splat)

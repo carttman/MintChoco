@@ -19,7 +19,8 @@ class MINTCHOCO_API UPaintGunProfile : public UPaintWeaponProfile
 	GENERATED_BODY()
 
 public:
-	virtual bool Fire(const FPaintFireContext& Context, FPaintStrokeState& Stroke) const override;
+	virtual bool Fire(const FPaintFireContext& Context, FPaintStrokeState& Stroke, FPaintShot& OutShot) const override;
+	virtual void PlayCosmetic(UWorld& World, APawn* Instigator, const FPaintShot& Shot) const override;
 	virtual void LogUnsetReferences(const UObject* Owner) const override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gun")
@@ -31,4 +32,8 @@ public:
 	/** How far the view ray looks for the aim point the barrel converges on. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gun", meta = (ClampMin = "0", ForceUnits = "cm"))
 	float AimTraceDistance = 10000.0f;
+
+private:
+	/** Scatters the shot and launches one ball per pellet. Returns true when at least one flew. */
+	bool Launch(UWorld& World, APawn* Instigator, const FPaintShot& Shot, bool bCosmetic) const;
 };

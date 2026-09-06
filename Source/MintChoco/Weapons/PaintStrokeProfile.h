@@ -20,7 +20,7 @@ class MINTCHOCO_API UPaintStrokeProfile : public UPaintWeaponProfile
 public:
 	UPaintStrokeProfile();
 
-	virtual bool Fire(const FPaintFireContext& Context, FPaintStrokeState& Stroke) const override;
+	virtual bool Fire(const FPaintFireContext& Context, FPaintStrokeState& Stroke, FPaintShot& OutShot) const override;
 	virtual void LogUnsetReferences(const UObject* Owner) const override;
 
 	/** What each stamp leaves on the surface. */
