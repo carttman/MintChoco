@@ -21,6 +21,13 @@ FPaintSplat FPaintDeposit::BuildSplat(const FHitResult& Hit, const FVector& Inci
 	return BrushProfile->BuildSplat(Hit, IncidentVelocity, PaintId, SplatVolume, HeightAdd, Seed);
 }
 
+void FPaintDeposit::MarkTransience(FPaintSplat& Splat, const FHitResult& Hit)
+{
+	const AActor* const Actor = Hit.GetActor();
+	const UPaintableComponent* const Paintable = Actor ? Actor->FindComponentByClass<UPaintableComponent>() : nullptr;
+	Splat.bTransient = Paintable && !Paintable->IsWorldNormalPersistent(Hit.ImpactNormal);
+}
+
 bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed) const
 {
 	UPaintSubsystem* const Paint = World ? World->GetSubsystem<UPaintSubsystem>() : nullptr;
@@ -29,6 +36,8 @@ bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector
 		return false;
 	}
 
-	Paint->SubmitSplat(BuildSplat(Hit, IncidentVelocity, PaintId, Seed));
+	FPaintSplat Splat = BuildSplat(Hit, IncidentVelocity, PaintId, Seed);
+	MarkTransience(Splat, Hit);
+	Paint->SubmitSplat(Splat);
 	return true;
 }

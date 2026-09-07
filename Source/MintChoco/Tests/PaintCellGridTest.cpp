@@ -109,6 +109,52 @@ bool FPaintCellGridMarkTopTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPaintCellGridMaskAndScaleTest,
+	"MintChoco.Paint.CellGrid.MaskAndScale",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FPaintCellGridMaskAndScaleTest::RunTest(const FString& Parameters)
+{
+	// The component builds in the scaled-local frame: positions carry the world scale, cells stay
+	// world-sized, and classification multiplies the scale back in so a stretched face still reads
+	// as its own axis. Only the enabled directions get cells.
+	const FVector Scale(2.0, 1.0, 1.0);
+	FUnitCube Cube;
+	for (FVector3f& Position : Cube.Positions)
+	{
+		Position *= FVector3f(Scale);
+	}
+	const FBox Bounds(FVector(-100.0, -50.0, -50.0), FVector(100.0, 50.0, 50.0));
+	const uint8 Mask = PaintDirectionBit(EPaintFaceDirection::Up) | PaintDirectionBit(EPaintFaceDirection::Front);
+
+	FPaintCellGrid Grid;
+	Grid.Build(Bounds, 25.0f, 1.0f, Cube.Positions, Cube.Normals, Cube.Indices, Mask, Scale);
+
+	TestEqual(TEXT("dims"), Grid.GetDims(), FIntVector(8, 4, 4));
+	TestEqual(TEXT("surface cells: top 8 x 4 plus front 4 x 4"), Grid.GetSurfaceCellCount(), 48);
+	TestEqual(TEXT("total area is the two enabled faces"), Grid.GetCoverage().TotalArea, 30000.0f, 30.0f);
+	TestEqual(TEXT("top area follows the stretch"), Grid.GetCoverage(EPaintFaceDirection::Up).TotalArea, 20000.0f, 20.0f);
+	TestEqual(TEXT("front area"), Grid.GetCoverage(EPaintFaceDirection::Front).TotalArea, 10000.0f, 10.0f);
+	for (const EPaintFaceDirection Disabled : {EPaintFaceDirection::Back, EPaintFaceDirection::Right,
+		EPaintFaceDirection::Left, EPaintFaceDirection::Down})
+	{
+		TestEqual(FString::Printf(TEXT("face %d disabled"), int32(Disabled)), Grid.GetCoverage(Disabled).TotalArea, 0.0f, 1e-6f);
+	}
+
+	// A world-radius stamp reaches the same four center cells on the stretched top as on the unit cube.
+	FPaintLocalStamp Stamp;
+	Stamp.Center = FVector(0.0, 0.0, 50.0);
+	Stamp.Normal = FVector::UpVector;
+	Stamp.AxisU = FVector::ForwardVector;
+	Stamp.AxisV = FVector::RightVector;
+	Stamp.Radius = 60.0f;
+	Stamp.Stretch = 1.0f;
+	TestEqual(TEXT("cells painted"), Grid.Mark(Stamp, 1, 0.5f), 4);
+	TestEqual(TEXT("top owned by team 1"), Grid.GetCoverage(EPaintFaceDirection::Up).GetFraction(1), 2500.0f / 20000.0f, 1e-3f);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FPaintBrushBuildSplatTest,
 	"MintChoco.Paint.Brush.BuildSplatDeterministic",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)

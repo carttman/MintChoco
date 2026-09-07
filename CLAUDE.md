@@ -152,12 +152,29 @@ Each of these cost real debugging time once.
   whenever an asset editor saves preview-scene settings (`USharedProfiles` is
   `defaultconfig`; `UAssetViewerSettings::Save` writes the three engine profiles).
   Commit it once instead of reverting it.
-- A paintable mesh needs a unique UV1: `M_PaintUnwrap` and every paint read use
-  TexCoord 1, and a missing channel silently pads with the last one (UV0). Art meshes
-  arrive with UV0 only (`LightMapCoordinateIndex 0`,
-  `StaticMaterials[].uVChannelData.localUVDensities[1] == 0`). `SourceModels` / Build
-  Settings cannot be read or written through `ObjectTools`, so Generate Lightmap UVs
-  (destination index 1) is a Static Mesh editor step; verify with the density read.
+- Paint no longer needs UV1. The paint buffer is a procedural planar atlas: one island per
+  enabled local direction (`bPaintUp` and friends on `UPaintableComponent`, Up by default,
+  `bFloorFollowsWorldUp` adds the sky-facing side), packed by `FPaintIslandLayout` from
+  the mesh bounds and the actor scale, filled by `PaintAtlasBaker` on the CPU from LOD 0
+  (Allow CPU Access is the only mesh requirement; a Nanite mesh bakes from its fallback).
+  `MF_PaintOverlay` picks the island from the pixel's local normal (`PaintAtlasUV`), so a
+  surface only shows paint on directions it keeps; a hit on any other direction is a
+  transient splat (`FPaintSplat::bTransient`) that spawns `UPaintSettings::SideSplatEffectClass`.
+- Stamps, the cell grid and the brush's `BoundsMin/BoundsSize` are in the scaled-local
+  frame (local × |Scale3D|): every length is world cm, non-uniform scale included. A hit
+  normal maps to a local direction with `InverseTransformVectorNoScale(N) * Scale3D`.
+- In a Custom node, `VertexNormalWS` is the local normal rotated but never scaled; undo
+  the rotation alone (`LocalToWorld` rows divided by `InvNonUniformScale`, transposed).
+  The `Transform` node World→Local divides by the scale instead and skews it. Feeding a
+  local normal to Local→World needs `/ (Scale*Scale)` first (inverse transpose).
+- `Begin/EndDrawCanvasToRenderTarget` uses the world's single canvas: never nest or
+  interleave two surfaces' pairs. Rectangles drawn into the shared scratch buffer are
+  copied back with `TransitionAndCopyTexture`; both targets must share the pixel format
+  (`UPaintSubsystem::CreatePaintBuffer`).
+- Paint thickness is `DisplacementScaling.Magnitude` in **world cm** (the overlay divides
+  by the primitive scale along the normal); keep `PaintMaxHeight` equal to it or shading
+  and silhouette disagree. It was 3 while the sample cubes were 3× scaled, so the old
+  look was 9 cm.
 
 ### Nanite tessellation displacement (UE 5.8)
 
@@ -186,23 +203,27 @@ Each of these cost real debugging time once.
 | UV misaligned on Nanite meshes | Nanite collides against the fallback mesh. Use a separate simple collision mesh, or disable Nanite for the prototype. |
 | Splats overwrite instead of accumulate | Is the brush Blend Mode Translucent? Is Clear Render Target called every draw? |
 | Splats add instead of overwriting | `DrawMaterialToRenderTarget` can never write the RT's alpha: every translucent blend mode uses `BF_Zero` for source alpha (`TranslucentRendering.cpp`). Encode coverage without alpha (paint-id buffer). |
-| A Masked brush paints the whole RT | `r.EarlyZPassOnlyMaterialMasking` defaults to 1, so `clip()` is compiled out of the base pass (`BasePassPixelShader.usf`) and the canvas path has no depth prepass to mask instead. Use Opaque and preserve old contents by reading a second RT (ping-pong). |
-| Frame drop when drawing several splats in one frame | `DrawMaterialToRenderTarget` rebinds the RT on every call. Batch with Begin/EndDrawCanvasToRenderTarget. |
+| A Masked brush paints the whole RT | `r.EarlyZPassOnlyMaterialMasking` defaults to 1, so `clip()` is compiled out of the base pass (`BasePassPixelShader.usf`) and the canvas path has no depth prepass to mask instead. Use Opaque and preserve old contents by reading the surface's own buffer while drawing into the shared scratch buffer, then copy the stamp rectangles back. |
+| Frame drop when drawing several splats in one frame | A full-target draw per splat scales with the atlas, not the stamp. Draw only the stamp's rectangles (`BuildStampRects`, one per island it reaches) and copy them; keep one Begin/End per splat because the next splat reads the copy. |
+| Paint appears on the wrong face, or not at all, after a hit | The surface keeps only its enabled directions; the hit's local direction (dominant axis of the unscaled local normal) decides. Check `keeps paint on ...` in LogPaint, the six `bPaint*` flags and `bFloorFollowsWorldUp`. Exactly 45° faces are a coin flip between two islands. |
+| A shelf or the underside of a bridge shows the paint of the surface above it | Planar projection: an island keeps only the outermost surface along its axis, so stacked same-facing surfaces in one mesh share texels. Split them into separate actors. |
+| Big cubes look blobby, small ones fine | Displacement was local units: `Magnitude × scale`. Now it is world cm; if it still scales, the overlay's `PaintDisplaceScale` node or `MF_PaintNormal`'s `localPerWorld` term is unwired. |
 | Coverage calculation is slow | Read Render Target Raw Pixel is a synchronous GPU wait. Use the cell grid instead. |
 | Paint looks flat from the side | Normal/POM cannot change the silhouette. Is WPO or Displacement actually connected, and is the mesh tessellated enough? |
-| Splats cut off at actor boundaries | Limitation of the UV approach. Move to the world-position unwrap, or paint neighbors via sphere overlap. |
+| Splats cut off at actor boundaries | The stamp is world-space and every overlapping surface (sphere overlap in `UPaintSubsystem::ApplySplat`) draws its own part; a missing half means that actor has no `UPaintableComponent`, keeps no direction facing the hit, or its collision does not answer `ECC_Visibility`. |
 | Colors differ between clients | Overlap-order differences are expected and allowed. A missing splat means the Unreliable Multicast dropped it — also check that local prediction and the server event are not drawn twice. |
 | A texture set via SetTextureParameterValue reaches one sample node but not a Custom node | A TextureSampleParameter2D and a TextureObjectParameter sharing one parameter name: the instance override only reaches the sampler one. Give the object parameter its own name and set both from C++. A stale MaterialInstance can also keep failing after a parameter rename — test with a freshly created instance. |
-| Paint mask/roughness respond but the relief normal stays flat on some faces | The height gradient is computed in UV1 (unwrap atlas) space but MP_Normal is applied in the mesh's UV0-derived tangent frame; per-face island orientation makes the result wrong or invisible. Build a world-space normal from position-map-derived axes instead of trusting mesh tangents. |
-| Displaced paint shows a silhouette but shades flat | Nanite displacement keeps the vertex normal. Derive the normal from the height field: differentiate the position map for ∂P/∂u, ∂P/∂v (bounds-normalized local → cm via BoundsSize), then `cross(Pu + Hu·N, Pv + Hv·N)` in local space, `Local→World`, with the material's Tangent Space Normal off. Fall back to the vertex normal across atlas seams. |
+| Paint mask/roughness respond but the relief normal stays flat on some faces | The height gradient is computed in atlas space but MP_Normal is applied in the mesh's UV0-derived tangent frame; per-island orientation makes the result wrong or invisible. Build a world-space normal from position-atlas-derived axes instead of trusting mesh tangents. |
+| Displaced paint shows a silhouette but shades flat | Nanite displacement keeps the vertex normal. Derive the normal from the height field: differentiate the position atlas for ∂P/∂u, ∂P/∂v (bounds-normalized local → cm via BoundsSize), then `cross(Pu + Hu·N, Pv + Hv·N)` in local space, `/ Scale²`, `Local→World`, with the material's Tangent Space Normal off. Fall back to the vertex normal across island edges. |
 | Displacement is a plateau with vertical cliffs and texel stairs | The height was derived from the binary id coverage read through a point-filtered buffer. Accumulate a soft height in its own channel (RG8: R id, G height) from a soft brush kernel, and bilinear-filter it by hand in the shader — the id sampler must stay TF_Nearest. |
-| Mesh tears open along hard edges when painted | Faces sharing a hard edge displace along different vertex normals. Fade the height to 0 over the last texels of each unwrap island (`M_PaintEdgeFade` bakes distance-to-island-edge once per position map). Art with chamfered edges does not tear. |
+| Mesh tears open along hard edges when painted | Faces sharing a hard edge displace along different vertex normals. Fade the height to 0 over the last texels of each island (`PaintAtlasBaker::ComputeEdgeFade` bakes distance-to-edge, including height steps inside an island, once per atlas). Art with chamfered edges does not tear. |
 | Sparkling noise on the displacement slope near edges | The per-texel deposit noise rides on the fade slope and grazes the specular lobe. Damp the derived normal's gradient by the same fade (`PaintNormalStrength 0` makes it vanish, which confirms it). |
 | Paint edges look blocky however they are filtered | The brush binarizes the SDF into the id buffer at texel resolution; read-time bilinear only blurs the stairs. Store the brush distance in its own channel (`1 − d/range`, 0 = far, so clears stay valid), build per-team signed distances from the four corner texels, and threshold with `smoothstep(−w, w, sd)`, `w = clamp(0.5·fwidth, …, 0.5)`. |
 | A rim outline appears on painted blobs at a distance | `fwidth(sd)` jumps between the clamped ±range samples under minification and smears the background through the whole rim; a swallowed same-team edge also keeps a small stored `d`. Cap `w` at one texel and pin quads whose four corner ids agree to ±range. |
 | Background shows through where two teams meet | Sequential layer blends lerp twice. Carry the coverage already consumed (`S`) through the stack and use `alpha = cov / (1 − S)` per blend. |
 | Paint reads as a matte sticker with glossy reflections | Flat team colors with a wet roughness. The fix is per-team looks with albedo texture and roughness designed together; for cream/ice cream go Substrate (slab with SSS MFP + fuzz) rather than overwriting attributes. |
-| Paint on an art mesh lands twice or in the wrong place | The mesh has no UV1. TexCoord 1 pads with the last channel, so the unwrap and every read run on the art UV0 with its overlaps and mirroring. Generate Lightmap UVs into index 1 and rebuild. |
+| Paint on an art mesh lands in the wrong place | The atlas is projected from the mesh bounds, so the mesh's LOD 0 must be CPU-readable (Allow CPU Access) and its Nanite fallback close to the real surface; a curved art mesh with a decimated fallback shifts by the decimation error. Check `paint atlas baked: N of M texels covered` in LogPaint. |
+| Debug cells show in the editor, coverage text does not | `DrawDebugString` rides on a player's HUD, so the text is play-only; cells draw through the line batcher and work in the editor viewport with Realtime on (`bDrawDebugCells`, rebuilt when the actor moves). |
 | A plane-cut liquid (ink bottle) looks hollow or cut open from above | The two-sided "backface = surface" trick has no top geometry: from above you see the shaded inner walls below the waterline. `UInkBottleComponent` places a real disc (`SM_InkSurface`, `M_InkSurface`) on the cut plane every tick; the disc material clips outside `BottleRadius` and ripples via WPO with the same wave as the walls. Keep the fill clamped off the end caps (`SurfaceFillMargin`) or the disc z-fights them. |
 | Other players animate in slow motion on the listen-server host | The anim blueprint derives speed from per-tick position delta. On the server a remotely controlled pawn only moves when a `ServerMove` arrives (`ClientNetSendMoveDeltaTime` 0.0166 = 60 Hz), while the mesh ticks every frame, so the ticks with no displacement drag the average down. Read `Velocity` off the movement component instead — it holds its value between moves, so it is frame-rate independent. `t.MaxFPS 60` making the symptom vanish confirms it. |
 

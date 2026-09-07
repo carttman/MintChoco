@@ -21,10 +21,18 @@ enum class EPaintFaceDirection : uint8
 
 inline constexpr int32 PaintFaceDirectionCount = 6;
 
+/** Bit set of directions, one bit per EPaintFaceDirection in enum order. */
+inline constexpr uint8 PaintAllDirectionsMask = 0x3F;
+
+inline constexpr uint8 PaintDirectionBit(EPaintFaceDirection Direction)
+{
+	return static_cast<uint8>(1u << static_cast<uint8>(Direction));
+}
+
 /** Unit vector, in mesh local space, that the direction faces. */
 MINTCHOCO_API FVector PaintFaceDirectionVector(EPaintFaceDirection Direction);
 
-/** The direction whose axis the normal leans on most. */
+/** The direction whose axis the normal leans on most. Ties resolve X over Y over Z. */
 MINTCHOCO_API EPaintFaceDirection ClassifyPaintFaceDirection(const FVector& Normal);
 
 /** How much surface each paint id owns. Areas are world cm^2 so surfaces of any scale add up. */
@@ -51,10 +59,15 @@ struct MINTCHOCO_API FPaintCoverage
 
 /**
  * The gameplay layer's answer to "who owns this surface": a coarse voxel grid over the mesh's
- * local bounds where every voxel keeps one cell per face direction. Surface area is accumulated
- * into the cells once from the mesh triangles, and a splat marks the cells its stamp covers with
- * its paint id. Nothing here ever reads the render target; the grid and the brush are fed the
- * same FPaintLocalStamp, which is what keeps the two layers in agreement.
+ * bounds where every voxel keeps one cell per face direction. Surface area is accumulated into
+ * the cells once from the mesh triangles, and a splat marks the cells its stamp covers with its
+ * paint id. Nothing here ever reads the render target; the grid and the brush are fed the same
+ * FPaintLocalStamp, which is what keeps the two layers in agreement.
+ *
+ * The grid lives in the mesh's scaled-local frame: local positions with the world scale
+ * multiplied in, so a cell is a world-sized cube and an area is world cm^2 whatever the actor's
+ * scale, uniform or not. Only the directions a surface keeps paint on get cells; a triangle
+ * facing a disabled direction contributes no area at all.
  *
  * Cells are (voxel, direction) pairs rather than voxels so a cube edge voxel can be painted on
  * its top without its side counting as painted, and so per-direction totals fall out for free.
@@ -63,9 +76,12 @@ class MINTCHOCO_API FPaintCellGrid
 {
 public:
 	/**
-	 * Builds the surface cells from a triangle list in mesh local space. Indices is a flat
-	 * triangle list into Positions; Normals may be empty, in which case winding decides which
-	 * way a triangle faces. AreaScale converts local area to world area (uniform scale squared).
+	 * Builds the surface cells from a triangle list. Indices is a flat triangle list into
+	 * Positions; Normals may be empty, in which case winding decides which way a triangle faces.
+	 * AreaScale converts the positions' area to world area. A triangle's direction is classified
+	 * from its geometric normal multiplied by NormalClassifyScale: positions in the scaled-local
+	 * frame have normals squashed by the inverse scale, and the mesh's Scale3D undoes that.
+	 * Triangles facing a direction outside EnabledDirections are skipped.
 	 */
 	void Build(
 		const FBox& LocalBounds,
@@ -73,19 +89,23 @@ public:
 		float AreaScale,
 		TArrayView<const FVector3f> Positions,
 		TArrayView<const FVector3f> Normals,
-		TArrayView<const uint32> Indices);
+		TArrayView<const uint32> Indices,
+		uint8 EnabledDirections = PaintAllDirectionsMask,
+		const FVector& NormalClassifyScale = FVector::OneVector);
 
 	/**
 	 * Builds from the triangles of one material slot of a static mesh, read from LOD 0's CPU
-	 * copy of the vertex and index buffers. WorldCellSize is in cm; UniformScale is the mesh's
-	 * world scale. Logs why and returns false when the mesh offers nothing to build from.
+	 * copy of the vertex and index buffers, in the scaled-local frame. WorldCellSize is in cm;
+	 * Scale3D is the mesh's absolute world scale. Logs why and returns false when the mesh offers
+	 * nothing to build from.
 	 */
 	bool BuildFromMesh(
 		const UStaticMeshComponent& Mesh,
 		int32 MaterialSlot,
 		float WorldCellSize,
-		float UniformScale,
-		const FBox& LocalBounds);
+		const FVector& Scale3D,
+		const FBox& LocalBounds,
+		uint8 EnabledDirections);
 
 	/**
 	 * Paints every cell whose voxel center lies inside the stamp body and whose direction does

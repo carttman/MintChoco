@@ -105,6 +105,13 @@ void AGameGameState::AddSplat(const FPaintSplat& Splat)
 		return;
 	}
 
+	// 일시 스플랫은 기록이 아니라 연출이다. 멀티캐스트는 서버 자신에서도 실행된다.
+	if (Splat.bTransient)
+	{
+		MulticastTransientSplat(Splat);
+		return;
+	}
+
 	FPaintSplatLogItem& Item = SplatLog.Items.AddDefaulted_GetRef();
 	Item.Splat = Splat;
 	SplatLog.MarkItemDirty(Item);
@@ -138,6 +145,14 @@ void AGameGameState::OnRep_SplatLog()
 	if (HasActorBegunPlay())
 	{
 		ApplyNewSplats();
+	}
+}
+
+void AGameGameState::MulticastTransientSplat_Implementation(const FPaintSplat& Splat)
+{
+	if (const auto Paint = GetWorld()->GetSubsystem<UPaintSubsystem>())
+	{
+		Paint->ApplySplat(Splat);
 	}
 }
 
