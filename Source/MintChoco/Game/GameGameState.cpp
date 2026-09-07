@@ -49,6 +49,53 @@ void AGameGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 
 	DOREPLIFETIME(AGameGameState, SplatLog);
 	DOREPLIFETIME(AGameGameState, WorldCoverage);
+	DOREPLIFETIME(AGameGameState, MatchEndServerTime);
+	DOREPLIFETIME(AGameGameState, WinningTeam);
+	DOREPLIFETIME(AGameGameState, bMatchEnded);
+}
+
+void AGameGameState::SetMatchEndTime(double InServerTime)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	MatchEndServerTime = InServerTime;
+}
+
+void AGameGameState::SetMatchResult(int32 InWinningTeam)
+{
+	if (!HasAuthority() || bMatchEnded)
+	{
+		return;
+	}
+
+	WinningTeam = InWinningTeam;
+	bMatchEnded = true;
+
+	// RepNotify는 값을 쓴 권한자에게는 오지 않는다. 리슨 호스트의 화면도 갱신되도록 직접 부른다.
+	HandleMatchEnded();
+}
+
+float AGameGameState::GetRemainingTime() const
+{
+	if (MatchEndServerTime <= 0.0)
+	{
+		return 0.0f;
+	}
+
+	return static_cast<float>(FMath::Max(0.0, MatchEndServerTime - GetServerWorldTimeSeconds()));
+}
+
+void AGameGameState::OnRep_MatchEnded()
+{
+	HandleMatchEnded();
+}
+
+void AGameGameState::HandleMatchEnded()
+{
+	BP_OnMatchEnded(WinningTeam);
 }
 
 void AGameGameState::AddSplat(const FPaintSplat& Splat)

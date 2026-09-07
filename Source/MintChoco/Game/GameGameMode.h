@@ -26,6 +26,9 @@ class MINTCHOCO_API AGameGameMode : public AGameModeBase
 public:
 	AGameGameMode();
 
+	/** GameModeBase에는 HandleMatchHasStarted가 없다. 경기 시작 훅은 여기다. */
+	virtual void StartPlay() override;
+
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 	virtual APawn* SpawnDefaultPawnAtTransform_Implementation(AController* NewPlayer, const FTransform& SpawnTransform) override;
 
@@ -41,6 +44,17 @@ public:
 	int32 GetTeamOf(const AController* Player) const;
 
 protected:
+	/** 한 판의 길이(초). 0 이하로 두면 타이머를 걸지 않아 경기가 끝나지 않는다(디버그용). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0.0"))
+	float MatchDuration = 10.0f;
+
+	/**
+	 * 승패가 확정된 뒤 서버에서 한 번 불린다. 로비로 돌려보내기 같은 후처리를 여기에 붙인다.
+	 * 결과 UI는 여기가 아니라 GameState의 BP_OnMatchEnded에 붙여야 클라이언트에도 뜬다.
+	 */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Match")
+	void BP_OnMatchEnded(int32 WinningTeam);
+
 	/**
 	 * 팀 번호를 인덱스로 쓰는 캐릭터 정의. [0]은 민트, [1]은 초코.
 	 *
@@ -79,6 +93,11 @@ protected:
 	UUnitDataAsset* FindUnitDataForTeam(int32 Team) const;
 
 private:
+	/** 시간이 다 됐을 때. 커버리지를 다시 재고 더 많이 칠한 팀을 승팀으로 확정한다. 같으면 무승부. */
+	void OnMatchTimeExpired();
+
+	FTimerHandle MatchTimer;
+
 	/** 스폰된 폰이 AUnit이면 팀에 맞는 캐릭터 정의를 넣는다. 아니면 경고를 남긴다. */
 	void ApplyTeamUnitData(APawn* Pawn, const AController* NewPlayer) const;
 

@@ -13,11 +13,78 @@
 #include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
 #include "MintChoco.h"
+#include "TimerManager.h"
 
 AGameGameMode::AGameGameMode()
 {
 	PlayerStateClass = AGamePlayerState::StaticClass();
 	GameStateClass = AGameGameState::StaticClass();
+}
+
+void AGameGameMode::StartPlay()
+{
+	Super::StartPlay();
+
+	if (MatchDuration <= 0.0f)
+	{
+		return;
+	}
+
+	AGameGameState* const State = GetGameState<AGameGameState>();
+	if (!State)
+	{
+		UE_LOG(LogMintChoco, Warning,
+			TEXT("AGameGameMode::StartPlay: GameState가 AGameGameState가 아니라 경기 타이머를 걸지 못했다."));
+		return;
+	}
+
+	// 남은 초가 아니라 끝나는 시각만 복제한다. 클라이언트는 GetServerWorldTimeSeconds()로
+	// 남은 시간을 직접 계산하므로 복제는 이 한 번이면 된다.
+	State->SetMatchEndTime(State->GetServerWorldTimeSeconds() + MatchDuration);
+
+	GetWorldTimerManager().SetTimer(
+		MatchTimer, this, &AGameGameMode::OnMatchTimeExpired, MatchDuration, /*bLoop=*/false);
+}
+
+void AGameGameMode::OnMatchTimeExpired()
+{
+	AGameGameState* const State = GetGameState<AGameGameState>();
+	if (!State)
+	{
+		return;
+	}
+
+	// 이 값으로 승패가 갈리므로 마지막으로 한 번 다시 잰다. 주기 갱신값은 최대
+	// CoverageRefreshInterval만큼 낡아 있을 수 있다.
+	State->RefreshCoverage();
+	const FPaintCoverage& Coverage = State->GetWorldCoverage();
+
+	// PaintId는 팀 번호를 그대로 쓴다(Unit.cpp의 SetPaintId).
+	int32 BestTeam = Teams::None;
+	float BestFraction = 0.0f;
+	bool bTied = false;
+	for (int32 Team = 0; Team < Teams::Count; ++Team)
+	{
+		const float Fraction = Coverage.GetFraction(static_cast<uint8>(Team));
+		if (Fraction > BestFraction + UE_KINDA_SMALL_NUMBER)
+		{
+			BestTeam = Team;
+			BestFraction = Fraction;
+			bTied = false;
+		}
+		else if (FMath::IsNearlyEqual(Fraction, BestFraction))
+		{
+			// 아무도 안 칠해 둘 다 0인 경우도 여기로 떨어져 무승부가 된다.
+			bTied = true;
+		}
+	}
+
+	const int32 Winner = bTied ? Teams::None : BestTeam;
+	State->SetMatchResult(Winner);
+
+	UE_LOG(LogMintChoco, Log, TEXT("경기 종료: 승팀 %d (%s)"), Winner, *Coverage.ToString());
+
+	BP_OnMatchEnded(Winner);
 }
 
 int32 AGameGameMode::GetTeamOf(const AController* Player) const
