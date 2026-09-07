@@ -46,14 +46,21 @@ public:
 protected:
 	/** 한 판의 길이(초). 0 이하로 두면 타이머를 걸지 않아 경기가 끝나지 않는다(디버그용). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0.0"))
-	float MatchDuration = 10.0f;
+	float MatchDuration = 30.0f;
 
 	/**
-	 * 승패가 확정된 뒤 서버에서 한 번 불린다. 로비로 돌려보내기 같은 후처리를 여기에 붙인다.
-	 * 결과 UI는 여기가 아니라 GameState의 BP_OnMatchEnded에 붙여야 클라이언트에도 뜬다.
+	 * 1위와 2위의 상대 격차가 이 값 이하면 무승부로 친다. 0.1 = 두 팀이 칠한 양의 10% 차이.
+	 *
+	 * 맵 전체 면적이 아니라 두 팀이 칠한 양의 합으로 나눈다. 맵의 대부분이 비어 있어도
+	 * 접전인지 압승인지가 그대로 드러나고, 나중에 사격 속도나 스플랫 크기를 올려
+	 * 도포량이 통째로 늘어도 이 값을 다시 손볼 필요가 없다.
+	 *
+	 * 절대 점유율로 비교하면 그때마다 기준을 옮겨야 한다. 지금은 0.17%가 "많이 칠한"
+	 * 수준이지만 도포량이 늘면 그 값은 의미를 잃는다.
 	 */
-	UFUNCTION(BlueprintImplementableEvent, Category = "Match")
-	void BP_OnMatchEnded(int32 WinningTeam);
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float DrawMarginFraction = 0.1f;
+
 
 	/**
 	 * 팀 번호를 인덱스로 쓰는 캐릭터 정의. [0]은 민트, [1]은 초코.

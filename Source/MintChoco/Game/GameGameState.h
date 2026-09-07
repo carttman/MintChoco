@@ -75,7 +75,11 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_SplatLog)
 	FPaintSplatLog SplatLog;
 
-	UPROPERTY(Replicated)
+	/**
+	 * RepNotify인 이유는 디버그 표시 때문이다. 클라이언트는 이 값이 갱신되는 시점을
+	 * 알아야 자기 화면에 자기가 받은 수치를 그릴 수 있다.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_WorldCoverage)
 	FPaintCoverage WorldCoverage;
 
 	/**
@@ -96,6 +100,9 @@ protected:
 	void OnRep_SplatLog();
 
 	UFUNCTION()
+	void OnRep_WorldCoverage();
+
+	UFUNCTION()
 	void OnRep_MatchEnded();
 
 	/** 일시 스플랫 전용. 서버 포함 모든 머신이 받아서 연출만 띄운다. */
@@ -107,6 +114,14 @@ private:
 	void ApplyNewSplats();
 
 	void HandleMatchEnded();
+
+	/**
+	 * 팀별 점유 면적을 화면에 띄운다. 콘솔 변수 mc.ShowCoverage 로 켠다.
+	 *
+	 * 서버와 클라이언트가 각자 자기가 가진 값을 그리므로, 계산이 틀린 것인지 표시가
+	 * 틀린 것인지 두 화면을 비교해 바로 가릴 수 있다.
+	 */
+	void DrawCoverageDebug() const;
 
 	/** 로그 중 이미 표면에 그린 개수. 로그가 이보다 짧아졌다면 서버가 지운 것이다. */
 	int32 AppliedSplatCount = 0;

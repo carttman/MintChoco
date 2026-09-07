@@ -60,31 +60,50 @@ void AGameGameMode::OnMatchTimeExpired()
 	const FPaintCoverage& Coverage = State->GetWorldCoverage();
 
 	// PaintId는 팀 번호를 그대로 쓴다(Unit.cpp의 SetPaintId).
+	// 1위와 2위를 함께 찾아 두 값의 차이로 판정한다. 팀이 셋 이상이 되어도 그대로 성립한다.
 	int32 BestTeam = Teams::None;
-	float BestFraction = 0.0f;
-	bool bTied = false;
+	float BestFraction = -1.0f;
+	float SecondFraction = -1.0f;
+
 	for (int32 Team = 0; Team < Teams::Count; ++Team)
 	{
 		const float Fraction = Coverage.GetFraction(static_cast<uint8>(Team));
-		if (Fraction > BestFraction + UE_KINDA_SMALL_NUMBER)
+		if (Fraction > BestFraction)
 		{
-			BestTeam = Team;
+			SecondFraction = BestFraction;
 			BestFraction = Fraction;
-			bTied = false;
+			BestTeam = Team;
 		}
-		else if (FMath::IsNearlyEqual(Fraction, BestFraction))
+		else if (Fraction > SecondFraction)
 		{
-			// 아무도 안 칠해 둘 다 0인 경우도 여기로 떨어져 무승부가 된다.
-			bTied = true;
+			SecondFraction = Fraction;
 		}
 	}
 
-	const int32 Winner = bTied ? Teams::None : BestTeam;
+	// 팀이 하나뿐인 구성에서도 안전하도록 2위를 0으로 바닥 처리한다.
+	SecondFraction = FMath::Max(SecondFraction, 0.0f);
+
+	// 칠해진 양 중 1위가 얼마나 앞섰는지. 맵 전체가 아니라 두 팀의 합으로 나누므로,
+	// 맵이 거의 비어 있어도 접전과 압승이 구분된다.
+	// 아무도 칠하지 않았으면 격차를 잴 수 없고, 그 경우도 무승부다.
+	const float PaintedFraction = BestFraction + SecondFraction;
+	const float RelativeMargin = PaintedFraction > 0.0f
+		? (BestFraction - SecondFraction) / PaintedFraction
+		: 0.0f;
+
+	const bool bDraw = RelativeMargin <= DrawMarginFraction;
+	const int32 Winner = bDraw ? Teams::None : BestTeam;
+
 	State->SetMatchResult(Winner);
 
-	UE_LOG(LogMintChoco, Log, TEXT("경기 종료: 승팀 %d (%s)"), Winner, *Coverage.ToString());
-
-	BP_OnMatchEnded(Winner);
+	UE_LOG(LogMintChoco, Log,
+		TEXT("경기 종료: %s (1위 %.2f%% vs 2위 %.2f%%, 상대 격차 %.1f%% / 무승부 기준 %.1f%%) | %s"),
+		bDraw ? TEXT("무승부") : Teams::GetDisplayName(Winner),
+		BestFraction * 100.0f,
+		SecondFraction * 100.0f,
+		RelativeMargin * 100.0f,
+		DrawMarginFraction * 100.0f,
+		*Coverage.ToString());
 }
 
 int32 AGameGameMode::GetTeamOf(const AController* Player) const
