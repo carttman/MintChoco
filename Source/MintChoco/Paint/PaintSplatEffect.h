@@ -17,13 +17,13 @@ class UPaintSplatEffect : public UInterface
  * direction its surface does not keep. It is spawned at the contact, its Z along the surface
  * normal and its X along the stamp's U axis, then handed the splat: paint id for the team's
  * look, radius and stretch for the size, seed for variation. Everything else - the decal, the
- * drip, how long it lives - belongs to the implementing Blueprint.
+ * drip, how long it lives - belongs to the implementing actor (APaintSideSplat, or a Blueprint).
  */
 class MINTCHOCO_API IPaintSplatEffect
 {
 	GENERATED_BODY()
 
 public:
-	UFUNCTION(BlueprintImplementableEvent, Category = "Paint")
+	UFUNCTION(BlueprintNativeEvent, Category = "Paint")
 	void OnPaintSplat(const FPaintSplat& Splat);
 };
