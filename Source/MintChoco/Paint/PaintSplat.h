@@ -71,14 +71,23 @@ struct FPaintSplat
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
 	TObjectPtr<UMaterialInterface> BrushMaterial;
 
+	/**
+	 * True when the contact landed on a direction its surface does not keep. Such a splat is shown
+	 * as a passing effect and is neither drawn into a buffer nor scored. The source decides this
+	 * once, where the hit actor is known, and every machine follows.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
+	bool bTransient = false;
+
 	/** Farthest painted point from the center, in world cm. This is the overlap query radius. */
 	float GetWorldExtent() const { return Radius * Stretch; }
 };
 
 /**
- * The splat expressed in the painted mesh's local frame. The brush shader and the coverage cell
- * grid both consume this one struct, which is what keeps the two layers agreeing on where a
- * splat landed.
+ * The splat expressed in the painted mesh's scaled-local frame: the actor's rotation and
+ * translation removed, its scale kept, so every length is still a world length. The brush shader
+ * and the coverage cell grid both consume this one struct, which is what keeps the two layers
+ * agreeing on where a splat landed.
  */
 struct FPaintLocalStamp
 {
@@ -89,7 +98,7 @@ struct FPaintLocalStamp
 	FVector AxisV = FVector::RightVector;
 	FVector Normal = FVector::UpVector;
 
-	/** Half-extent along AxisV in local units; along AxisU the stamp spans Radius * Stretch. */
+	/** Half-extent along AxisV in world cm; along AxisU the stamp spans Radius * Stretch. */
 	float Radius = 0.0f;
 	float Stretch = 1.0f;
 };

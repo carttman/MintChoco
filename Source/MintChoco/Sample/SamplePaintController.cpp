@@ -20,6 +20,7 @@
 #include "Paint/PaintableComponent.h"
 #include "Sample/SampleCoverageWidget.h"
 #include "Sample/SampleSeedWidget.h"
+#include "Weapons/PaintDeposit.h"
 #include "Weapons/PaintWeaponComponent.h"
 #include "Weapons/PaintWeaponProfile.h"
 
@@ -390,7 +391,8 @@ bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Di
 
 	// The widget always shows the seed the NEXT splat will use: a pinned seed just stays,
 	// a free-running one rerolls on every use and the mirror updates with it.
-	const FPaintSplat Splat = BrushProfile->BuildSplat(Hit, IncidentVelocity, TeamId, SplatVolume, HeightAdd, NextSeed);
+	FPaintSplat Splat = BrushProfile->BuildSplat(Hit, IncidentVelocity, TeamId, SplatVolume, HeightAdd, NextSeed);
+	FPaintDeposit::MarkTransience(Splat, Hit);
 	if (!bUseFixedSeed)
 	{
 		NextSeed = FMath::Rand();

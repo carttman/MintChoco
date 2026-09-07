@@ -42,4 +42,11 @@ struct MINTCHOCO_API FPaintDeposit
 	bool ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed) const;
 
 	static bool IsPaintable(const FHitResult& Hit);
+
+	/**
+	 * Asks the hit surface whether it keeps paint facing this way and flags the splat transient
+	 * when it does not. Every producer of a splat calls this before submitting, so the decision is
+	 * made once, on the authority, where the hit actor is known.
+	 */
+	static void MarkTransience(FPaintSplat& Splat, const FHitResult& Hit);
 };
