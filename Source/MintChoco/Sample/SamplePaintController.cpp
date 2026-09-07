@@ -115,9 +115,9 @@ void ASamplePaintController::SetupInputComponent()
 	}
 }
 
-void ASamplePaintController::OnPossess(APawn* InPawn)
+void ASamplePaintController::SetPawn(APawn* InPawn)
 {
-	Super::OnPossess(InPawn);
+	Super::SetPawn(InPawn);
 	BindWeapon(InPawn);
 }
 

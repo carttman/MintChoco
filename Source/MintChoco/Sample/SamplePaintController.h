@@ -66,7 +66,8 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
-	virtual void OnPossess(APawn* InPawn) override;
+	/** SetPawn rather than OnPossess: it also runs on the owning client, where the number keys and the wheel are pressed. */
+	virtual void SetPawn(APawn* InPawn) override;
 
 	void OnPaintTriggered();
 	void OnSelectWeaponKey(FKey Key);

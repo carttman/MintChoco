@@ -10,14 +10,18 @@
 #include "PaintWeaponComponent.generated.h"
 
 class APawn;
+class UInkTankComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPaintWeaponFiredSignature, int32, Seed);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPaintWeaponPaintIdSignature, uint8, PaintId);
 
 /**
  * The trigger side of a paint weapon: holds one profile and turns "trigger pulled" into the
  * profile's shots at the profile's cadence, from the owner's muzzle towards the owner's view.
  * Everything about what flies and how it paints lives in the profile; this component only
  * decides when to call it and where from, so any pawn that adds it and sets a profile can paint.
+ * When the owner carries an ink tank, every accepted shot also spends the profile's cost from it,
+ * and an empty tank refuses the shot before the profile ever sees it.
  *
  * The owning machine decides when a shot happens (trigger, cadence, stroke spacing); the server
  * decides what it does. A client runs the profile without authority, which only reports whether
@@ -43,9 +47,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Paint|Weapon")
 	UPaintWeaponProfile* GetProfile() const { return Profile; }
 
-	/** The id every shot paints with: the owner's team, set when the weapon is equipped or the team assigned. */
+	/**
+	 * The id every shot paints with: the owner's team, set when the weapon is equipped or the team
+	 * assigned. Replicated like the profile, so a change made on the owning client reaches the
+	 * server that fires and every machine that colours the owner by it.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Paint|Weapon")
-	void SetPaintId(uint8 NewPaintId) { PaintId = NewPaintId; }
+	void SetPaintId(uint8 NewPaintId);
 
 	UFUNCTION(BlueprintPure, Category = "Paint|Weapon")
 	uint8 GetPaintId() const { return PaintId; }
@@ -79,6 +87,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Paint|Weapon")
 	FPaintWeaponFiredSignature OnFired;
 
+	/** Raised on every machine whose copy of the paint id changed. The owner's ink bottle recolours from here. */
+	UPROPERTY(BlueprintAssignable, Category = "Paint|Weapon")
+	FPaintWeaponPaintIdSignature OnPaintIdChanged;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
@@ -95,13 +107,22 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Weapon", meta = (ClampMin = "0", ForceUnits = "cm"))
 	float MuzzleFallbackOffset = 60.0f;
 
+	UPROPERTY(ReplicatedUsing = OnRep_PaintId)
+	uint8 PaintId = 0;
+
 	UFUNCTION()
 	void OnRep_Profile();
+
+	UFUNCTION()
+	void OnRep_PaintId();
 
 private:
 	bool FireOnce();
 	void OnShotTimer();
 	bool HasAuthority() const;
+	float GetShotCost() const;
+	bool CanAffordShot() const;
+	void SpendShot();
 	void BuildContext(FPaintFireContext& OutContext, const FVector& ViewOrigin, const FVector& ViewDirection) const;
 	FTransform ComputeMuzzleTransform(const FVector& ViewOrigin, const FVector& ViewDirection) const;
 	APawn* GetOwnerPawn() const;
@@ -114,14 +135,19 @@ private:
 	UFUNCTION(Server, Reliable)
 	void ServerSetProfile(UPaintWeaponProfile* NewProfile);
 
+	UFUNCTION(Server, Reliable)
+	void ServerSetPaintId(uint8 NewPaintId);
+
 	/** Replays the cosmetic side of an accepted shot on machines that have no ball of their own yet. */
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastShotFired(const FPaintShot& Shot);
+
+	/** The owner's ink reserve, found at BeginPlay. Unset means the owner shoots for free. */
+	TWeakObjectPtr<UInkTankComponent> Tank;
 
 	FPaintStrokeState Stroke;
 	FTimerHandle ShotTimer;
 	bool bTriggerHeld = false;
 	bool bUseFixedSeed = false;
-	uint8 PaintId = 0;
 	int32 NextSeed = 0;
 };

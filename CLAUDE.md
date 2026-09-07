@@ -120,11 +120,16 @@ Each of these cost real debugging time once.
 - Automation tests run headless without MCP, even while the editor is open:
   `UnrealEditor-Cmd.exe <uproject> -ExecCmds="Automation RunTests MintChoco.Paint; Quit"
   -unattended -nullrhi -abslog=<log>`; grep the log for `Test Completed. Result=`.
-  The `HttpListener unable to bind 127.0.0.1:8000` line is the second instance and harmless.
+  The `HttpListener unable to bind 127.0.0.1:8000` line is the second instance and harmless —
+  unless the editor and the test instance start together: whichever binds first keeps
+  port 8000, and an editor that lost it has no MCP until relaunched. Run the headless
+  test before launching the editor, not alongside it.
 - A new UPROPERTY is invisible to `ObjectTools` until the module is rebuilt and the
   editor restarted; setting it earlier just fails. After a UPROPERTY or struct-layout
   change, hot reload re-instances classes unreliably — restart before trusting PIE.
   The MCP server dies with the editor and its session expires on every restart.
+  `ObjectTools.set_properties` also refuses a UPROPERTY without an `Edit*` specifier
+  ("could not be set"), so a value meant to be poked in PIE needs `EditAnywhere`.
 - While PIE runs, `AssetTools.save_assets` / `exists` / `is_dirty` fail with
   "Asset does not exist" even though compiles succeed. Stop PIE, then save.
 
@@ -198,6 +203,7 @@ Each of these cost real debugging time once.
 | Background shows through where two teams meet | Sequential layer blends lerp twice. Carry the coverage already consumed (`S`) through the stack and use `alpha = cov / (1 − S)` per blend. |
 | Paint reads as a matte sticker with glossy reflections | Flat team colors with a wet roughness. The fix is per-team looks with albedo texture and roughness designed together; for cream/ice cream go Substrate (slab with SSS MFP + fuzz) rather than overwriting attributes. |
 | Paint on an art mesh lands twice or in the wrong place | The mesh has no UV1. TexCoord 1 pads with the last channel, so the unwrap and every read run on the art UV0 with its overlaps and mirroring. Generate Lightmap UVs into index 1 and rebuild. |
+| A plane-cut liquid (ink bottle) looks hollow or cut open from above | The two-sided "backface = surface" trick has no top geometry: from above you see the shaded inner walls below the waterline. `UInkBottleComponent` places a real disc (`SM_InkSurface`, `M_InkSurface`) on the cut plane every tick; the disc material clips outside `BottleRadius` and ripples via WPO with the same wave as the walls. Keep the fill clamped off the end caps (`SurfaceFillMargin`) or the disc z-fights them. |
 | Other players animate in slow motion on the listen-server host | The anim blueprint derives speed from per-tick position delta. On the server a remotely controlled pawn only moves when a `ServerMove` arrives (`ClientNetSendMoveDeltaTime` 0.0166 = 60 Hz), while the mesh ticks every frame, so the ticks with no displacement drag the average down. Read `Velocity` off the movement component instead — it holds its value between moves, so it is frame-rate independent. `t.MaxFPS 60` making the symptom vanish confirms it. |
 
 ## OnlineSubsystem / Steam sessions

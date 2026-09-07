@@ -15,6 +15,8 @@
 #include "Game/UnitMovementComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Ink/InkBottleComponent.h"
+#include "Ink/InkTankComponent.h"
 #include "InputActionValue.h"
 #include "Kismet/GameplayStatics.h"
 #include "MintChoco.h"
@@ -63,6 +65,24 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	FollowCamera->bUsePawnControlRotation = false;
 
 	PaintWeapon = CreateDefaultSubobject<UPaintWeaponComponent>(TEXT("PaintWeapon"));
+	InkTank = CreateDefaultSubobject<UInkTankComponent>(TEXT("InkTank"));
+
+	// 병은 스켈레탈 메시의 InkBottle 소켓에 붙는다. 소켓은 메시가 UnitData로 정해진 뒤에야
+	// 존재하므로 여기서는 메시에만 붙이고, ApplyUnitData가 소켓으로 옮긴다. 소켓 위치는
+	// 메시 에셋마다 정하므로 캐릭터가 바뀌어도 코드는 그대로다.
+	InkBottle = CreateDefaultSubobject<UInkBottleComponent>(TEXT("InkBottle"));
+	InkBottle->SetupAttachment(GetMesh());
+
+	InkGlass = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("InkGlass"));
+	InkGlass->SetupAttachment(InkBottle);
+	InkGlass->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	InkGlass->SetGenerateOverlapEvents(false);
+
+	InkSurface = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("InkSurface"));
+	InkSurface->SetupAttachment(InkBottle);
+	InkSurface->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	InkSurface->SetGenerateOverlapEvents(false);
+	InkBottle->SetSurfaceMesh(InkSurface);
 }
 
 void AUnit::PossessedBy(AController* NewController)
@@ -82,9 +102,23 @@ void AUnit::ApplyTeamToWeapon()
 	// 팀 번호가 곧 페인트 id다(민트 0, 초코 1). 팀이 없는 PlayerState(샘플 맵)는
 	// 건드리지 않아, 다른 곳에서 정해 준 id가 남는다.
 	const AGamePlayerState* GamePlayerState = GetPlayerState<AGamePlayerState>();
-	if (PaintWeapon && GamePlayerState && Teams::IsValidId(GamePlayerState->GetTeam()))
+	if (!GamePlayerState || !Teams::IsValidId(GamePlayerState->GetTeam()))
+	{
+		return;
+	}
+
+	// 병 색은 무기의 페인트 id를 따라가므로(HandlePaintIdChanged) 여기서 따로 칠하지 않는다.
+	if (PaintWeapon)
 	{
 		PaintWeapon->SetPaintId(static_cast<uint8>(GamePlayerState->GetTeam()));
+	}
+}
+
+void AUnit::HandlePaintIdChanged(uint8 PaintId)
+{
+	if (InkBottle)
+	{
+		InkBottle->SetTeam(PaintId);
 	}
 }
 
@@ -96,6 +130,14 @@ void AUnit::PostInitializeComponents()
 	// 여기서 보이는 값은 클라이언트에서도 블루프린트 기본값이므로, 런타임에
 	// 교체된 경우는 OnRep_UnitData가 뒤이어 처리한다.
 	ApplyUnitData();
+
+	// 병은 무기의 페인트 id 하나만 본다. 팀(PlayerState)이든 샘플 맵의 휠이든 어디서 정해도
+	// 그 값은 무기에서 복제되므로, 다른 클라이언트의 병도 같은 경로로 색이 맞는다.
+	if (PaintWeapon)
+	{
+		PaintWeapon->OnPaintIdChanged.AddDynamic(this, &AUnit::HandlePaintIdChanged);
+		HandlePaintIdChanged(PaintWeapon->GetPaintId());
+	}
 
 	// 소유 클라이언트에서는 입력이, 서버에서는 압축 플래그가 이 알림을 낸다.
 	// 어느 쪽이든 실제로 상태가 바뀔 때만 한 번씩 온다.
@@ -387,5 +429,12 @@ void AUnit::ApplyUnitData()
 	if (UnitData->AnimClass)
 	{
 		MeshComponent->SetAnimInstanceClass(UnitData->AnimClass);
+	}
+
+	// 소켓 이름으로 다시 붙여야 교체된 메시의 소켓을 따라간다. 소켓이 없는 메시면
+	// 메시 원점에 남으므로, 병이 발밑에 보이면 그 메시에 InkBottle 소켓이 빠진 것이다.
+	if (InkBottle)
+	{
+		InkBottle->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("InkBottle"));
 	}
 }

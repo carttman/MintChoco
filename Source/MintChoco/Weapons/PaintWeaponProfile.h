@@ -117,4 +117,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cadence",
 		meta = (ClampMin = "0.1", ClampMax = "60.0", EditCondition = "FireMode == EPaintFireMode::Automatic"))
 	float ShotsPerSecond = 8.0f;
+
+	/**
+	 * Fraction of a full ink tank one accepted shot spends; a brush pays it per stamp. 0 fires for
+	 * free, and so does a pawn that carries no tank at all.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ink", meta = (ClampMin = "0", ClampMax = "1"))
+	float InkCostPerShot = 0.04f;
 };
