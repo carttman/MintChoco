@@ -104,6 +104,17 @@ Each of these cost real debugging time once.
 
 ### Verifying
 
+- `MaterialTools.recompile` does **not** raise on every shader failure: a decal that was
+  still in the Surface domain recompiled "cleanly" while the log said "Failed to compile
+  Material ... Default Material will be used in game". Grep `LogMaterial: Warning: [AssetLog]`
+  after every recompile; a "Missing Preview connection" line on a material *function* is only
+  its thumbnail and can be ignored.
+- Under Substrate, `MaterialDomain` is **derived from the Substrate tree** on every compile
+  (`UMaterial::RebuildShadingModelField`): writing `MD_DeferredDecal` through `ObjectTools`
+  returns true and is silently reverted to Surface. A decal is `SubstrateSlabBSDF` →
+  `SubstrateConvertToDecal` (inputs `DecalMaterial`, `Coverage`) → `MP_FrontMaterial`; that node
+  sets the domain, `BLEND_Translucent` is the "TranslucentGreyTransmittance" it wants, and the
+  decal's alpha goes into `Coverage`. Slab pins have spaces (`Diffuse Albedo`, `SSS MFP`).
 - `MaterialTools.recompile` propagates **parameter default** changes to everything
   on screen, but **structural graph changes** (new wires, new outputs, Custom code)
   do not reach materials already rendering in the session — only a freshly created
