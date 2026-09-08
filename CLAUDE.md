@@ -192,6 +192,10 @@ Each of these cost real debugging time once.
   `MF_PaintOverlay` picks the island from the pixel's local normal (`PaintAtlasUV`), so a
   surface only shows paint on directions it keeps; a hit on any other direction is a
   transient splat (`FPaintSplat::bTransient`) that spawns `UPaintSettings::SideSplatEffectClass`.
+  So is a hit on a static mesh with no `UPaintableComponent`: `FPaintDeposit::ReceivesSplat`
+  admits a paintable or a non-Movable `UStaticMeshComponent`, and every splat source (deposit,
+  stroke, sample click) goes through it. Pawns and Movable meshes take nothing, since the
+  decal would stay where the surface was.
 - Stamps, the cell grid and the brush's `BoundsMin/BoundsSize` are in the scaled-local
   frame (local × |Scale3D|): every length is world cm, non-uniform scale included. A hit
   normal maps to a local direction with `InverseTransformVectorNoScale(N) * Scale3D`.

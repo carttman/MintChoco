@@ -37,16 +37,25 @@ struct MINTCHOCO_API FPaintDeposit
 
 	/**
 	 * Builds the splat and hands it to the world. Returns false, painting nothing, when the hit is
-	 * not on a paintable surface, the world has no paint subsystem, or BrushProfile is unset.
+	 * on nothing that receives a splat, the world has no paint subsystem, or BrushProfile is unset.
 	 */
 	bool ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed) const;
 
+	/** The hit actor owns a paint buffer. */
 	static bool IsPaintable(const FHitResult& Hit);
 
 	/**
+	 * The hit lands on something a splat may be submitted for: a paintable surface, or a static
+	 * mesh that only ever shows a passing effect. Moving geometry is out, since the effect stays
+	 * where the surface was.
+	 */
+	static bool ReceivesSplat(const FHitResult& Hit);
+
+	/**
 	 * Asks the hit surface whether it keeps paint facing this way and flags the splat transient
-	 * when it does not. Every producer of a splat calls this before submitting, so the decision is
-	 * made once, on the authority, where the hit actor is known.
+	 * when it does not, or when the hit actor has no paint buffer at all. Every producer of a
+	 * splat calls this before submitting, so the decision is made once, on the authority, where
+	 * the hit actor is known.
 	 */
 	static void MarkTransience(FPaintSplat& Splat, const FHitResult& Hit);
 };

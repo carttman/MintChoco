@@ -72,9 +72,10 @@ struct FPaintSplat
 	TObjectPtr<UMaterialInterface> BrushMaterial;
 
 	/**
-	 * True when the contact landed on a direction its surface does not keep. Such a splat is shown
-	 * as a passing effect and is neither drawn into a buffer nor scored. The source decides this
-	 * once, where the hit actor is known, and every machine follows.
+	 * True when the contact landed on a direction its surface does not keep, or on a static mesh
+	 * with no paint buffer at all. Such a splat is shown as a passing effect and is neither drawn
+	 * into a buffer nor scored. The source decides this once, where the hit actor is known, and
+	 * every machine follows.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
 	bool bTransient = false;

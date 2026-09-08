@@ -373,9 +373,8 @@ bool ASamplePaintController::TracePaintTarget(FHitResult& OutHit, FVector& OutDi
 bool ASamplePaintController::PaintAtHit(const FHitResult& Hit, const FVector& Direction, float HeightAdd)
 {
 	UPaintSubsystem* const Paint = GetPaintSubsystem();
-	// The trace hits anything; only a hit on a paintable surface is worth a splat.
-	const bool bHitPaintable = Hit.GetActor() && Hit.GetActor()->FindComponentByClass<UPaintableComponent>();
-	if (!BrushProfile || !Paint || !bHitPaintable)
+	// The trace hits anything; only a hit on a surface that receives splats is worth one.
+	if (!BrushProfile || !Paint || !FPaintDeposit::ReceivesSplat(Hit))
 	{
 		return false;
 	}
