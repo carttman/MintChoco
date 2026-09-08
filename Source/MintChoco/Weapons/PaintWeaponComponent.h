@@ -40,7 +40,7 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
-	/** Swapping while the trigger is held releases it first, so the old profile's stroke never leaks into the new one. */
+	/** Swapping while the trigger is held cancels it first, so the old profile's stroke or charge never leaks into the new one. */
 	UFUNCTION(BlueprintCallable, Category = "Paint|Weapon")
 	void SetProfile(UPaintWeaponProfile* NewProfile);
 
@@ -58,15 +58,27 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Paint|Weapon")
 	uint8 GetPaintId() const { return PaintId; }
 
-	/** Fires once right away, then keeps firing at the profile's cadence until ReleaseTrigger. */
+	/**
+	 * Fires once right away, then keeps firing at the profile's cadence until ReleaseTrigger. A
+	 * Charged profile fires nothing here: it only starts counting the hold.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Paint|Weapon")
 	void PullTrigger();
 
+	/** Lets go of the trigger. A Charged profile held long enough fires its one shot right here. */
 	UFUNCTION(BlueprintCallable, Category = "Paint|Weapon")
 	void ReleaseTrigger();
 
+	/** Lets go without firing, whatever the charge: the hold was interrupted rather than completed. */
+	UFUNCTION(BlueprintCallable, Category = "Paint|Weapon")
+	void CancelTrigger();
+
 	UFUNCTION(BlueprintPure, Category = "Paint|Weapon")
 	bool IsTriggerHeld() const { return bTriggerHeld; }
+
+	/** 0 to 1 while a Charged profile's trigger is held, reaching 1 once releasing would fire. 0 otherwise. */
+	UFUNCTION(BlueprintPure, Category = "Paint|Weapon")
+	float GetChargeFraction() const;
 
 	/** Debug: pin every shot to one seed, or return to a fresh seed per shot. */
 	UFUNCTION(BlueprintCallable, Category = "Paint|Weapon")
@@ -147,6 +159,9 @@ private:
 
 	FPaintStrokeState Stroke;
 	FTimerHandle ShotTimer;
+
+	/** World time the trigger was pulled; a Charged profile measures its hold from here. */
+	double PressTime = 0.0;
 	bool bTriggerHeld = false;
 	bool bUseFixedSeed = false;
 	int32 NextSeed = 0;

@@ -223,12 +223,13 @@ void AUnit::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	}
 
 	// 연사와 붓은 누르고 있는 동안 계속 나가야 하므로 놓는 쪽도 묶는다.
-	// Canceled는 다른 입력이 이 액션을 가로챘을 때이며, 그때도 방아쇠는 놓여야 한다.
+	// Canceled는 다른 입력이 가로채거나 누른 채로 매핑이 빠질 때(EndPlay)이며, 그때는 방아쇠를
+	// 놓되 쏘지는 않는다. 차지형 무기는 놓는 순간 발사되므로 둘을 구분해야 한다.
 	if (InputConfig->FireAction)
 	{
 		EnhancedInput->BindAction(InputConfig->FireAction, ETriggerEvent::Started, this, &AUnit::StartFire);
 		EnhancedInput->BindAction(InputConfig->FireAction, ETriggerEvent::Completed, this, &AUnit::StopFire);
-		EnhancedInput->BindAction(InputConfig->FireAction, ETriggerEvent::Canceled, this, &AUnit::StopFire);
+		EnhancedInput->BindAction(InputConfig->FireAction, ETriggerEvent::Canceled, this, &AUnit::CancelFire);
 	}
 }
 
@@ -240,6 +241,11 @@ void AUnit::StartFire()
 void AUnit::StopFire()
 {
 	PaintWeapon->ReleaseTrigger();
+}
+
+void AUnit::CancelFire()
+{
+	PaintWeapon->CancelTrigger();
 }
 
 void AUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)

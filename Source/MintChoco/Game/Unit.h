@@ -152,6 +152,9 @@ protected:
 	void StartFire();
 	void StopFire();
 
+	/** 입력이 가로채이거나 매핑이 빠져서 방아쇠가 풀릴 때. 차지형 무기가 이때 발사되면 안 된다. */
+	void CancelFire();
+
 	/**
 	 * 홀드형 입력이라 Started와 Completed로 나눠 바인딩한다. Triggered는 눌린 동안
 	 * 값 true로 계속 발생할 뿐 뗄 때 false를 내지 않으므로, 하나로 처리하면 해제가

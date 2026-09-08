@@ -9,6 +9,7 @@
 #include "Weapons/PaintGunProfile.h"
 #include "Weapons/PaintProjectile.h"
 #include "Weapons/PaintScatterProfile.h"
+#include "Weapons/PaintSniperProfile.h"
 #include "Weapons/PaintStrokeProfile.h"
 #include "Weapons/PaintWeaponProfile.h"
 #include "Weapons/PaintballProfile.h"
@@ -118,6 +119,10 @@ bool FPaintProfileAssetTest::RunTest(const FString& Parameters)
 			TestTrue(*FString::Printf(TEXT("%s: ShotsPerSecond is in range"), *Name),
 				Weapon->ShotsPerSecond >= 0.1f && Weapon->ShotsPerSecond <= 60.0f);
 		}
+		if (Weapon->FireMode == EPaintFireMode::Charged)
+		{
+			TestTrue(*FString::Printf(TEXT("%s: ChargeTime is positive"), *Name), Weapon->ChargeTime > 0.0f);
+		}
 
 		if (const UPaintGunProfile* const Gun = Cast<UPaintGunProfile>(Weapon))
 		{
@@ -134,6 +139,18 @@ bool FPaintProfileAssetTest::RunTest(const FString& Parameters)
 			TestTrue(*FString::Printf(TEXT("%s: Reach is positive"), *Name), Stroke->Reach > 0.0f);
 			// A spacing of zero costs a full-target draw every tick of the stroke.
 			TestTrue(*FString::Printf(TEXT("%s: StrokeSpacing is positive"), *Name), Stroke->StrokeSpacing > 0.0f);
+		}
+		else if (const UPaintSniperProfile* const Sniper = Cast<UPaintSniperProfile>(Weapon))
+		{
+			TestTrue(
+				*FString::Printf(TEXT("%s: a sniper in Continuous lays a whole trail per frame; use Charged or Single"), *Name),
+				Sniper->FireMode != EPaintFireMode::Continuous);
+			CheckDeposit(Name + TEXT(" Impact"), Sniper->Impact);
+			CheckDeposit(Name + TEXT(" Trail"), Sniper->Trail);
+			TestTrue(*FString::Printf(TEXT("%s: Range is positive"), *Name), Sniper->Range > 0.0f);
+			// A spacing of zero never advances along the ray.
+			TestTrue(*FString::Printf(TEXT("%s: TrailSpacing is positive"), *Name), Sniper->TrailSpacing > 0.0f);
+			TestTrue(*FString::Printf(TEXT("%s: TrailDropHeight is positive"), *Name), Sniper->TrailDropHeight > 0.0f);
 		}
 	}
 

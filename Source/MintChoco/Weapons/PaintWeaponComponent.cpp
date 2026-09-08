@@ -35,7 +35,7 @@ void UPaintWeaponComponent::BeginPlay()
 
 void UPaintWeaponComponent::EndPlay(const EEndPlayReason::Type Reason)
 {
-	ReleaseTrigger();
+	CancelTrigger();
 	Super::EndPlay(Reason);
 }
 
@@ -60,7 +60,7 @@ void UPaintWeaponComponent::SetProfile(UPaintWeaponProfile* NewProfile)
 		return;
 	}
 
-	ReleaseTrigger();
+	CancelTrigger();
 	Profile = NewProfile;
 	if (Profile && HasBegunPlay())
 	{
@@ -109,7 +109,7 @@ void UPaintWeaponComponent::OnRep_Profile()
 {
 	// The server overruled a profile this owner had already switched to, or swapped it outright;
 	// either way a held trigger belongs to the old profile and must not carry on into this one.
-	ReleaseTrigger();
+	CancelTrigger();
 	if (Profile && HasBegunPlay())
 	{
 		Profile->LogUnsetReferences(GetOwner());
@@ -125,23 +125,38 @@ void UPaintWeaponComponent::PullTrigger()
 
 	bTriggerHeld = true;
 	Stroke.Reset();
-	FireOnce();
 
 	switch (Profile->FireMode)
 	{
 	case EPaintFireMode::Single:
+		FireOnce();
 		break;
 	case EPaintFireMode::Automatic:
+		FireOnce();
 		GetWorld()->GetTimerManager().SetTimer(
 			ShotTimer, this, &UPaintWeaponComponent::OnShotTimer, Profile->GetShotInterval(), /*bLoop=*/true);
 		break;
 	case EPaintFireMode::Continuous:
+		FireOnce();
 		SetComponentTickEnabled(true);
+		break;
+	case EPaintFireMode::Charged:
+		PressTime = GetWorld()->GetTimeSeconds();
 		break;
 	}
 }
 
 void UPaintWeaponComponent::ReleaseTrigger()
+{
+	// FireOnce refuses a trigger that is not held, so the charged shot goes before the cancel.
+	if (GetChargeFraction() >= 1.0f)
+	{
+		FireOnce();
+	}
+	CancelTrigger();
+}
+
+void UPaintWeaponComponent::CancelTrigger()
 {
 	if (!bTriggerHeld)
 	{
@@ -155,6 +170,17 @@ void UPaintWeaponComponent::ReleaseTrigger()
 	{
 		World->GetTimerManager().ClearTimer(ShotTimer);
 	}
+}
+
+float UPaintWeaponComponent::GetChargeFraction() const
+{
+	const UWorld* const World = GetWorld();
+	if (!bTriggerHeld || !World || !Profile || Profile->FireMode != EPaintFireMode::Charged)
+	{
+		return 0.0f;
+	}
+	const double Held = World->GetTimeSeconds() - PressTime;
+	return static_cast<float>(FMath::Clamp(Held / FMath::Max(static_cast<double>(Profile->ChargeTime), UE_DOUBLE_KINDA_SMALL_NUMBER), 0.0, 1.0));
 }
 
 void UPaintWeaponComponent::SetSeedOverride(bool bInUseFixedSeed, int32 InFixedSeed)
