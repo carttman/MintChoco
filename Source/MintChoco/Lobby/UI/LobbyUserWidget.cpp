@@ -75,6 +75,11 @@ void ULobbyUserWidget::RefreshUI()
 	if (IsLocalPlayer && IsReady == false)
 		Btn_Ready->SetVisibility(ESlateVisibility::Visible);
 
+	// 팀을 고르기 전에는 준비할 수 없다. 팀 없이 준비된 플레이어는 게임 맵에서 팀 없는
+	// 채로 스폰되므로(Team=-1 경고) 입구에서 막는다. 서버도 Server_HandleReadyButton에서
+	// 같은 조건으로 거부하므로 UI를 우회해도 준비되지 않는다.
+	Btn_Ready->SetIsEnabled(Teams::IsValidId(PlayerState->Team));
+
 	// Show Kick Button
 	if (IsServer && IsLocalPlayer == false)
 		Btn_KickPlayer->SetVisibility(ESlateVisibility::Visible);

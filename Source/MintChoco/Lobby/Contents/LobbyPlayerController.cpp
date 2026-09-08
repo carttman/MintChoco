@@ -12,8 +12,17 @@ void ALobbyPlayerController::Server_HandleReadyButton_Implementation()
 		return;
 
 	ALobbyPlayerState* LobbyPlayerState = Cast<ALobbyPlayerState>(GetPawn()->GetPlayerState());
-	if (LobbyPlayerState)
-		LobbyPlayerState->Multicast_Ready();
+	if (LobbyPlayerState == nullptr)
+		return;
+
+	// 팀을 고르지 않은 플레이어의 준비는 받지 않는다. UI가 버튼을 잠그지만 서버가 진실이다.
+	if (!Teams::IsValidId(LobbyPlayerState->Team))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s: 팀을 고르지 않은 채 준비를 눌러 무시했다."), *GetNameSafe(LobbyPlayerState));
+		return;
+	}
+
+	LobbyPlayerState->Multicast_Ready();
 
 	ALobbyGameMode* LobbyGameMode = Cast<ALobbyGameMode>(UGameplayStatics::GetGameMode(this));
 	if (LobbyGameMode)
