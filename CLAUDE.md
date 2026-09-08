@@ -128,6 +128,27 @@ Each of these cost real debugging time once.
 - There is no console-command or editor-python route: `ProgrammaticToolset` only
   orchestrates registered tools, and `EditorAppToolset.SearchCVars` only reads.
   `try/except` inside a script does not reliably catch `execute_tool` failures.
+- The MCP server is **not** started with the editor: someone has to run the console
+  command `ModelContextProtocol.StartServer`. When launching the editor yourself, pass it
+  on the command line so no hand is needed:
+  `UnrealEditor.exe <uproject> -skipcompile -ExecCmds="ModelContextProtocol.StartServer"`.
+  Port 8000 listening (`netstat -an | grep 8000`) is the ready signal.
+- `call_tool` takes `toolset_name` + the bare `tool_name` (`IsPIERunning`, not
+  `EditorToolset.EditorAppToolset.IsPIERunning`); the fully qualified name is "not found".
+- `ObjectTools.get_properties` cannot read a UPROPERTY without an `Edit*`/`Visible*`
+  specifier either (`bCollected`, `HeldItem` were unreadable until `VisibleInstanceOnly`).
+- `BlueprintTools.write_graph_dsl` **replaces** the event it names and leaves the other
+  events alone, and a failed write rolls back; `read_graph_dsl` mislabels property
+  getters (an `ItemProfile.DisplayName` getter prints as
+  `TypedElementFramework|Testing|GetDisplayName`) — check with `get_node_infos`.
+  Ambiguous ids (`Appearance|SetBrushfromTexture` exists on Border and Image) resolve
+  to the first class; `Appearance|SetBrushResourceObject` is the Image-only spelling.
+  `get_node_type_pins` creates no lasting nodes.
+- `EditorAppToolset.CaptureViewport` / `CaptureEditorImage` / `CaptureAssetImage`
+  return base64 too large for the tool result; decode the saved result file with
+  PowerShell (`ConvertFrom-Json` → `[Convert]::FromBase64String`) and Read the PNG.
+  `CaptureAssetImage` on a mesh is a quick way to make a placeholder icon texture
+  (`TextureTools.import_file`).
 - Automation tests run headless without MCP, even while the editor is open:
   `UnrealEditor-Cmd.exe <uproject> -ExecCmds="Automation RunTests MintChoco.Paint; Quit"
   -unattended -nullrhi -abslog=<log>`; grep the log for `Test Completed. Result=`.
@@ -238,6 +259,24 @@ Each of these cost real debugging time once.
 | Debug cells show in the editor, coverage text does not | `DrawDebugString` rides on a player's HUD, so the text is play-only; cells draw through the line batcher and work in the editor viewport with Realtime on (`bDrawDebugCells`, rebuilt when the actor moves). |
 | A plane-cut liquid (ink bottle) looks hollow or cut open from above | The two-sided "backface = surface" trick has no top geometry: from above you see the shaded inner walls below the waterline. `UInkBottleComponent` places a real disc (`SM_InkSurface`, `M_InkSurface`) on the cut plane every tick; the disc material clips outside `BottleRadius` and ripples via WPO with the same wave as the walls. Keep the fill clamped off the end caps (`SurfaceFillMargin`) or the disc z-fights them. |
 | Other players animate in slow motion on the listen-server host | The anim blueprint derives speed from per-tick position delta. On the server a remotely controlled pawn only moves when a `ServerMove` arrives (`ClientNetSendMoveDeltaTime` 0.0166 = 60 Hz), while the mesh ticks every frame, so the ticks with no displacement drag the average down. Read `Velocity` off the movement component instead — it holds its value between moves, so it is frame-rate independent. `t.MaxFPS 60` making the symptom vanish confirms it. |
+
+## Items (Gameplay Ability System)
+
+Items live in `Source/MintChoco/Items/`: a `UItemProfile` asset per item (display, pickup
+mesh, duration, `AbilityClass`), a `UItemAbility` subclass per item, one `UItemGameplayEffect`
+subclass per item (only so stacks stay separate; duration is SetByCaller, the state tag is a
+`DynamicGrantedTag`), `UItemSlotComponent` on `AUnit`, `AItemPickup` (announced → active),
+`AItemSpawnPoint` markers, and `UItemSettings` (`[/Script/MintChoco.ItemSettings]` in
+`DefaultGame.ini`: the item list and pickup class). The game mode spawns one item per
+`ItemSpawnInterval` at a free point, `ItemSpawnWarning` seconds after the laser.
+
+| Symptom | Check first |
+|---|---|
+| Speed Star rubber-bands on a client | The speed must ride the compressed move flag (`FLAG_Custom_1`, `bWantsSpeedBoost`), never a GAS attribute: `GameplayPrediction.h` says GE prediction and movement prediction are not time-correlated, so a GE-driven speed is simulated at the old speed on the server until the activation RPC lands. |
+| An item ability ends after one RTT on the client | `WaitGameplayEffectRemoved` on the client's predicted handle fires when the prediction key catches up. The client ends on `WaitDelay(Duration)`; only the server waits for GE removal. |
+| Using the same item twice runs two spinners | `bRetriggerInstancedAbility` must be true and the slot must reuse the existing spec (clear `RemoveAfterActivation`) instead of granting a second one. |
+| `SetStackingType` link error | It is `WITH_EDITOR`-only and unexported. Write `StackingType` in the constructor under `PRAGMA_DISABLE_DEPRECATION_WARNINGS`. |
+| Weapon still fires during the spinner | `UPaintWeaponComponent::TriggerBlockedTags` holds `State.Item.SweetSpinner`; both `PullTrigger` and `ServerFire` ask the owner's ASC. |
 
 ## OnlineSubsystem / Steam sessions
 

@@ -4,6 +4,7 @@
 #include "Components/ActorComponent.h"
 #include "Engine/NetSerialization.h"
 #include "Engine/TimerHandle.h"
+#include "GameplayTagContainer.h"
 
 #include "Weapons/PaintWeaponProfile.h"
 
@@ -122,6 +123,14 @@ protected:
 	UPROPERTY(ReplicatedUsing = OnRep_PaintId)
 	uint8 PaintId = 0;
 
+	/**
+	 * Tags on the owner's ability system that refuse the trigger, on the owner and on the server
+	 * alike. An item effect that takes the weapon away (the spinner) is such a tag. The weapon
+	 * knows nothing else about abilities; an owner without an ability system is never blocked.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Weapon")
+	FGameplayTagContainer TriggerBlockedTags;
+
 	UFUNCTION()
 	void OnRep_Profile();
 
@@ -132,6 +141,7 @@ private:
 	bool FireOnce();
 	void OnShotTimer();
 	bool HasAuthority() const;
+	bool IsTriggerBlocked() const;
 	float GetShotCost() const;
 	bool CanAffordShot() const;
 	void SpendShot();

@@ -11,6 +11,10 @@
 #include "Game/UnitDataAsset.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerStart.h"
+#include "Items/ItemPickup.h"
+#include "Items/ItemProfile.h"
+#include "Items/ItemSettings.h"
+#include "Items/ItemSpawnPoint.h"
 #include "Kismet/GameplayStatics.h"
 #include "MintChoco.h"
 #include "TimerManager.h"
@@ -24,6 +28,8 @@ AGameGameMode::AGameGameMode()
 void AGameGameMode::StartPlay()
 {
 	Super::StartPlay();
+
+	StartItemSpawning();
 
 	if (MatchDuration <= 0.0f)
 	{
@@ -46,8 +52,99 @@ void AGameGameMode::StartPlay()
 		MatchTimer, this, &AGameGameMode::OnMatchTimeExpired, MatchDuration, /*bLoop=*/false);
 }
 
+void AGameGameMode::StartItemSpawning()
+{
+	ItemSpawnPoints.Reset();
+	for (TActorIterator<AItemSpawnPoint> It(GetWorld()); It; ++It)
+	{
+		ItemSpawnPoints.Add(*It);
+	}
+
+	TArray<UItemProfile*> Items;
+	UItemSettings::Get().LoadItems(Items);
+
+	if (ItemSpawnInterval <= 0.0f || ItemSpawnPoints.IsEmpty() || Items.IsEmpty() || !UItemSettings::Get().LoadPickupClass())
+	{
+		UE_LOG(LogMintChoco, Log,
+			TEXT("아이템 스폰 없음: 주기 %.1f초, 스폰 지점 %d개, 아이템 %d종, 픽업 클래스 %s."),
+			ItemSpawnInterval, ItemSpawnPoints.Num(), Items.Num(),
+			UItemSettings::Get().PickupClass.IsNull() ? TEXT("없음") : TEXT("있음"));
+		return;
+	}
+
+	ItemRandom.GenerateNewSeed();
+
+	// 예고가 주기 안에 들어가야 첫 아이템이 정확히 한 주기 뒤에 나온다.
+	const float Warning = FMath::Clamp(ItemSpawnWarning, 0.0f, ItemSpawnInterval);
+	const float FirstDelay = FMath::Max(ItemSpawnInterval - Warning, UE_KINDA_SMALL_NUMBER);
+	GetWorldTimerManager().SetTimer(ItemSpawnTimer, this, &AGameGameMode::SpawnNextItem, ItemSpawnInterval, /*bLoop=*/true, FirstDelay);
+}
+
+int32 AGameGameMode::PickFreeSpawnIndex(const TArray<bool>& bFree, const FRandomStream& Random)
+{
+	TArray<int32> Candidates;
+	for (int32 Index = 0; Index < bFree.Num(); ++Index)
+	{
+		if (bFree[Index])
+		{
+			Candidates.Add(Index);
+		}
+	}
+	if (Candidates.IsEmpty())
+	{
+		return INDEX_NONE;
+	}
+	return Candidates[Random.RandRange(0, Candidates.Num() - 1)];
+}
+
+void AGameGameMode::SpawnNextItem()
+{
+	TArray<bool> bFree;
+	bFree.Reserve(ItemSpawnPoints.Num());
+	for (const AItemSpawnPoint* const Point : ItemSpawnPoints)
+	{
+		bFree.Add(Point && Point->IsFree());
+	}
+
+	const int32 PointIndex = PickFreeSpawnIndex(bFree, ItemRandom);
+	if (PointIndex == INDEX_NONE)
+	{
+		UE_LOG(LogMintChoco, Verbose, TEXT("아이템 스폰 건너뜀: 모든 지점이 차 있다."));
+		return;
+	}
+
+	TArray<UItemProfile*> Items;
+	UItemSettings::Get().LoadItems(Items);
+	UClass* const PickupClass = UItemSettings::Get().LoadPickupClass();
+	if (Items.IsEmpty() || !PickupClass)
+	{
+		return;
+	}
+
+	AItemSpawnPoint* const Point = ItemSpawnPoints[PointIndex];
+	UItemProfile* const Item = Items[ItemRandom.RandRange(0, Items.Num() - 1)];
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AItemPickup* const Pickup = GetWorld()->SpawnActorDeferred<AItemPickup>(
+		PickupClass, Point->GetActorTransform(), this, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!Pickup)
+	{
+		return;
+	}
+
+	const float Warning = FMath::Clamp(ItemSpawnWarning, 0.0f, ItemSpawnInterval);
+	Pickup->Initialize(Item, Point, Warning);
+	Pickup->FinishSpawning(Point->GetActorTransform());
+
+	UE_LOG(LogMintChoco, Verbose, TEXT("아이템 예고: %s at %s, %.1f초 뒤 등장."), *GetNameSafe(Item), *GetNameSafe(Point), Warning);
+}
+
 void AGameGameMode::OnMatchTimeExpired()
 {
+	// 끝난 경기에 아이템이 계속 나올 이유가 없다. 이미 놓인 것은 그대로 둔다.
+	GetWorldTimerManager().ClearTimer(ItemSpawnTimer);
+
 	AGameGameState* const State = GetGameState<AGameGameState>();
 	if (!State)
 	{
@@ -60,31 +157,50 @@ void AGameGameMode::OnMatchTimeExpired()
 	const FPaintCoverage& Coverage = State->GetWorldCoverage();
 
 	// PaintId는 팀 번호를 그대로 쓴다(Unit.cpp의 SetPaintId).
+	// 1위와 2위를 함께 찾아 두 값의 차이로 판정한다. 팀이 셋 이상이 되어도 그대로 성립한다.
 	int32 BestTeam = Teams::None;
-	float BestFraction = 0.0f;
-	bool bTied = false;
+	float BestFraction = -1.0f;
+	float SecondFraction = -1.0f;
+
 	for (int32 Team = 0; Team < Teams::Count; ++Team)
 	{
 		const float Fraction = Coverage.GetFraction(static_cast<uint8>(Team));
-		if (Fraction > BestFraction + UE_KINDA_SMALL_NUMBER)
+		if (Fraction > BestFraction)
 		{
-			BestTeam = Team;
+			SecondFraction = BestFraction;
 			BestFraction = Fraction;
-			bTied = false;
+			BestTeam = Team;
 		}
-		else if (FMath::IsNearlyEqual(Fraction, BestFraction))
+		else if (Fraction > SecondFraction)
 		{
-			// 아무도 안 칠해 둘 다 0인 경우도 여기로 떨어져 무승부가 된다.
-			bTied = true;
+			SecondFraction = Fraction;
 		}
 	}
 
-	const int32 Winner = bTied ? Teams::None : BestTeam;
+	// 팀이 하나뿐인 구성에서도 안전하도록 2위를 0으로 바닥 처리한다.
+	SecondFraction = FMath::Max(SecondFraction, 0.0f);
+
+	// 칠해진 양 중 1위가 얼마나 앞섰는지. 맵 전체가 아니라 두 팀의 합으로 나누므로,
+	// 맵이 거의 비어 있어도 접전과 압승이 구분된다.
+	// 아무도 칠하지 않았으면 격차를 잴 수 없고, 그 경우도 무승부다.
+	const float PaintedFraction = BestFraction + SecondFraction;
+	const float RelativeMargin = PaintedFraction > 0.0f
+		? (BestFraction - SecondFraction) / PaintedFraction
+		: 0.0f;
+
+	const bool bDraw = RelativeMargin <= DrawMarginFraction;
+	const int32 Winner = bDraw ? Teams::None : BestTeam;
+
 	State->SetMatchResult(Winner);
 
-	UE_LOG(LogMintChoco, Log, TEXT("경기 종료: 승팀 %d (%s)"), Winner, *Coverage.ToString());
-
-	BP_OnMatchEnded(Winner);
+	UE_LOG(LogMintChoco, Log,
+		TEXT("경기 종료: %s (1위 %.2f%% vs 2위 %.2f%%, 상대 격차 %.1f%% / 무승부 기준 %.1f%%) | %s"),
+		bDraw ? TEXT("무승부") : Teams::GetDisplayName(Winner),
+		BestFraction * 100.0f,
+		SecondFraction * 100.0f,
+		RelativeMargin * 100.0f,
+		DrawMarginFraction * 100.0f,
+		*Coverage.ToString());
 }
 
 int32 AGameGameMode::GetTeamOf(const AController* Player) const

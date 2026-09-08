@@ -7,6 +7,7 @@
 #include "Game/TeamTypes.h"
 #include "GameGameMode.generated.h"
 
+class AItemSpawnPoint;
 class APlayerStart;
 class UUnitDataAsset;
 
@@ -43,17 +44,37 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Team")
 	int32 GetTeamOf(const AController* Player) const;
 
+	/**
+	 * 비어 있는 지점 중 하나를 무작위로 고른다. bFree[i]가 i번 지점의 상태. 전부 차 있으면
+	 * INDEX_NONE. 순수 함수라 테스트가 액터 없이 검사한다.
+	 */
+	static int32 PickFreeSpawnIndex(const TArray<bool>& bFree, const FRandomStream& Random);
+
 protected:
+	/** 아이템이 나오는 주기(초). 0 이하면 아이템이 나오지 않는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Items", meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float ItemSpawnInterval = 15.0f;
+
+	/** 아이템이 나오기 몇 초 전에 그 자리에 레이저를 세울지. 주기보다 길면 주기로 잘린다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Items", meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float ItemSpawnWarning = 5.0f;
 	/** 한 판의 길이(초). 0 이하로 두면 타이머를 걸지 않아 경기가 끝나지 않는다(디버그용). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0.0"))
-	float MatchDuration = 10.0f;
+	float MatchDuration = 90.0f;
 
 	/**
-	 * 승패가 확정된 뒤 서버에서 한 번 불린다. 로비로 돌려보내기 같은 후처리를 여기에 붙인다.
-	 * 결과 UI는 여기가 아니라 GameState의 BP_OnMatchEnded에 붙여야 클라이언트에도 뜬다.
+	 * 1위와 2위의 상대 격차가 이 값 이하면 무승부로 친다. 0.1 = 두 팀이 칠한 양의 10% 차이.
+	 *
+	 * 맵 전체 면적이 아니라 두 팀이 칠한 양의 합으로 나눈다. 맵의 대부분이 비어 있어도
+	 * 접전인지 압승인지가 그대로 드러나고, 나중에 사격 속도나 스플랫 크기를 올려
+	 * 도포량이 통째로 늘어도 이 값을 다시 손볼 필요가 없다.
+	 *
+	 * 절대 점유율로 비교하면 그때마다 기준을 옮겨야 한다. 지금은 0.17%가 "많이 칠한"
+	 * 수준이지만 도포량이 늘면 그 값은 의미를 잃는다.
 	 */
-	UFUNCTION(BlueprintImplementableEvent, Category = "Match")
-	void BP_OnMatchEnded(int32 WinningTeam);
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float DrawMarginFraction = 0.1f;
+
 
 	/**
 	 * 팀 번호를 인덱스로 쓰는 캐릭터 정의. [0]은 민트, [1]은 초코.
@@ -111,4 +132,16 @@ private:
 
 	/** 가장 가까운 적 폰까지의 거리. 적이 없으면 무한대로 친다. */
 	float DistanceToNearestEnemy(const APlayerStart* Start, int32 Team) const;
+
+	/** 맵의 스폰 지점을 모으고 주기 타이머를 건다. 지점이나 아이템 목록이 비면 아무것도 걸지 않는다. */
+	void StartItemSpawning();
+
+	/** 빈 지점 하나에 무작위 아이템을 예고 상태로 놓는다. 전부 차 있으면 이번 주기는 건너뛴다. */
+	void SpawnNextItem();
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<AItemSpawnPoint>> ItemSpawnPoints;
+
+	FTimerHandle ItemSpawnTimer;
+	FRandomStream ItemRandom;
 };
