@@ -20,6 +20,7 @@
 #include "Paint/PaintableComponent.h"
 #include "Sample/SampleCoverageWidget.h"
 #include "Sample/SampleSeedWidget.h"
+#include "Weapons/PaintChargeWidget.h"
 #include "Weapons/PaintDeposit.h"
 #include "Weapons/PaintWeaponComponent.h"
 #include "Weapons/PaintWeaponProfile.h"
@@ -29,6 +30,7 @@ ASamplePaintController::ASamplePaintController()
 	bShowMouseCursor = false;
 	SeedWidgetClass = USampleSeedWidget::StaticClass();
 	CoverageWidgetClass = USampleCoverageWidget::StaticClass();
+	ChargeWidgetClass = UPaintChargeWidget::StaticClass();
 }
 
 void ASamplePaintController::BeginPlay()
@@ -49,6 +51,7 @@ void ASamplePaintController::BeginPlay()
 	CrosshairWidget = AddLocalWidget(CrosshairWidgetClass);
 	SeedWidget = AddLocalWidget(SeedWidgetClass);
 	CoverageWidget = AddLocalWidget(CoverageWidgetClass);
+	ChargeWidget = AddLocalWidget(ChargeWidgetClass);
 }
 
 void ASamplePaintController::SetupInputComponent()

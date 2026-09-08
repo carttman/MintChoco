@@ -10,6 +10,7 @@
 class UInputAction;
 class UInputMappingContext;
 class UPaintBrushProfile;
+class UPaintChargeWidget;
 class UPaintSubsystem;
 class UPaintWeaponComponent;
 class UPaintWeaponProfile;
@@ -106,6 +107,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI")
 	TSubclassOf<USampleCoverageWidget> CoverageWidgetClass;
 
+	/** Ring around the crosshair that shows a Charged weapon's hold. Defaults to the C++ widget. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI")
+	TSubclassOf<UPaintChargeWidget> ChargeWidgetClass;
+
 	/** The brush this source stamps with: its material and how a hit becomes a splat shape. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|Paint")
 	TObjectPtr<UPaintBrushProfile> BrushProfile;
@@ -197,6 +202,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<USampleCoverageWidget> CoverageWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UPaintChargeWidget> ChargeWidget;
 
 	/** The possessed pawn's weapon; re-resolved on every possess, null for a pawn without one. */
 	UPROPERTY(Transient)
