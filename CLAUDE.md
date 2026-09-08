@@ -180,6 +180,16 @@ Each of these cost real debugging time once.
   declared inside two Material Functions surfaces once on the master, which is the
   safe way to feed a value into a function (adding a FunctionInput leaves the existing
   call nodes' pins stale).
+- `SceneTools.create_level_instance` spawns the actor but never loads its sub-level: the
+  viewport stays empty, traces return null, and `get_actor_bounds` still reports a plausible
+  box (asset-registry bounds, builder brush included). Save and `load_level` the map again;
+  `LogLevelInstance: Loaded N levels` is the ready signal. A level made with
+  `AssetTools.duplicate` is dirty in memory and `load_level` refuses it until it is saved.
+  Setting a LevelInstance's `WorldAsset` through `ObjectTools` does reload it immediately.
+- `AssetTools.move` on a map returns false (a "Continue with rename?" dialog is auto-declined)
+  and leaves that map open as the current level. Relocate a level by `duplicate` → save →
+  repoint every `WorldAsset` → save the map → delete the old file on disk;
+  `AssetTools.delete` reports true on a loaded map without removing the file.
 - `Config/DefaultEditor.ini` regrows `[/Script/AdvancedPreviewScene.SharedProfiles]`
   whenever an asset editor saves preview-scene settings (`USharedProfiles` is
   `defaultconfig`; `UAssetViewerSettings::Save` writes the three engine profiles).
