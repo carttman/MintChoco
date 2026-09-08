@@ -99,7 +99,8 @@ void USampleSeedWidget::PushToController()
 	if (ASamplePaintController* const Controller = Cast<ASamplePaintController>(GetOwningPlayer()))
 	{
 		const bool bAuto = !AutoSeedCheck || AutoSeedCheck->IsChecked();
-		const int32 Seed = SeedInput ? FCString::Atoi(*SeedInput->GetText().ToString()) : 0;
+		// A splat carries a 16-bit seed; the controller clamps and the box shows what it kept.
+		const int32 Seed = SeedInput ? FMath::Clamp(FCString::Atoi(*SeedInput->GetText().ToString()), 0, static_cast<int32>(MAX_uint16)) : 0;
 		Controller->SetSeedOverride(!bAuto, Seed);
 	}
 }

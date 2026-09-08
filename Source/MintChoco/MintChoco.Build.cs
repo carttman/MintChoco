@@ -12,44 +12,32 @@ public class MintChoco : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"NetCore",
+			"DeveloperSettings",
 			"InputCore",
 			"EnhancedInput",
-			"AIModule",
-			"StateTreeModule",
-			"GameplayStateTreeModule",
 			"UMG",
 			"Slate",
 			"SlateCore",
-			"RHI"
+			"RHI",
+			"RenderCore",
+			"Niagara",
+			"OnlineSubsystem",
+			"OnlineSubsystemSteam",
+			"OnlineSubsystemUtils",
+			"SteamSockets"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { });
+		PrivateDependencyModuleNames.AddRange(new string[] {
+            "AssetRegistry"
+        });
 
 		PublicIncludePaths.AddRange(new string[] {
 			"MintChoco",
+			"MintChoco/Ink",
 			"MintChoco/Paint",
 			"MintChoco/Sample",
-			"MintChoco/Variant_Platforming",
-			"MintChoco/Variant_Platforming/Animation",
-			"MintChoco/Variant_Combat",
-			"MintChoco/Variant_Combat/AI",
-			"MintChoco/Variant_Combat/Animation",
-			"MintChoco/Variant_Combat/Gameplay",
-			"MintChoco/Variant_Combat/Interfaces",
-			"MintChoco/Variant_Combat/UI",
-			"MintChoco/Variant_SideScrolling",
-			"MintChoco/Variant_SideScrolling/AI",
-			"MintChoco/Variant_SideScrolling/Gameplay",
-			"MintChoco/Variant_SideScrolling/Interfaces",
-			"MintChoco/Variant_SideScrolling/UI"
+			"MintChoco/Weapons"
 		});
-
-		// Uncomment if you are using Slate UI
-		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
-
-		// Uncomment if you are using online features
-		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
-
-		// To include OnlineSubsystemSteam, add it to the plugins section in your uproject file with the Enabled attribute set to true
 	}
 }

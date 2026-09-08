@@ -10,8 +10,8 @@ APaintableActor::APaintableActor()
 	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
 	SetRootComponent(Mesh);
 
-	// Find Collision UV reads the complex (per-triangle) representation, so traces have to hit
-	// the render geometry rather than a simplified collision primitive.
+	// Paint sources find surfaces by trace and overlap, so the mesh must answer queries even
+	// when nothing else in the level would ever collide with it.
 	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	Mesh->bAlwaysCreatePhysicsState = true;
 
