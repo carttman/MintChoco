@@ -278,6 +278,23 @@ subclass per item (only so stacks stay separate; duration is SetByCaller, the st
 | `SetStackingType` link error | It is `WITH_EDITOR`-only and unexported. Write `StackingType` in the constructor under `PRAGMA_DISABLE_DEPRECATION_WARNINGS`. |
 | Weapon still fires during the spinner | `UPaintWeaponComponent::TriggerBlockedTags` holds `State.Item.SweetSpinner`; both `PullTrigger` and `ServerFire` ask the owner's ASC. |
 
+## Screen fade (map transitions)
+
+`UScreenFadeSubsystem` (`Source/MintChoco/Screen/`) owns the cover widget across maps. Every
+travel goes through `TravelWithFade` / `ServerTravelWithFade` / `ClientTravelWithFade` (the lobby
+Blueprint and `UOnlineSessionsSubsystem` already do); a server travel spawns `AScreenFadeRelay`
+whose multicast darkens every client first. The engine's `PreLoadMapWithContext` pins the cover,
+`PostLoadMapWithWorld` starts the ready wait, and the map opens when the local controller has a
+PlayerState, a game map (`AGameGameState`) has the local pawn, and no hold is registered
+(`AddHold(Owner, Reason)`; `UPaintSubsystem` holds while an atlas bakes). `MaxReadyWait` opens
+it regardless. Settings: `[/Script/MintChoco.ScreenFadeSettings]`, widget `WBP_LoadingScreen`.
+
+| Symptom | Check first |
+|---|---|
+| The listen-server PIE window never shows the cover on start | Expected: the first PIE world is duplicated from the editor world, so `PreLoadMap`/`PostLoadMap` never fire for it. Clients and seamless travels do fire them; a packaged game always does. Grep `가림막:` in the log. |
+| Screen stays black for `MaxReadyWait` then opens with a warning | A hold never released or the pawn never arrived; the warning lists the remaining holds. |
+| Travel happens without a fade | Something called `ServerTravel`/`ClientTravel` directly instead of the subsystem. |
+
 ## OnlineSubsystem / Steam sessions
 
 | Symptom | Check first |

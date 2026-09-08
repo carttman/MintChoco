@@ -12,6 +12,7 @@
 #include "Paint/PaintSettings.h"
 #include "Paint/PaintSplatEffect.h"
 #include "Paint/PaintableComponent.h"
+#include "Screen/ScreenFadeSubsystem.h"
 
 void UPaintSubsystem::RegisterPaintable(UPaintableComponent* Paintable)
 {
@@ -189,6 +190,14 @@ void UPaintSubsystem::RequestAtlas(
 	PendingAtlases.Add(Key).Add(MoveTemp(OnReady));
 	UE_LOG(LogPaint, Log, TEXT("baking a paint atlas for %s: %s"), *Asset->GetName(), *Layout.ToString());
 
+	// The map is not ready to be shown until its surfaces can be painted; the screen fade
+	// waits for this. The hold dies with this subsystem, so a bake cut short by travel cannot
+	// keep the next map dark.
+	if (UScreenFadeSubsystem* const Fade = UScreenFadeSubsystem::Get(this))
+	{
+		Fade->AddHold(this, FName(*Key));
+	}
+
 	// The bake only reads its own copies, so it runs off the game thread; only the textures
 	// have to be created back on it.
 	TWeakObjectPtr<UPaintSubsystem> WeakThis(this);
@@ -210,6 +219,10 @@ void UPaintSubsystem::FinishAtlas(const FString& Key, const FPaintIslandLayout& 
 {
 	TArray<FPaintAtlasReady> Waiters;
 	PendingAtlases.RemoveAndCopyValue(Key, Waiters);
+	if (UScreenFadeSubsystem* const Fade = UScreenFadeSubsystem::Get(this))
+	{
+		Fade->RemoveHold(this, FName(*Key));
+	}
 
 	FPaintAtlas& Atlas = AtlasCache.Add(Key);
 	Atlas.Layout = Layout;
