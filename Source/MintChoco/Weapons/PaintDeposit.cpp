@@ -8,6 +8,7 @@
 #include "Paint/PaintSplat.h"
 #include "Paint/PaintSubsystem.h"
 #include "Paint/PaintableComponent.h"
+#include "Weapons/PaintHitReceiver.h"
 
 bool FPaintDeposit::IsPaintable(const FHitResult& Hit)
 {
@@ -28,8 +29,23 @@ void FPaintDeposit::MarkTransience(FPaintSplat& Splat, const FHitResult& Hit)
 	Splat.bTransient = Paintable && !Paintable->IsWorldNormalPersistent(Hit.ImpactNormal);
 }
 
+bool FPaintDeposit::StrikeReceiver(const FHitResult& Hit, uint8 PaintId) const
+{
+	AActor* const Actor = Hit.GetActor();
+	if (!Actor || !Actor->GetClass()->ImplementsInterface(UPaintHitReceiver::StaticClass()))
+	{
+		return false;
+	}
+	IPaintHitReceiver::Execute_ReceivePaintHit(Actor, HitPower, PaintId, Hit);
+	return true;
+}
+
 bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed) const
 {
+	// A receiver is struck before the surface test: a balloon is not a paintable surface, yet the
+	// hit that bursts it is a hit all the same.
+	StrikeReceiver(Hit, PaintId);
+
 	UPaintSubsystem* const Paint = World ? World->GetSubsystem<UPaintSubsystem>() : nullptr;
 	if (!BrushProfile || !Paint || !IsPaintable(Hit))
 	{

@@ -278,6 +278,17 @@ subclass per item (only so stacks stay separate; duration is SetByCaller, the st
 | `SetStackingType` link error | It is `WITH_EDITOR`-only and unexported. Write `StackingType` in the constructor under `PRAGMA_DISABLE_DEPRECATION_WARNINGS`. |
 | Weapon still fires during the spinner | `UPaintWeaponComponent::TriggerBlockedTags` holds `State.Item.SweetSpinner`; both `PullTrigger` and `ServerFire` ask the owner's ASC. |
 
+## Paint hit receivers (balloon)
+
+`FPaintDeposit::HitPower` is the game-balance number a contact carries (sniper `Impact` 100,
+`DA_Paintball_Light` 3, Standard 10, Heavy 25, brush 2). `FPaintDeposit::ApplyHit` strikes any hit
+actor implementing `IPaintHitReceiver` (`Weapons/PaintHitReceiver.h`) before the surface test, so
+every weapon reaches it with one hook and the receiver need not be paintable. `ABalloon`
+(`Game/Balloon.h`, `BP_Balloon`) is the first receiver: 100 health, inflates with damage, the last
+team to hit it owns the pop, `MulticastBurst(Seed, PaintId)` launches `BurstCount` balls of
+`BurstPaintball` (real on the server, cosmetic on clients), and it re-inflates after `RespawnDelay`.
+Its collision blocks only the `Paintball` channel, so pawns and the camera pass through.
+
 ## Screen fade (map transitions)
 
 `UScreenFadeSubsystem` (`Source/MintChoco/Screen/`) owns the cover widget across maps. Every
