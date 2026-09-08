@@ -11,6 +11,10 @@
 #include "Game/UnitDataAsset.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerStart.h"
+#include "Items/ItemPickup.h"
+#include "Items/ItemProfile.h"
+#include "Items/ItemSettings.h"
+#include "Items/ItemSpawnPoint.h"
 #include "Kismet/GameplayStatics.h"
 #include "MintChoco.h"
 #include "TimerManager.h"
@@ -24,6 +28,8 @@ AGameGameMode::AGameGameMode()
 void AGameGameMode::StartPlay()
 {
 	Super::StartPlay();
+
+	StartItemSpawning();
 
 	if (MatchDuration <= 0.0f)
 	{
@@ -46,8 +52,99 @@ void AGameGameMode::StartPlay()
 		MatchTimer, this, &AGameGameMode::OnMatchTimeExpired, MatchDuration, /*bLoop=*/false);
 }
 
+void AGameGameMode::StartItemSpawning()
+{
+	ItemSpawnPoints.Reset();
+	for (TActorIterator<AItemSpawnPoint> It(GetWorld()); It; ++It)
+	{
+		ItemSpawnPoints.Add(*It);
+	}
+
+	TArray<UItemProfile*> Items;
+	UItemSettings::Get().LoadItems(Items);
+
+	if (ItemSpawnInterval <= 0.0f || ItemSpawnPoints.IsEmpty() || Items.IsEmpty() || !UItemSettings::Get().LoadPickupClass())
+	{
+		UE_LOG(LogMintChoco, Log,
+			TEXT("아이템 스폰 없음: 주기 %.1f초, 스폰 지점 %d개, 아이템 %d종, 픽업 클래스 %s."),
+			ItemSpawnInterval, ItemSpawnPoints.Num(), Items.Num(),
+			UItemSettings::Get().PickupClass.IsNull() ? TEXT("없음") : TEXT("있음"));
+		return;
+	}
+
+	ItemRandom.GenerateNewSeed();
+
+	// 예고가 주기 안에 들어가야 첫 아이템이 정확히 한 주기 뒤에 나온다.
+	const float Warning = FMath::Clamp(ItemSpawnWarning, 0.0f, ItemSpawnInterval);
+	const float FirstDelay = FMath::Max(ItemSpawnInterval - Warning, UE_KINDA_SMALL_NUMBER);
+	GetWorldTimerManager().SetTimer(ItemSpawnTimer, this, &AGameGameMode::SpawnNextItem, ItemSpawnInterval, /*bLoop=*/true, FirstDelay);
+}
+
+int32 AGameGameMode::PickFreeSpawnIndex(const TArray<bool>& bFree, const FRandomStream& Random)
+{
+	TArray<int32> Candidates;
+	for (int32 Index = 0; Index < bFree.Num(); ++Index)
+	{
+		if (bFree[Index])
+		{
+			Candidates.Add(Index);
+		}
+	}
+	if (Candidates.IsEmpty())
+	{
+		return INDEX_NONE;
+	}
+	return Candidates[Random.RandRange(0, Candidates.Num() - 1)];
+}
+
+void AGameGameMode::SpawnNextItem()
+{
+	TArray<bool> bFree;
+	bFree.Reserve(ItemSpawnPoints.Num());
+	for (const AItemSpawnPoint* const Point : ItemSpawnPoints)
+	{
+		bFree.Add(Point && Point->IsFree());
+	}
+
+	const int32 PointIndex = PickFreeSpawnIndex(bFree, ItemRandom);
+	if (PointIndex == INDEX_NONE)
+	{
+		UE_LOG(LogMintChoco, Verbose, TEXT("아이템 스폰 건너뜀: 모든 지점이 차 있다."));
+		return;
+	}
+
+	TArray<UItemProfile*> Items;
+	UItemSettings::Get().LoadItems(Items);
+	UClass* const PickupClass = UItemSettings::Get().LoadPickupClass();
+	if (Items.IsEmpty() || !PickupClass)
+	{
+		return;
+	}
+
+	AItemSpawnPoint* const Point = ItemSpawnPoints[PointIndex];
+	UItemProfile* const Item = Items[ItemRandom.RandRange(0, Items.Num() - 1)];
+
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AItemPickup* const Pickup = GetWorld()->SpawnActorDeferred<AItemPickup>(
+		PickupClass, Point->GetActorTransform(), this, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!Pickup)
+	{
+		return;
+	}
+
+	const float Warning = FMath::Clamp(ItemSpawnWarning, 0.0f, ItemSpawnInterval);
+	Pickup->Initialize(Item, Point, Warning);
+	Pickup->FinishSpawning(Point->GetActorTransform());
+
+	UE_LOG(LogMintChoco, Verbose, TEXT("아이템 예고: %s at %s, %.1f초 뒤 등장."), *GetNameSafe(Item), *GetNameSafe(Point), Warning);
+}
+
 void AGameGameMode::OnMatchTimeExpired()
 {
+	// 끝난 경기에 아이템이 계속 나올 이유가 없다. 이미 놓인 것은 그대로 둔다.
+	GetWorldTimerManager().ClearTimer(ItemSpawnTimer);
+
 	AGameGameState* const State = GetGameState<AGameGameState>();
 	if (!State)
 	{

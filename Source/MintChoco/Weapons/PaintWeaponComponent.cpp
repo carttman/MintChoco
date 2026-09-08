@@ -1,5 +1,7 @@
 #include "Weapons/PaintWeaponComponent.h"
 
+#include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
@@ -9,6 +11,7 @@
 #include "TimerManager.h"
 
 #include "Ink/InkTankComponent.h"
+#include "Items/ItemGameplayTags.h"
 #include "Paint/PaintLog.h"
 
 UPaintWeaponComponent::UPaintWeaponComponent()
@@ -19,6 +22,18 @@ UPaintWeaponComponent::UPaintWeaponComponent()
 
 	// The shot RPCs travel on this component, which requires it to replicate.
 	SetIsReplicatedByDefault(true);
+
+	TriggerBlockedTags.AddTag(ItemTags::State_Item_SweetSpinner);
+}
+
+bool UPaintWeaponComponent::IsTriggerBlocked() const
+{
+	if (TriggerBlockedTags.IsEmpty())
+	{
+		return false;
+	}
+	const UAbilitySystemComponent* const AbilitySystem = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetOwner());
+	return AbilitySystem && AbilitySystem->HasAnyMatchingGameplayTags(TriggerBlockedTags);
 }
 
 void UPaintWeaponComponent::BeginPlay()
@@ -118,7 +133,7 @@ void UPaintWeaponComponent::OnRep_Profile()
 
 void UPaintWeaponComponent::PullTrigger()
 {
-	if (bTriggerHeld || !Profile)
+	if (bTriggerHeld || !Profile || IsTriggerBlocked())
 	{
 		return;
 	}
@@ -244,7 +259,8 @@ bool UPaintWeaponComponent::FireOnce()
 void UPaintWeaponComponent::ServerFire_Implementation(int32 Seed, FVector_NetQuantize ViewOrigin, FVector_NetQuantizeNormal ViewDirection)
 {
 	// The owner checked its own tank before asking, but only the server's copy is the truth.
-	if (!Profile || !GetWorld() || !CanAffordShot())
+	// The same goes for a blocking tag: an owner that fired anyway is refused here.
+	if (!Profile || !GetWorld() || !CanAffordShot() || IsTriggerBlocked())
 	{
 		return;
 	}

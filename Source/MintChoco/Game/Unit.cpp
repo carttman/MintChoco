@@ -3,6 +3,7 @@
 
 #include "Game/Unit.h"
 
+#include "AbilitySystemComponent.h"
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -18,6 +19,7 @@
 #include "Ink/InkBottleComponent.h"
 #include "Ink/InkTankComponent.h"
 #include "InputActionValue.h"
+#include "Items/ItemSlotComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "MintChoco.h"
 #include "Net/UnrealNetwork.h"
@@ -67,6 +69,12 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	PaintWeapon = CreateDefaultSubobject<UPaintWeaponComponent>(TEXT("PaintWeapon"));
 	InkTank = CreateDefaultSubobject<UInkTankComponent>(TEXT("InkTank"));
 
+	AbilitySystem = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystem"));
+	AbilitySystem->SetIsReplicated(true);
+	AbilitySystem->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
+
+	ItemSlot = CreateDefaultSubobject<UItemSlotComponent>(TEXT("ItemSlot"));
+
 	// 병은 스켈레탈 메시의 InkBottle 소켓에 붙는다. 소켓은 메시가 UnitData로 정해진 뒤에야
 	// 존재하므로 여기서는 메시에만 붙이고, ApplyUnitData가 소켓으로 옮긴다. 소켓 위치는
 	// 메시 에셋마다 정하므로 캐릭터가 바뀌어도 코드는 그대로다.
@@ -88,13 +96,37 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 void AUnit::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+
+	// 어빌리티를 주기 전에 액터 정보가 서 있어야 한다. 아이템 습득은 이보다 뒤다.
+	InitAbilityActorInfo();
 	ApplyTeamToWeapon();
 }
 
 void AUnit::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
+	InitAbilityActorInfo();
 	ApplyTeamToWeapon();
+}
+
+UAbilitySystemComponent* AUnit::GetAbilitySystemComponent() const
+{
+	return AbilitySystem;
+}
+
+void AUnit::InitAbilityActorInfo()
+{
+	if (AbilitySystem)
+	{
+		// 소유자도 아바타도 이 폰이다. Mixed 모드가 요구하는 "소유자의 Owner가 컨트롤러"는
+		// 빙의된 폰이 자연히 만족한다.
+		AbilitySystem->InitAbilityActorInfo(this, this);
+	}
+}
+
+bool AUnit::IsSpeedBoostAuthorized() const
+{
+	return ItemSlot && ItemSlot->IsSpeedBoostAuthorized();
 }
 
 void AUnit::ApplyTeamToWeapon()
@@ -229,6 +261,19 @@ void AUnit::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 		EnhancedInput->BindAction(InputConfig->FireAction, ETriggerEvent::Started, this, &AUnit::StartFire);
 		EnhancedInput->BindAction(InputConfig->FireAction, ETriggerEvent::Completed, this, &AUnit::StopFire);
 		EnhancedInput->BindAction(InputConfig->FireAction, ETriggerEvent::Canceled, this, &AUnit::StopFire);
+	}
+
+	if (InputConfig->ItemAction)
+	{
+		EnhancedInput->BindAction(InputConfig->ItemAction, ETriggerEvent::Started, this, &AUnit::UseItem);
+	}
+}
+
+void AUnit::UseItem()
+{
+	if (ItemSlot)
+	{
+		ItemSlot->TryUseHeldItem();
 	}
 }
 
