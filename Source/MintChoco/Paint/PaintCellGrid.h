@@ -21,6 +21,14 @@ enum class EPaintFaceDirection : uint8
 
 inline constexpr int32 PaintFaceDirectionCount = 6;
 
+/** Bit set of directions, one bit per EPaintFaceDirection in enum order. */
+inline constexpr uint8 PaintAllDirectionsMask = 0x3F;
+
+inline constexpr uint8 PaintDirectionBit(EPaintFaceDirection Direction)
+{
+	return static_cast<uint8>(1u << static_cast<uint8>(Direction));
+}
+
 /** Unit vector, in mesh local space, that the direction faces. */
 MINTCHOCO_API FVector PaintFaceDirectionVector(EPaintFaceDirection Direction);
 

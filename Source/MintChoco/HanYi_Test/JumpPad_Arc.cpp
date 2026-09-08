@@ -1,13 +1,13 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-#include "Gameplay/JumpPad.h"
+#include "HanYi_Test/JumpPad_Arc.h"
 
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/Character.h"
 #include "UObject/ConstructorHelpers.h"
 
-AJumpPad::AJumpPad()
+AJumpPad_Arc::AJumpPad_Arc()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = false;
@@ -31,14 +31,14 @@ AJumpPad::AJumpPad()
 	}
 }
 
-void AJumpPad::BeginPlay()
+void AJumpPad_Arc::BeginPlay()
 {
 	Super::BeginPlay();
 
-	TriggerBox->OnComponentBeginOverlap.AddDynamic(this, &AJumpPad::OnTriggerOverlap);
+	TriggerBox->OnComponentBeginOverlap.AddDynamic(this, &AJumpPad_Arc::OnTriggerOverlap);
 }
 
-FVector AJumpPad::CalculateLaunchVelocity() const
+FVector AJumpPad_Arc::CalculateLaunchVelocity() const
 {
 	const UWorld* World = GetWorld();
 	const float Gravity = (World != nullptr) ? FMath::Abs(World->GetGravityZ()) : 980.0f;
@@ -53,7 +53,7 @@ FVector AJumpPad::CalculateLaunchVelocity() const
 	return LaunchDirection * (Speed * FMath::Cos(AngleRadians)) + FVector::UpVector * (Speed * FMath::Sin(AngleRadians));
 }
 
-void AJumpPad::OnTriggerOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp,
+void AJumpPad_Arc::OnTriggerOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp,
 	int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
 	// 발사 결과(속도)는 캐릭터 무브먼트 컴포넌트가 복제하므로, 서버에서만 적용하면 된다.

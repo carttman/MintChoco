@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "JumpPad.generated.h"
+#include "JumpPad_Arc.generated.h"
 
 class UBoxComponent;
 class UStaticMeshComponent;
@@ -21,12 +21,12 @@ class UStaticMeshComponent;
  * 컴포넌트가 알아서 복제하므로, 이 액터 자체는 복제할 것이 없다.
  */
 UCLASS(Blueprintable)
-class MINTCHOCO_API AJumpPad : public AActor
+class MINTCHOCO_API AJumpPad_Arc : public AActor
 {
 	GENERATED_BODY()
 
 public:
-	AJumpPad();
+	AJumpPad_Arc();
 
 protected:
 	virtual void BeginPlay() override;
