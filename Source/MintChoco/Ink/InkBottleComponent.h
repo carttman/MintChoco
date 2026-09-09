@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/TimerHandle.h"
 
 #include "InkBottleComponent.generated.h"
 
@@ -16,6 +17,10 @@ class UMaterialInstanceDynamic;
  * dedicated server never ticks it. The material contract is small on purpose - the code writes
  * only Fill, WobbleTilt, WobbleEnergy and LiquidHeight (plus SurfaceUpBlend when HorizonLock is
  * set), so everything else about the look stays tunable in the material instance.
+ *
+ * An item effect (infinite ammo) can override the look with a second pair of materials and blink
+ * between the two as the effect runs out. Both looks keep their own dynamic instance, so the blink
+ * only swaps which one is on the mesh; the runtime parameters go to both every tick.
  */
 UCLASS(ClassGroup = (Paint), meta = (BlueprintSpawnableComponent))
 class MINTCHOCO_API UInkBottleComponent : public UStaticMeshComponent
@@ -26,11 +31,20 @@ public:
 	UInkBottleComponent();
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	/** Swaps to the team's ink material. An id without a material keeps whatever is showing. */
 	UFUNCTION(BlueprintCallable, Category = "Ink Bottle")
 	void SetTeam(int32 TeamId);
+
+	/** Shows the override materials instead of the team's while enabled. Without override materials, nothing changes. */
+	UFUNCTION(BlueprintCallable, Category = "Ink Bottle")
+	void SetLookOverride(bool bEnabled);
+
+	/** Alternates the override look with the team look every Interval seconds. Does nothing unless the override is on. */
+	UFUNCTION(BlueprintCallable, Category = "Ink Bottle")
+	void SetBlink(bool bEnabled, float Interval = 0.1f);
 
 	/**
 	 * The disc that draws the liquid's top. This component places it on the surface plane every
@@ -47,6 +61,14 @@ protected:
 	/** One surface-disc material per paint id, in team order. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ink Bottle")
 	TArray<TObjectPtr<UMaterialInterface>> TeamSurfaceMaterials;
+
+	/** Liquid material shown while an item overrides the look (red for infinite ammo). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ink Bottle|Override")
+	TObjectPtr<UMaterialInterface> OverrideLiquidMaterial;
+
+	/** Surface-disc material shown while an item overrides the look. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ink Bottle|Override")
+	TObjectPtr<UMaterialInterface> OverrideSurfaceMaterial;
 
 	/** Level shown when the owner has no ink tank. */
 	UPROPERTY(EditAnywhere, Category = "Ink Bottle", meta = (ClampMin = "0", ClampMax = "1"))
@@ -93,7 +115,12 @@ private:
 	void UpdateSurface();
 	void RebuildMaterial(UMaterialInterface* Base);
 	void RebuildSurfaceMaterial(UMaterialInterface* Base);
+	void EnsureOverrideMaterials();
+	UMaterialInstanceDynamic* CreateLiquidInstance(UMaterialInterface* Base);
+	void ApplyLook();
+	void ToggleBlink();
 	void PushRuntimeParameters();
+	void PushSurfaceParameters(UMaterialInstanceDynamic* Target, const FVector& Up, float Radius) const;
 	float ComputeLiquidHeight() const;
 	float GetSurfaceUpBlend() const;
 	FVector ComputeSurfaceNormal() const;
@@ -107,7 +134,14 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> SurfaceMID;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> OverrideLiquidMID;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> OverrideSurfaceMID;
+
 	TWeakObjectPtr<UInkTankComponent> Tank;
+	FTimerHandle BlinkTimer;
 	FVector PrevVelocity = FVector::ZeroVector;
 	FQuat PrevRotation = FQuat::Identity;
 	FVector2D Tilt = FVector2D::ZeroVector;
@@ -115,4 +149,7 @@ private:
 	float Energy = 0.0f;
 	float DisplayedFill = 1.0f;
 	bool bHasPrevious = false;
+	bool bLookOverride = false;
+	bool bBlink = false;
+	bool bBlinkPhase = false;
 };

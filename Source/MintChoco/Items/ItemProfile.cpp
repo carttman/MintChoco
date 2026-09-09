@@ -11,5 +11,4 @@ FGameplayTag UItemProfile::GetStateTag() const
 void UItemProfile::LogUnsetReferences(const UObject* Owner) const
 {
 	UE_CLOG(!AbilityClass, LogMintChoco, Warning, TEXT("%s: %s has no AbilityClass, using it will do nothing."), *GetNameSafe(Owner), *GetName());
-	UE_CLOG(!PickupMesh, LogMintChoco, Warning, TEXT("%s: %s has no PickupMesh, it will be invisible on the map."), *GetNameSafe(Owner), *GetName());
 }

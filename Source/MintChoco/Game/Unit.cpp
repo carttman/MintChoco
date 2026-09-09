@@ -16,9 +16,13 @@
 #include "Game/UnitMovementComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "GameplayEffect.h"
 #include "Ink/InkBottleComponent.h"
 #include "Ink/InkTankComponent.h"
 #include "InputActionValue.h"
+#include "Items/ItemGameplayEffect.h"
+#include "Items/ItemGameplayTags.h"
+#include "Items/ItemSettings.h"
 #include "Items/ItemSlotComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "MintChoco.h"
@@ -128,6 +132,148 @@ void AUnit::InitAbilityActorInfo()
 bool AUnit::IsSpeedBoostAuthorized() const
 {
 	return ItemSlot && ItemSlot->IsSpeedBoostAuthorized();
+}
+
+void AUnit::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// 스턴 태그는 모든 머신에 복제되므로 여기서 받으면 연출과 방아쇠 해제가 어디서나 맞는다.
+	if (AbilitySystem)
+	{
+		StunTagHandle = AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_Stunned, EGameplayTagEventType::NewOrRemoved)
+			.AddUObject(this, &AUnit::HandleStunTagChanged);
+	}
+}
+
+int32 AUnit::GetTeam() const
+{
+	const AGamePlayerState* const GamePlayerState = GetPlayerState<AGamePlayerState>();
+	return GamePlayerState ? GamePlayerState->GetTeam() : Teams::None;
+}
+
+bool AUnit::IsStunned() const
+{
+	return AbilitySystem && AbilitySystem->HasMatchingGameplayTag(ItemTags::State_Status_Stunned);
+}
+
+bool AUnit::HasSuperArmor() const
+{
+	return AbilitySystem && AbilitySystem->HasMatchingGameplayTag(ItemTags::State_Status_SuperArmor);
+}
+
+bool AUnit::IsMovementInputLocked() const
+{
+	if (!AbilitySystem)
+	{
+		return false;
+	}
+	return AbilitySystem->HasMatchingGameplayTag(ItemTags::State_Status_Stunned)
+		|| AbilitySystem->HasMatchingGameplayTag(ItemTags::State_Item_HeroLanding);
+}
+
+bool AUnit::CanJumpInternal_Implementation() const
+{
+	return !IsMovementInputLocked() && Super::CanJumpInternal_Implementation();
+}
+
+void AUnit::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+
+	// 히어로 랜딩의 내리꽂기가 끝났다. 단계 정리는 무브먼트 컴포넌트가, 효과는 어빌리티가 맡는다.
+	if (UUnitMovementComponent* const Movement = GetUnitMovement())
+	{
+		if (Movement->FinishHeroLandingDive())
+		{
+			OnHeroLandingFinished.Broadcast();
+		}
+	}
+}
+
+bool AUnit::ApplyStatusEffect(TSubclassOf<UGameplayEffect> EffectClass, const FGameplayTag& StatusTag, float Duration, FActiveGameplayEffectHandle& OutHandle)
+{
+	if (!AbilitySystem || !EffectClass || Duration <= 0.0f)
+	{
+		return false;
+	}
+
+	// 아이템 GE와 같은 골격: 지속시간은 SetByCaller, 태그는 스펙의 동적 태그.
+	FGameplayEffectSpecHandle Spec = AbilitySystem->MakeOutgoingSpec(EffectClass, 1.0f, AbilitySystem->MakeEffectContext());
+	if (!Spec.IsValid())
+	{
+		return false;
+	}
+	Spec.Data->SetSetByCallerMagnitude(ItemTags::Data_Item_Duration, Duration);
+	Spec.Data->DynamicGrantedTags.AddTag(StatusTag);
+	OutHandle = AbilitySystem->ApplyGameplayEffectSpecToSelf(*Spec.Data);
+	return OutHandle.WasSuccessfullyApplied();
+}
+
+bool AUnit::TryApplyStun()
+{
+	if (!HasAuthority() || IsStunned() || HasSuperArmor())
+	{
+		return false;
+	}
+
+	FActiveGameplayEffectHandle Handle;
+	if (!ApplyStatusEffect(UGE_Stunned::StaticClass(), ItemTags::State_Status_Stunned, UItemSettings::Get().StunDuration, Handle))
+	{
+		return false;
+	}
+
+	// 슈퍼아머는 스턴이 끝나는 바로 그 순간 이어져야 "스턴 2초 후 4초"가 된다.
+	if (FOnActiveGameplayEffectRemoved_Info* const Removed = AbilitySystem->OnGameplayEffectRemoved_InfoDelegate(Handle))
+	{
+		Removed->AddUObject(this, &AUnit::HandleStunEnded);
+	}
+
+	UE_LOG(LogMintChoco, Verbose, TEXT("%s: 스턴 %.1f초."), *GetNameSafe(this), UItemSettings::Get().StunDuration);
+	return true;
+}
+
+void AUnit::HandleStunEnded(const FGameplayEffectRemovalInfo& RemovalInfo)
+{
+	// 제거 알림은 클라이언트에도 복제로 오지만, 거는 것은 서버의 일이다.
+	if (!HasAuthority())
+	{
+		return;
+	}
+	FActiveGameplayEffectHandle Handle;
+	ApplyStatusEffect(UGE_SuperArmor::StaticClass(), ItemTags::State_Status_SuperArmor, UItemSettings::Get().SuperArmorDuration, Handle);
+}
+
+void AUnit::HandleStunTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+	const bool bStunned = NewCount > 0;
+	if (bStunned && PaintWeapon)
+	{
+		// 누르고 있던 방아쇠는 놓는다. 차지 중이었다면 발사되지 않는다.
+		PaintWeapon->CancelTrigger();
+	}
+	BP_OnStunned(bStunned);
+}
+
+void AUnit::Knockback(const FVector& From)
+{
+	if (!HasAuthority() || HasSuperArmor())
+	{
+		return;
+	}
+
+	const UItemSettings& Settings = UItemSettings::Get();
+	FVector Direction = GetActorLocation() - From;
+	Direction.Z = 0.0f;
+	if (!Direction.Normalize())
+	{
+		// 정확히 위에서 터졌다. 뒤로 민다.
+		Direction = -GetActorForwardVector();
+	}
+
+	// 서버만 건다. 소유 클라이언트에는 다음 보정이 새 속도를 실어 나른다. 클라이언트 RPC로 같이
+	// 걸면 보정과 순서가 어긋나 오히려 보정이 늘어난다.
+	LaunchCharacter(Direction * Settings.KnockbackSpeed + FVector(0.0f, 0.0f, Settings.KnockbackUpSpeed), /*bXYOverride=*/true, /*bZOverride=*/true);
 }
 
 void AUnit::ApplyTeamToWeapon()
@@ -352,13 +498,21 @@ void AUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	AppliedInputSubsystem.Reset();
 
+	if (AbilitySystem && StunTagHandle.IsValid())
+	{
+		AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_Stunned, EGameplayTagEventType::NewOrRemoved).Remove(StunTagHandle);
+	}
+	StunTagHandle.Reset();
+
 	Super::EndPlay(EndPlayReason);
 }
 
 void AUnit::Move(const FInputActionValue& Value)
 {
 	const FVector2D MoveInput = Value.Get<FVector2D>();
-	if (MoveInput.IsNearlyZero())
+
+	// 스턴이나 히어로 랜딩 중에는 입력을 버린다. 서버 쪽은 무브먼트 컴포넌트가 같은 규칙으로 막는다.
+	if (MoveInput.IsNearlyZero() || IsMovementInputLocked())
 	{
 		return;
 	}

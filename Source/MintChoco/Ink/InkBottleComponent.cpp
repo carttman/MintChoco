@@ -1,9 +1,11 @@
 #include "Ink/InkBottleComponent.h"
 
 #include "Engine/StaticMesh.h"
+#include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "TimerManager.h"
 
 #include "Ink/InkTankComponent.h"
 
@@ -68,6 +70,15 @@ void UInkBottleComponent::BeginPlay()
 	}
 }
 
+void UInkBottleComponent::EndPlay(const EEndPlayReason::Type Reason)
+{
+	if (const UWorld* const World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(BlinkTimer);
+	}
+	Super::EndPlay(Reason);
+}
+
 void UInkBottleComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -88,6 +99,44 @@ void UInkBottleComponent::SetTeam(int32 TeamId)
 	{
 		RebuildSurfaceMaterial(TeamSurfaceMaterials[TeamId]);
 	}
+}
+
+void UInkBottleComponent::SetLookOverride(bool bEnabled)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	bLookOverride = bEnabled;
+	if (bEnabled)
+	{
+		EnsureOverrideMaterials();
+	}
+	ApplyLook();
+}
+
+void UInkBottleComponent::SetBlink(bool bEnabled, float Interval)
+{
+	UWorld* const World = GetWorld();
+	if (!World || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	World->GetTimerManager().ClearTimer(BlinkTimer);
+	bBlink = bEnabled;
+	bBlinkPhase = true;
+	if (bEnabled)
+	{
+		World->GetTimerManager().SetTimer(BlinkTimer, this, &UInkBottleComponent::ToggleBlink, FMath::Max(Interval, 0.02f), /*bLoop=*/true);
+	}
+	ApplyLook();
+}
+
+void UInkBottleComponent::ToggleBlink()
+{
+	bBlinkPhase = !bBlinkPhase;
+	ApplyLook();
 }
 
 void UInkBottleComponent::SetSurfaceMesh(UStaticMeshComponent* InSurfaceMesh)
@@ -181,13 +230,31 @@ void UInkBottleComponent::UpdateSurface()
 	const float DiscScale = Radius * SurfaceDiscOversize / DiscHalfSize;
 	SurfaceMesh->SetWorldScale3D(FVector(DiscScale, DiscScale, 1.0f));
 
-	if (SurfaceMID)
+	PushSurfaceParameters(SurfaceMID, Up, Radius);
+	PushSurfaceParameters(OverrideSurfaceMID, Up, Radius);
+}
+
+void UInkBottleComponent::PushSurfaceParameters(UMaterialInstanceDynamic* Target, const FVector& Up, float Radius) const
+{
+	if (!Target)
 	{
-		SurfaceMID->SetVectorParameterValue(BottleCenterParam, FLinearColor(Bounds.Origin));
-		SurfaceMID->SetVectorParameterValue(BottleUpParam, FLinearColor(Up));
-		SurfaceMID->SetScalarParameterValue(BottleRadiusParam, Radius * SurfaceRadiusInset);
-		SurfaceMID->SetScalarParameterValue(WobbleEnergyParam, Energy);
+		return;
 	}
+	Target->SetVectorParameterValue(BottleCenterParam, FLinearColor(Bounds.Origin));
+	Target->SetVectorParameterValue(BottleUpParam, FLinearColor(Up));
+	Target->SetScalarParameterValue(BottleRadiusParam, Radius * SurfaceRadiusInset);
+	Target->SetScalarParameterValue(WobbleEnergyParam, Energy);
+}
+
+UMaterialInstanceDynamic* UInkBottleComponent::CreateLiquidInstance(UMaterialInterface* Base)
+{
+	UMaterialInstanceDynamic* const Instance = UMaterialInstanceDynamic::Create(Base, this);
+	Instance->SetScalarParameterValue(LiquidHeightParam, ComputeLiquidHeight());
+	if (HorizonLock >= 0.0f)
+	{
+		Instance->SetScalarParameterValue(SurfaceUpBlendParam, HorizonLock);
+	}
+	return Instance;
 }
 
 void UInkBottleComponent::RebuildMaterial(UMaterialInterface* Base)
@@ -197,14 +264,8 @@ void UInkBottleComponent::RebuildMaterial(UMaterialInterface* Base)
 		return;
 	}
 
-	LiquidMID = UMaterialInstanceDynamic::Create(Base, this);
-	SetMaterial(0, LiquidMID);
-
-	LiquidMID->SetScalarParameterValue(LiquidHeightParam, ComputeLiquidHeight());
-	if (HorizonLock >= 0.0f)
-	{
-		LiquidMID->SetScalarParameterValue(SurfaceUpBlendParam, HorizonLock);
-	}
+	LiquidMID = CreateLiquidInstance(Base);
+	ApplyLook();
 	PushRuntimeParameters();
 }
 
@@ -216,22 +277,56 @@ void UInkBottleComponent::RebuildSurfaceMaterial(UMaterialInterface* Base)
 	}
 
 	SurfaceMID = UMaterialInstanceDynamic::Create(Base, this);
-	SurfaceMesh->SetMaterial(0, SurfaceMID);
+	ApplyLook();
 	UpdateSurface();
+}
+
+void UInkBottleComponent::EnsureOverrideMaterials()
+{
+	if (OverrideLiquidMaterial && (!OverrideLiquidMID || OverrideLiquidMID->Parent != OverrideLiquidMaterial))
+	{
+		OverrideLiquidMID = CreateLiquidInstance(OverrideLiquidMaterial);
+		PushRuntimeParameters();
+	}
+	if (SurfaceMesh && OverrideSurfaceMaterial && (!OverrideSurfaceMID || OverrideSurfaceMID->Parent != OverrideSurfaceMaterial))
+	{
+		OverrideSurfaceMID = UMaterialInstanceDynamic::Create(OverrideSurfaceMaterial, this);
+		UpdateSurface();
+	}
+}
+
+void UInkBottleComponent::ApplyLook()
+{
+	// The blink shows the override on the "on" phase and the team look on the "off" phase.
+	const bool bShowOverride = bLookOverride && (!bBlink || bBlinkPhase);
+
+	UMaterialInstanceDynamic* const Liquid = bShowOverride && OverrideLiquidMID ? OverrideLiquidMID.Get() : LiquidMID.Get();
+	if (Liquid && GetMaterial(0) != Liquid)
+	{
+		SetMaterial(0, Liquid);
+	}
+
+	UMaterialInstanceDynamic* const Surface = bShowOverride && OverrideSurfaceMID ? OverrideSurfaceMID.Get() : SurfaceMID.Get();
+	if (SurfaceMesh && Surface && SurfaceMesh->GetMaterial(0) != Surface)
+	{
+		SurfaceMesh->SetMaterial(0, Surface);
+	}
 }
 
 void UInkBottleComponent::PushRuntimeParameters()
 {
-	if (!LiquidMID)
-	{
-		return;
-	}
-
 	// The walls get the same clamped fill as the disc, so the cut never lands on an end cap.
 	const float Fill = FMath::Clamp(DisplayedFill, SurfaceFillMargin, 1.0f - SurfaceFillMargin);
-	LiquidMID->SetScalarParameterValue(FillParam, Fill);
-	LiquidMID->SetVectorParameterValue(WobbleTiltParam, FLinearColor(Tilt.X, Tilt.Y, 0.0f, 0.0f));
-	LiquidMID->SetScalarParameterValue(WobbleEnergyParam, Energy);
+	for (UMaterialInstanceDynamic* const Target : { LiquidMID.Get(), OverrideLiquidMID.Get() })
+	{
+		if (!Target)
+		{
+			continue;
+		}
+		Target->SetScalarParameterValue(FillParam, Fill);
+		Target->SetVectorParameterValue(WobbleTiltParam, FLinearColor(Tilt.X, Tilt.Y, 0.0f, 0.0f));
+		Target->SetScalarParameterValue(WobbleEnergyParam, Energy);
+	}
 }
 
 float UInkBottleComponent::ComputeLiquidHeight() const

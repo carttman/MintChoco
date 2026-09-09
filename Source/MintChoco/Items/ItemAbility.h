@@ -27,6 +27,10 @@ struct FGameplayEffectRemovalInfo;
  *
  * 같은 아이템을 효과 중에 다시 쓰면 bRetriggerInstancedAbility가 이 인스턴스를 끝내고
  * 다시 활성화하며, GE는 스택 갱신으로 타이머만 다시 시작한다.
+ *
+ * 즉발 아이템(프로필 Duration 0)은 GE 없이 OnItemActivated 직후 끝난다. 효과는 그 안에서
+ * 스폰한 액터(투사체, 돔, 살포)가 이어받는다. 지속형이지만 일찍 끝날 수 있는 아이템(히어로
+ * 랜딩)은 FinishItem으로 GE를 걷고 끝낸다.
  */
 UCLASS(Abstract)
 class MINTCHOCO_API UItemAbility : public UGameplayAbility
@@ -53,9 +57,18 @@ protected:
 	/** 효과가 끝날 때(만료, 리트리거, 취소 모두). OnItemActivated가 불린 인스턴스에서만 온다. */
 	virtual void OnItemEnded(AUnit& Unit, const UItemProfile& Profile) {}
 
+	/**
+	 * 지속시간 전에 효과를 끝낸다. 서버는 자기 GE를 걷고 끝을 복제하며, 클라이언트는 자기만 끝낸다.
+	 * (서버가 따로 자기 시계로 끝내고 ClientEndAbility가 오므로 두 번 끝나도 안전하다.)
+	 */
+	void FinishItem();
+
 	AUnit* GetUnit() const;
 	const UItemProfile* GetItemProfile() const;
 	bool IsAuthority() const;
+
+	/** 사용자 팀의 페인트 id. 팀이 없으면 무기의 id. */
+	uint8 GetPaintId() const;
 
 	FGameplayTag StateTag;
 	TSubclassOf<UItemGameplayEffect> EffectClass;
@@ -68,6 +81,9 @@ private:
 	void HandleDurationElapsed();
 
 	void EndFromTimer();
+
+	/** 이 인스턴스가 건 GE. 즉발이면 무효. */
+	FActiveGameplayEffectHandle AppliedEffect;
 
 	/** OnItemActivated가 불렸는지. EndAbility는 여러 경로로 두 번 올 수 있어 짝을 맞춘다. */
 	bool bItemStarted = false;
