@@ -7,6 +7,7 @@
 #include "UnitMovementComponent.generated.h"
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnDashStateChanged, bool /*bDashing*/);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnSpeedBoostStateChanged, bool /*bBoosting*/);
 
 /**
  * 대시(지속형 이동 가속)를 클라이언트 예측으로 처리하는 무브먼트 컴포넌트.
@@ -41,6 +42,27 @@ public:
 	FOnDashStateChanged OnDashStateChanged;
 
 	/**
+	 * 아이템(스피드 스타)의 속도 부스트 의도. 대시와 같은 경로로 압축 플래그에 실린다.
+	 *
+	 * 소유 클라이언트에서는 슬롯 컴포넌트가 효과 태그를 보고 세우고, 서버는
+	 * UpdateFromCompressedFlags에서 되살린다. GAS의 속성 예측으로 속도를 바꾸면 서버가
+	 * 효과를 적용하기 전(RTT/2)의 무브를 옛 속도로 시뮬레이션해 보정이 나므로, 속도는
+	 * GE가 아니라 이 플래그가 정한다.
+	 */
+	void SetWantsSpeedBoost(bool bNewWantsSpeedBoost);
+
+	bool WantsSpeedBoost() const { return bWantsSpeedBoost != 0; }
+
+	FOnSpeedBoostStateChanged OnSpeedBoostStateChanged;
+
+	/**
+	 * 부스트 중의 이동 속도(cm/s). 배율이 아니라 고정값이다: "감속 지대 무시"가 규칙이라
+	 * 기본 속도에 무엇이 곱해지든 이 값으로 달린다. 대시도 여기에 곱해지지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item", meta = (ClampMin = "0", ForceUnits = "cm/s"))
+	float SpeedBoostSpeed = 1500.0f;
+
+	/**
 	 * 기본 이동 속도에 곱해지는 배율.
 	 *
 	 * 절대값이 아니라 배율인 이유는, 나중에 아이템 이동속도 버프가 붙었을 때
@@ -57,6 +79,12 @@ private:
 	 * 서버에 전달되며, 서버는 UpdateFromCompressedFlags에서 되살린다.
 	 */
 	uint8 bWantsToDash : 1;
+
+	/** 속도 부스트 의도. 대시와 같은 규칙으로 다뤄진다. */
+	uint8 bWantsSpeedBoost : 1;
+
+	/** 서버가 클라이언트의 부스트 플래그를 인정해도 되는지 유닛에게 묻는다. 유닛이 아니면 항상 참. */
+	bool IsSpeedBoostAllowed() const;
 };
 
 /**
@@ -78,6 +106,7 @@ public:
 
 private:
 	uint8 bSavedWantsToDash : 1;
+	uint8 bSavedWantsSpeedBoost : 1;
 };
 
 class FNetworkPredictionData_Client_Unit : public FNetworkPredictionData_Client_Character

@@ -3,6 +3,7 @@
 
 #include "Game/Unit.h"
 
+#include "AbilitySystemComponent.h"
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -15,7 +16,10 @@
 #include "Game/UnitMovementComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Ink/InkBottleComponent.h"
+#include "Ink/InkTankComponent.h"
 #include "InputActionValue.h"
+#include "Items/ItemSlotComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "MintChoco.h"
 #include "Net/UnrealNetwork.h"
@@ -63,18 +67,66 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	FollowCamera->bUsePawnControlRotation = false;
 
 	PaintWeapon = CreateDefaultSubobject<UPaintWeaponComponent>(TEXT("PaintWeapon"));
+	InkTank = CreateDefaultSubobject<UInkTankComponent>(TEXT("InkTank"));
+
+	AbilitySystem = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystem"));
+	AbilitySystem->SetIsReplicated(true);
+	AbilitySystem->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
+
+	ItemSlot = CreateDefaultSubobject<UItemSlotComponent>(TEXT("ItemSlot"));
+
+	// 병은 스켈레탈 메시의 InkBottle 소켓에 붙는다. 소켓은 메시가 UnitData로 정해진 뒤에야
+	// 존재하므로 여기서는 메시에만 붙이고, ApplyUnitData가 소켓으로 옮긴다. 소켓 위치는
+	// 메시 에셋마다 정하므로 캐릭터가 바뀌어도 코드는 그대로다.
+	InkBottle = CreateDefaultSubobject<UInkBottleComponent>(TEXT("InkBottle"));
+	InkBottle->SetupAttachment(GetMesh());
+
+	InkGlass = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("InkGlass"));
+	InkGlass->SetupAttachment(InkBottle);
+	InkGlass->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	InkGlass->SetGenerateOverlapEvents(false);
+
+	InkSurface = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("InkSurface"));
+	InkSurface->SetupAttachment(InkBottle);
+	InkSurface->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	InkSurface->SetGenerateOverlapEvents(false);
+	InkBottle->SetSurfaceMesh(InkSurface);
 }
 
 void AUnit::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
+
+	// 어빌리티를 주기 전에 액터 정보가 서 있어야 한다. 아이템 습득은 이보다 뒤다.
+	InitAbilityActorInfo();
 	ApplyTeamToWeapon();
 }
 
 void AUnit::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
+	InitAbilityActorInfo();
 	ApplyTeamToWeapon();
+}
+
+UAbilitySystemComponent* AUnit::GetAbilitySystemComponent() const
+{
+	return AbilitySystem;
+}
+
+void AUnit::InitAbilityActorInfo()
+{
+	if (AbilitySystem)
+	{
+		// 소유자도 아바타도 이 폰이다. Mixed 모드가 요구하는 "소유자의 Owner가 컨트롤러"는
+		// 빙의된 폰이 자연히 만족한다.
+		AbilitySystem->InitAbilityActorInfo(this, this);
+	}
+}
+
+bool AUnit::IsSpeedBoostAuthorized() const
+{
+	return ItemSlot && ItemSlot->IsSpeedBoostAuthorized();
 }
 
 void AUnit::ApplyTeamToWeapon()
@@ -82,9 +134,23 @@ void AUnit::ApplyTeamToWeapon()
 	// 팀 번호가 곧 페인트 id다(민트 0, 초코 1). 팀이 없는 PlayerState(샘플 맵)는
 	// 건드리지 않아, 다른 곳에서 정해 준 id가 남는다.
 	const AGamePlayerState* GamePlayerState = GetPlayerState<AGamePlayerState>();
-	if (PaintWeapon && GamePlayerState && Teams::IsValidId(GamePlayerState->GetTeam()))
+	if (!GamePlayerState || !Teams::IsValidId(GamePlayerState->GetTeam()))
+	{
+		return;
+	}
+
+	// 병 색은 무기의 페인트 id를 따라가므로(HandlePaintIdChanged) 여기서 따로 칠하지 않는다.
+	if (PaintWeapon)
 	{
 		PaintWeapon->SetPaintId(static_cast<uint8>(GamePlayerState->GetTeam()));
+	}
+}
+
+void AUnit::HandlePaintIdChanged(uint8 PaintId)
+{
+	if (InkBottle)
+	{
+		InkBottle->SetTeam(PaintId);
 	}
 }
 
@@ -96,6 +162,14 @@ void AUnit::PostInitializeComponents()
 	// 여기서 보이는 값은 클라이언트에서도 블루프린트 기본값이므로, 런타임에
 	// 교체된 경우는 OnRep_UnitData가 뒤이어 처리한다.
 	ApplyUnitData();
+
+	// 병은 무기의 페인트 id 하나만 본다. 팀(PlayerState)이든 샘플 맵의 휠이든 어디서 정해도
+	// 그 값은 무기에서 복제되므로, 다른 클라이언트의 병도 같은 경로로 색이 맞는다.
+	if (PaintWeapon)
+	{
+		PaintWeapon->OnPaintIdChanged.AddDynamic(this, &AUnit::HandlePaintIdChanged);
+		HandlePaintIdChanged(PaintWeapon->GetPaintId());
+	}
 
 	// 소유 클라이언트에서는 입력이, 서버에서는 압축 플래그가 이 알림을 낸다.
 	// 어느 쪽이든 실제로 상태가 바뀔 때만 한 번씩 온다.
@@ -181,12 +255,26 @@ void AUnit::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	}
 
 	// 연사와 붓은 누르고 있는 동안 계속 나가야 하므로 놓는 쪽도 묶는다.
-	// Canceled는 다른 입력이 이 액션을 가로챘을 때이며, 그때도 방아쇠는 놓여야 한다.
+	// Canceled는 다른 입력이 가로채거나 누른 채로 매핑이 빠질 때(EndPlay)이며, 그때는 방아쇠를
+	// 놓되 쏘지는 않는다. 차지형 무기는 놓는 순간 발사되므로 둘을 구분해야 한다.
 	if (InputConfig->FireAction)
 	{
 		EnhancedInput->BindAction(InputConfig->FireAction, ETriggerEvent::Started, this, &AUnit::StartFire);
 		EnhancedInput->BindAction(InputConfig->FireAction, ETriggerEvent::Completed, this, &AUnit::StopFire);
-		EnhancedInput->BindAction(InputConfig->FireAction, ETriggerEvent::Canceled, this, &AUnit::StopFire);
+		EnhancedInput->BindAction(InputConfig->FireAction, ETriggerEvent::Canceled, this, &AUnit::CancelFire);
+	}
+
+	if (InputConfig->ItemAction)
+	{
+		EnhancedInput->BindAction(InputConfig->ItemAction, ETriggerEvent::Started, this, &AUnit::UseItem);
+	}
+}
+
+void AUnit::UseItem()
+{
+	if (ItemSlot)
+	{
+		ItemSlot->TryUseHeldItem();
 	}
 }
 
@@ -198,6 +286,11 @@ void AUnit::StartFire()
 void AUnit::StopFire()
 {
 	PaintWeapon->ReleaseTrigger();
+}
+
+void AUnit::CancelFire()
+{
+	PaintWeapon->CancelTrigger();
 }
 
 void AUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -387,5 +480,12 @@ void AUnit::ApplyUnitData()
 	if (UnitData->AnimClass)
 	{
 		MeshComponent->SetAnimInstanceClass(UnitData->AnimClass);
+	}
+
+	// 소켓 이름으로 다시 붙여야 교체된 메시의 소켓을 따라간다. 소켓이 없는 메시면
+	// 메시 원점에 남으므로, 병이 발밑에 보이면 그 메시에 InkBottle 소켓이 빠진 것이다.
+	if (InkBottle)
+	{
+		InkBottle->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("InkBottle"));
 	}
 }

@@ -10,6 +10,7 @@
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "Screen/ScreenFadeSubsystem.h"
 #include <string>
 
 /** Steam appid 480은 전 세계가 공유하는 로비 풀이라, 우리 세션만 식별할 키가 필요하다. */
@@ -101,6 +102,13 @@ bool UOnlineSessionsSubsystem::HasExistingSession() const
 
 void UOnlineSessionsSubsystem::TravelToRoomList()
 {
+	// 페이드 아웃 뒤에 떠난다. 가림막 서브시스템이 없을 때만 바로 간다.
+	if (UScreenFadeSubsystem* const Fade = GetGameInstance() ? GetGameInstance()->GetSubsystem<UScreenFadeSubsystem>() : nullptr)
+	{
+		Fade->ClientTravelWithFade(TEXT("/Game/Maps/Room"));
+		return;
+	}
+
 	UWorld* world = GetWorld();
 	APlayerController* pc = world ? world->GetFirstPlayerController() : nullptr;
 	if (pc)
@@ -196,7 +204,14 @@ void UOnlineSessionsSubsystem::OnMyCreateSessionComplete(FName SessionName, bool
 	if (bWasSuccessful)
 	{
 		UE_LOG(LogTemp, Warning, TEXT("CreateSession Success!!!"));
-		GetWorld()->ServerTravel(TEXT("/Game/Maps/Lobby?listen"));
+		if (UScreenFadeSubsystem* const Fade = GetGameInstance() ? GetGameInstance()->GetSubsystem<UScreenFadeSubsystem>() : nullptr)
+		{
+			Fade->ServerTravelWithFade(TEXT("/Game/Maps/Lobby?listen"));
+		}
+		else
+		{
+			GetWorld()->ServerTravel(TEXT("/Game/Maps/Lobby?listen"));
+		}
 	}
 	else
 	{
@@ -364,6 +379,13 @@ void UOnlineSessionsSubsystem::OnMyJoinSessionComplete(FName SessionName, EOnJoi
 	FString url;
 	SessionInterface->GetResolvedConnectString(SessionName, url);
 	UE_LOG(LogTemp, Warning, TEXT("join url : %s"), *url);
+	UScreenFadeSubsystem* const Fade = GetGameInstance() ? GetGameInstance()->GetSubsystem<UScreenFadeSubsystem>() : nullptr;
+	if (false == url.IsEmpty() && Fade)
+	{
+		Fade->ClientTravelWithFade(url);
+		return;
+	}
+
 	auto* pc = GetWorld()->GetFirstPlayerController();
 	if (false == url.IsEmpty() && pc)
 	{

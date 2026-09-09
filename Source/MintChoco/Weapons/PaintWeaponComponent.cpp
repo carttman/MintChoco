@@ -1,5 +1,7 @@
 #include "Weapons/PaintWeaponComponent.h"
 
+#include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
@@ -8,6 +10,8 @@
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
+#include "Ink/InkTankComponent.h"
+#include "Items/ItemGameplayTags.h"
 #include "Paint/PaintLog.h"
 
 UPaintWeaponComponent::UPaintWeaponComponent()
@@ -18,6 +22,18 @@ UPaintWeaponComponent::UPaintWeaponComponent()
 
 	// The shot RPCs travel on this component, which requires it to replicate.
 	SetIsReplicatedByDefault(true);
+
+	TriggerBlockedTags.AddTag(ItemTags::State_Item_SweetSpinner);
+}
+
+bool UPaintWeaponComponent::IsTriggerBlocked() const
+{
+	if (TriggerBlockedTags.IsEmpty())
+	{
+		return false;
+	}
+	const UAbilitySystemComponent* const AbilitySystem = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetOwner());
+	return AbilitySystem && AbilitySystem->HasAnyMatchingGameplayTags(TriggerBlockedTags);
 }
 
 void UPaintWeaponComponent::BeginPlay()
@@ -25,6 +41,7 @@ void UPaintWeaponComponent::BeginPlay()
 	Super::BeginPlay();
 
 	NextSeed = FMath::Rand();
+	Tank = GetOwner() ? GetOwner()->FindComponentByClass<UInkTankComponent>() : nullptr;
 	if (Profile)
 	{
 		Profile->LogUnsetReferences(GetOwner());
@@ -33,7 +50,7 @@ void UPaintWeaponComponent::BeginPlay()
 
 void UPaintWeaponComponent::EndPlay(const EEndPlayReason::Type Reason)
 {
-	ReleaseTrigger();
+	CancelTrigger();
 	Super::EndPlay(Reason);
 }
 
@@ -42,6 +59,7 @@ void UPaintWeaponComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(UPaintWeaponComponent, Profile);
+	DOREPLIFETIME(UPaintWeaponComponent, PaintId);
 }
 
 void UPaintWeaponComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -57,7 +75,7 @@ void UPaintWeaponComponent::SetProfile(UPaintWeaponProfile* NewProfile)
 		return;
 	}
 
-	ReleaseTrigger();
+	CancelTrigger();
 	Profile = NewProfile;
 	if (Profile && HasBegunPlay())
 	{
@@ -76,11 +94,37 @@ void UPaintWeaponComponent::ServerSetProfile_Implementation(UPaintWeaponProfile*
 	SetProfile(NewProfile);
 }
 
+void UPaintWeaponComponent::SetPaintId(uint8 NewPaintId)
+{
+	if (PaintId == NewPaintId) return;
+
+	PaintId = NewPaintId;
+	OnPaintIdChanged.Broadcast(PaintId);
+
+	// The server paints with its own copy, so an id picked on the owning client has to reach it.
+	// A simulated proxy only mirrors what replication gave it and has no say.
+	const APawn* const Pawn = GetOwnerPawn();
+	if (!HasAuthority() && Pawn && Pawn->IsLocallyControlled())
+	{
+		ServerSetPaintId(NewPaintId);
+	}
+}
+
+void UPaintWeaponComponent::ServerSetPaintId_Implementation(uint8 NewPaintId)
+{
+	SetPaintId(NewPaintId);
+}
+
+void UPaintWeaponComponent::OnRep_PaintId()
+{
+	OnPaintIdChanged.Broadcast(PaintId);
+}
+
 void UPaintWeaponComponent::OnRep_Profile()
 {
 	// The server overruled a profile this owner had already switched to, or swapped it outright;
 	// either way a held trigger belongs to the old profile and must not carry on into this one.
-	ReleaseTrigger();
+	CancelTrigger();
 	if (Profile && HasBegunPlay())
 	{
 		Profile->LogUnsetReferences(GetOwner());
@@ -89,30 +133,45 @@ void UPaintWeaponComponent::OnRep_Profile()
 
 void UPaintWeaponComponent::PullTrigger()
 {
-	if (bTriggerHeld || !Profile)
+	if (bTriggerHeld || !Profile || IsTriggerBlocked())
 	{
 		return;
 	}
 
 	bTriggerHeld = true;
 	Stroke.Reset();
-	FireOnce();
 
 	switch (Profile->FireMode)
 	{
 	case EPaintFireMode::Single:
+		FireOnce();
 		break;
 	case EPaintFireMode::Automatic:
+		FireOnce();
 		GetWorld()->GetTimerManager().SetTimer(
 			ShotTimer, this, &UPaintWeaponComponent::OnShotTimer, Profile->GetShotInterval(), /*bLoop=*/true);
 		break;
 	case EPaintFireMode::Continuous:
+		FireOnce();
 		SetComponentTickEnabled(true);
+		break;
+	case EPaintFireMode::Charged:
+		PressTime = GetWorld()->GetTimeSeconds();
 		break;
 	}
 }
 
 void UPaintWeaponComponent::ReleaseTrigger()
+{
+	// FireOnce refuses a trigger that is not held, so the charged shot goes before the cancel.
+	if (GetChargeFraction() >= 1.0f)
+	{
+		FireOnce();
+	}
+	CancelTrigger();
+}
+
+void UPaintWeaponComponent::CancelTrigger()
 {
 	if (!bTriggerHeld)
 	{
@@ -126,6 +185,17 @@ void UPaintWeaponComponent::ReleaseTrigger()
 	{
 		World->GetTimerManager().ClearTimer(ShotTimer);
 	}
+}
+
+float UPaintWeaponComponent::GetChargeFraction() const
+{
+	const UWorld* const World = GetWorld();
+	if (!bTriggerHeld || !World || !Profile || Profile->FireMode != EPaintFireMode::Charged)
+	{
+		return 0.0f;
+	}
+	const double Held = World->GetTimeSeconds() - PressTime;
+	return static_cast<float>(FMath::Clamp(Held / FMath::Max(static_cast<double>(Profile->ChargeTime), UE_DOUBLE_KINDA_SMALL_NUMBER), 0.0, 1.0));
 }
 
 void UPaintWeaponComponent::SetSeedOverride(bool bInUseFixedSeed, int32 InFixedSeed)
@@ -146,9 +216,27 @@ bool UPaintWeaponComponent::HasAuthority() const
 	return Owner && Owner->HasAuthority();
 }
 
+float UPaintWeaponComponent::GetShotCost() const
+{
+	return Profile ? Profile->InkCostPerShot : 0.0f;
+}
+
+bool UPaintWeaponComponent::CanAffordShot() const
+{
+	return !Tank.IsValid() || Tank->CanAfford(GetShotCost());
+}
+
+void UPaintWeaponComponent::SpendShot()
+{
+	if (Tank.IsValid())
+	{
+		Tank->TryConsume(GetShotCost());
+	}
+}
+
 bool UPaintWeaponComponent::FireOnce()
 {
-	if (!bTriggerHeld || !Profile || !GetWorld())
+	if (!bTriggerHeld || !Profile || !GetWorld() || !CanAffordShot())
 	{
 		return false;
 	}
@@ -175,6 +263,9 @@ bool UPaintWeaponComponent::FireOnce()
 		return false;
 	}
 
+	// With authority this is the real spend; the owner's is a prediction the replicated tank corrects.
+	SpendShot();
+
 	if (Context.bAuthority)
 	{
 		MulticastShotFired(Shot);
@@ -193,7 +284,9 @@ bool UPaintWeaponComponent::FireOnce()
 
 void UPaintWeaponComponent::ServerFire_Implementation(int32 Seed, FVector_NetQuantize ViewOrigin, FVector_NetQuantizeNormal ViewDirection)
 {
-	if (!Profile || !GetWorld())
+	// The owner checked its own tank before asking, but only the server's copy is the truth.
+	// The same goes for a blocking tag: an owner that fired anyway is refused here.
+	if (!Profile || !GetWorld() || !CanAffordShot() || IsTriggerBlocked())
 	{
 		return;
 	}
@@ -209,6 +302,7 @@ void UPaintWeaponComponent::ServerFire_Implementation(int32 Seed, FVector_NetQua
 	FPaintShot Shot;
 	if (Profile->Fire(Context, FreshStroke, Shot))
 	{
+		SpendShot();
 		MulticastShotFired(Shot);
 		OnFired.Broadcast(Seed);
 	}

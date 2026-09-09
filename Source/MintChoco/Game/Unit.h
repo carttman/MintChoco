@@ -3,15 +3,21 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "AbilitySystemInterface.h"
 #include "GameFramework/Character.h"
 #include "Game/UnitDataAsset.h"
 #include "Unit.generated.h"
 
+class UAbilitySystemComponent;
 class UCameraComponent;
 class UEnhancedInputLocalPlayerSubsystem;
+class UInkBottleComponent;
+class UInkTankComponent;
+class UItemSlotComponent;
 class UPaintWeaponComponent;
 class UNiagaraComponent;
 class USpringArmComponent;
+class UStaticMeshComponent;
 class UUnitInputConfig;
 class UUnitMovementComponent;
 struct FInputActionValue;
@@ -28,7 +34,7 @@ struct FInputActionValue;
  * 연출은 UnitData의 ActionFeedback에서 꺼내 쓰며, 어느 캐릭터인지 묻지 않는다.
  */
 UCLASS()
-class MINTCHOCO_API AUnit : public ACharacter
+class MINTCHOCO_API AUnit : public ACharacter, public IAbilitySystemInterface
 {
 	GENERATED_BODY()
 
@@ -43,14 +49,26 @@ public:
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void OnRep_PlayerState() override;
 
+	//~ IAbilitySystemInterface
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
 	UFUNCTION(BlueprintPure, Category = "Unit")
 	const UUnitDataAsset* GetUnitData() const { return UnitData; }
 
 	UFUNCTION(BlueprintPure, Category = "Weapon")
 	UPaintWeaponComponent* GetPaintWeapon() const { return PaintWeapon; }
 
+	UFUNCTION(BlueprintPure, Category = "Ink")
+	UInkTankComponent* GetInkTank() const { return InkTank; }
+
+	UFUNCTION(BlueprintPure, Category = "Item")
+	UItemSlotComponent* GetItemSlot() const { return ItemSlot; }
+
+	/** 서버가 클라이언트의 속도 부스트 플래그를 인정해도 되는지. 슬롯 컴포넌트가 답한다. */
+	bool IsSpeedBoostAuthorized() const;
+
 	/**
-	 * PlayerState의 팀을 무기의 페인트 id로 옮긴다.
+	 * PlayerState의 팀을 무기의 페인트 id로 옮긴다. 잉크병은 그 id를 따라 색이 바뀐다.
 	 *
 	 * 빙의 시점, 폰의 PlayerState가 복제된 시점, 팀 값 자체가 복제된 시점
 	 * (AGamePlayerState::OnRep_Team) 세 곳에서 불린다. 팀은 폰이 아니라 PlayerState에
@@ -125,10 +143,43 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UPaintWeaponComponent> PaintWeapon;
 
+	/** 잉크 잔량. 무기가 발사마다 여기서 꺼내 쓰고, 등 뒤 병이 이 값을 보여준다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ink")
+	TObjectPtr<UInkTankComponent> InkTank;
+
+	/**
+	 * 어빌리티 시스템. 아이템 효과(어빌리티, 지속형 GE, 상태 태그)가 여기서 돈다.
+	 *
+	 * 폰에 두는 이유는 효과가 폰의 것이기 때문이다: 이동 속도, 회전, 무기 잠금은 모두 이
+	 * 폰에 걸리고, 폰이 바뀌면 효과도 같이 사라지는 것이 맞다. Mixed 복제: GE는
+	 * 소유자에게만, 태그는 모두에게 간다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ability")
+	TObjectPtr<UAbilitySystemComponent> AbilitySystem;
+
+	/** 아이템 슬롯. 습득·사용·연출은 전부 이 컴포넌트가 맡고, 유닛은 키만 넘긴다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
+	TObjectPtr<UItemSlotComponent> ItemSlot;
+
+	/** 등 뒤 잉크병의 액체. 메시의 InkBottle 소켓에 붙고, 출렁임과 잔량 표시를 스스로 돌린다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ink")
+	TObjectPtr<UInkBottleComponent> InkBottle;
+
+	/** 잉크병 유리. 액체에 딸려 움직일 뿐 로직은 없다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ink")
+	TObjectPtr<UStaticMeshComponent> InkGlass;
+
+	/** 잉크 수면 디스크. 위치와 기울기는 매 틱 InkBottle이 월드 좌표로 놓는다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ink")
+	TObjectPtr<UStaticMeshComponent> InkSurface;
+
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void StartFire();
 	void StopFire();
+
+	/** 입력이 가로채이거나 매핑이 빠져서 방아쇠가 풀릴 때. 차지형 무기가 이때 발사되면 안 된다. */
+	void CancelFire();
 
 	/**
 	 * 홀드형 입력이라 Started와 Completed로 나눠 바인딩한다. Triggered는 눌린 동안
@@ -138,12 +189,21 @@ protected:
 	void StartDash();
 	void StopDash();
 
+	/** 아이템 키. 탭 한 번이 곧 사용이라 Started만 묶는다. */
+	void UseItem();
+
 private:
+	/** 어빌리티 액터 정보를 이 폰으로 맞춘다. 서버는 빙의 때, 클라이언트는 PlayerState 도착 때. */
+	void InitAbilityActorInfo();
 	/** 대시 의도를 무브먼트 컴포넌트에 전달한다. 컴포넌트 타입이 틀리면 여기서 드러난다. */
 	void SetDashInput(bool bWantsToDash);
 
 	/** 실제로 대시 상태가 바뀔 때 무브먼트 컴포넌트가 알려준다. */
 	void HandleDashStateChanged(bool bDashing);
+
+	/** 무기의 페인트 id가 바뀌면(로컬 세팅이든 복제든) 잉크병을 그 팀 색으로 맞춘다. */
+	UFUNCTION()
+	void HandlePaintIdChanged(uint8 PaintId);
 
 	UFUNCTION()
 	void OnRep_IsDashing();

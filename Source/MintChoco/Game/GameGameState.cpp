@@ -1,10 +1,21 @@
 #include "Game/GameGameState.h"
 
+#include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "Game/TeamTypes.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
 #include "Paint/PaintSubsystem.h"
+
+static TAutoConsoleVariable<int32> CVarShowCoverage(
+	TEXT("mc.ShowCoverage"),
+	0,
+	TEXT("1이면 팀별 페인트 점유 면적을 화면에 표시한다. 서버와 클라이언트가 각자 가진 값을 그린다."),
+	ECVF_Default);
+
+/** 화면 디버그 줄의 키. 같은 키에 다시 쓰면 새 줄이 쌓이지 않고 제자리에서 갱신된다. */
+static constexpr uint64 CoverageDebugKeyBase = 0x4D430001;
 
 void AGameGameState::BeginPlay()
 {
@@ -49,12 +60,127 @@ void AGameGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 
 	DOREPLIFETIME(AGameGameState, SplatLog);
 	DOREPLIFETIME(AGameGameState, WorldCoverage);
+	DOREPLIFETIME(AGameGameState, MatchEndServerTime);
+	DOREPLIFETIME(AGameGameState, WinningTeam);
+	DOREPLIFETIME(AGameGameState, bMatchEnded);
+}
+
+void AGameGameState::SetMatchEndTime(double InServerTime)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	MatchEndServerTime = InServerTime;
+}
+
+void AGameGameState::SetMatchResult(int32 InWinningTeam)
+{
+	if (!HasAuthority() || bMatchEnded)
+	{
+		return;
+	}
+
+	WinningTeam = InWinningTeam;
+	bMatchEnded = true;
+
+	// RepNotify는 값을 쓴 권한자에게는 오지 않는다. 리슨 호스트의 화면도 갱신되도록 직접 부른다.
+	HandleMatchEnded();
+}
+
+float AGameGameState::GetRemainingTime() const
+{
+	if (MatchEndServerTime <= 0.0)
+	{
+		return 0.0f;
+	}
+
+	return static_cast<float>(FMath::Max(0.0, MatchEndServerTime - GetServerWorldTimeSeconds()));
+}
+
+void AGameGameState::OnRep_WorldCoverage()
+{
+	DrawCoverageDebug();
+}
+
+void AGameGameState::OnRep_MatchEnded()
+{
+	HandleMatchEnded();
+}
+
+void AGameGameState::HandleMatchEnded()
+{
+	DrawCoverageDebug();
+
+	BP_OnMatchEnded(WinningTeam);
+}
+
+void AGameGameState::DrawCoverageDebug() const
+{
+	if (!GEngine || CVarShowCoverage.GetValueOnGameThread() == 0)
+	{
+		return;
+	}
+
+	// 같은 키에 다시 쓰면 줄이 제자리에서 갱신된다. 커버리지 갱신 주기보다 넉넉히 잡아
+	// 갱신이 잠깐 끊겨도 화면에서 사라지지 않게 한다.
+	constexpr float Duration = 2.0f;
+	const TCHAR* const Side = HasAuthority() ? TEXT("서버") : TEXT("클라");
+
+	GEngine->AddOnScreenDebugMessage(
+		CoverageDebugKeyBase, Duration, FColor::White,
+		FString::Printf(TEXT("[%s] 페인트 면적  (총 %.0f cm^2)"), Side, WorldCoverage.TotalArea));
+
+	for (int32 Team = 0; Team < Teams::Count; ++Team)
+	{
+		const uint8 PaintId = static_cast<uint8>(Team);
+		GEngine->AddOnScreenDebugMessage(
+			CoverageDebugKeyBase + 1 + Team, Duration, Teams::GetDisplayColor(Team),
+			FString::Printf(TEXT("  %s  %6.2f%%   %.0f cm^2"),
+				Teams::GetDisplayName(Team),
+				WorldCoverage.GetFraction(PaintId) * 100.0f,
+				WorldCoverage.AreaByPaintId.IsValidIndex(PaintId) ? WorldCoverage.AreaByPaintId[PaintId] : 0.0f));
+	}
+
+	GEngine->AddOnScreenDebugMessage(
+		CoverageDebugKeyBase + 1 + Teams::Count, Duration, FColor::Silver,
+		FString::Printf(TEXT("  미도포  %6.2f%%"), WorldCoverage.GetFraction(PaintIdNone) * 100.0f));
+
+	// 승패는 절대 점유율이 아니라 두 팀 사이의 상대 격차로 갈린다(AGameGameMode::OnMatchTimeExpired).
+	// 무승부로 끝난 이유를 화면에서 바로 읽을 수 있도록 같은 값을 여기서도 보여준다.
+	{
+		const float MintFraction = WorldCoverage.GetFraction(static_cast<uint8>(Teams::Mint));
+		const float ChocoFraction = WorldCoverage.GetFraction(static_cast<uint8>(Teams::Choco));
+		const float Painted = MintFraction + ChocoFraction;
+		const float Margin = Painted > 0.0f ? FMath::Abs(MintFraction - ChocoFraction) / Painted : 0.0f;
+
+		GEngine->AddOnScreenDebugMessage(
+			CoverageDebugKeyBase + 2 + Teams::Count, Duration, FColor::White,
+			FString::Printf(TEXT("  상대 격차  %.1f%%"), Margin * 100.0f));
+	}
+
+	if (bMatchEnded)
+	{
+		GEngine->AddOnScreenDebugMessage(
+			CoverageDebugKeyBase + 3 + Teams::Count, Duration, Teams::GetDisplayColor(WinningTeam),
+			FString::Printf(TEXT("  경기 종료 — %s (WinningTeam %d)"),
+				Teams::IsValidId(WinningTeam) ? Teams::GetDisplayName(WinningTeam) : TEXT("무승부"),
+				WinningTeam));
+	}
 }
 
 void AGameGameState::AddSplat(const FPaintSplat& Splat)
 {
 	if (!HasAuthority())
 	{
+		return;
+	}
+
+	// 일시 스플랫은 기록이 아니라 연출이다. 멀티캐스트는 서버 자신에서도 실행된다.
+	if (Splat.bTransient)
+	{
+		MulticastTransientSplat(Splat);
 		return;
 	}
 
@@ -94,6 +220,14 @@ void AGameGameState::OnRep_SplatLog()
 	}
 }
 
+void AGameGameState::MulticastTransientSplat_Implementation(const FPaintSplat& Splat)
+{
+	if (const auto Paint = GetWorld()->GetSubsystem<UPaintSubsystem>())
+	{
+		Paint->ApplySplat(Splat);
+	}
+}
+
 void AGameGameState::ApplyNewSplats()
 {
 	UPaintSubsystem* const Paint = GetWorld()->GetSubsystem<UPaintSubsystem>();
@@ -121,4 +255,7 @@ void AGameGameState::RefreshCoverage()
 	{
 		WorldCoverage = Paint->GetWorldCoverage();
 	}
+
+	// RepNotify는 값을 쓴 권한자에게 오지 않으므로, 서버 화면은 여기서 직접 갱신한다.
+	DrawCoverageDebug();
 }

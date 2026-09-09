@@ -7,6 +7,7 @@
 #include "Game/TeamTypes.h"
 #include "GameGameMode.generated.h"
 
+class AItemSpawnPoint;
 class APlayerStart;
 class UUnitDataAsset;
 
@@ -26,6 +27,9 @@ class MINTCHOCO_API AGameGameMode : public AGameModeBase
 public:
 	AGameGameMode();
 
+	/** GameModeBase에는 HandleMatchHasStarted가 없다. 경기 시작 훅은 여기다. */
+	virtual void StartPlay() override;
+
 	virtual AActor* ChoosePlayerStart_Implementation(AController* Player) override;
 	virtual APawn* SpawnDefaultPawnAtTransform_Implementation(AController* NewPlayer, const FTransform& SpawnTransform) override;
 
@@ -40,7 +44,38 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Team")
 	int32 GetTeamOf(const AController* Player) const;
 
+	/**
+	 * 비어 있는 지점 중 하나를 무작위로 고른다. bFree[i]가 i번 지점의 상태. 전부 차 있으면
+	 * INDEX_NONE. 순수 함수라 테스트가 액터 없이 검사한다.
+	 */
+	static int32 PickFreeSpawnIndex(const TArray<bool>& bFree, const FRandomStream& Random);
+
 protected:
+	/** 아이템이 나오는 주기(초). 0 이하면 아이템이 나오지 않는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Items", meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float ItemSpawnInterval = 15.0f;
+
+	/** 아이템이 나오기 몇 초 전에 그 자리에 레이저를 세울지. 주기보다 길면 주기로 잘린다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Items", meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float ItemSpawnWarning = 5.0f;
+	/** 한 판의 길이(초). 0 이하로 두면 타이머를 걸지 않아 경기가 끝나지 않는다(디버그용). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0.0"))
+	float MatchDuration = 90.0f;
+
+	/**
+	 * 1위와 2위의 상대 격차가 이 값 이하면 무승부로 친다. 0.1 = 두 팀이 칠한 양의 10% 차이.
+	 *
+	 * 맵 전체 면적이 아니라 두 팀이 칠한 양의 합으로 나눈다. 맵의 대부분이 비어 있어도
+	 * 접전인지 압승인지가 그대로 드러나고, 나중에 사격 속도나 스플랫 크기를 올려
+	 * 도포량이 통째로 늘어도 이 값을 다시 손볼 필요가 없다.
+	 *
+	 * 절대 점유율로 비교하면 그때마다 기준을 옮겨야 한다. 지금은 0.17%가 "많이 칠한"
+	 * 수준이지만 도포량이 늘면 그 값은 의미를 잃는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float DrawMarginFraction = 0.1f;
+
+
 	/**
 	 * 팀 번호를 인덱스로 쓰는 캐릭터 정의. [0]은 민트, [1]은 초코.
 	 *
@@ -79,6 +114,11 @@ protected:
 	UUnitDataAsset* FindUnitDataForTeam(int32 Team) const;
 
 private:
+	/** 시간이 다 됐을 때. 커버리지를 다시 재고 더 많이 칠한 팀을 승팀으로 확정한다. 같으면 무승부. */
+	void OnMatchTimeExpired();
+
+	FTimerHandle MatchTimer;
+
 	/** 스폰된 폰이 AUnit이면 팀에 맞는 캐릭터 정의를 넣는다. 아니면 경고를 남긴다. */
 	void ApplyTeamUnitData(APawn* Pawn, const AController* NewPlayer) const;
 
@@ -92,4 +132,16 @@ private:
 
 	/** 가장 가까운 적 폰까지의 거리. 적이 없으면 무한대로 친다. */
 	float DistanceToNearestEnemy(const APlayerStart* Start, int32 Team) const;
+
+	/** 맵의 스폰 지점을 모으고 주기 타이머를 건다. 지점이나 아이템 목록이 비면 아무것도 걸지 않는다. */
+	void StartItemSpawning();
+
+	/** 빈 지점 하나에 무작위 아이템을 예고 상태로 놓는다. 전부 차 있으면 이번 주기는 건너뛴다. */
+	void SpawnNextItem();
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<AItemSpawnPoint>> ItemSpawnPoints;
+
+	FTimerHandle ItemSpawnTimer;
+	FRandomStream ItemRandom;
 };
