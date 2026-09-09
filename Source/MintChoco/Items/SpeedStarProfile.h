@@ -28,6 +28,17 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SpeedStar")
 	FPaintDeposit TrailDeposit;
 
+	/**
+	 * 자국이 달리는 방향으로 늘어나는 배율. 1이면 수직으로 떨어진 둥근 자국, 2.5면 진행 방향으로 2.5배 길게
+	 * 번진다(브러시 프로필의 MaxStretch가 상한). 자국을 비스듬한 충돌로 만들어 브러시가 알아서 늘린다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SpeedStar", meta = (ClampMin = "1", ForceUnits = "x"))
+	float TrailStretch = 2.5f;
+
+	/** 효과가 끝난 뒤 무지개 자국이 팀 색으로 돌아오는 데 걸리는 시간(초). 효과 중에는 자국을 다른 팀이 덮지 못한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SpeedStar", meta = (ClampMin = "0", ForceUnits = "s"))
+	float PaintFadeDuration = 2.0f;
+
 	virtual bool GrantsSpeedBoost() const override { return true; }
 	virtual void LogUnsetReferences(const UObject* Owner) const override;
 };

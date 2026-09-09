@@ -38,13 +38,18 @@ void UPaintSubsystem::SubmitSplat(const FPaintSplat& Splat)
 		return;
 	}
 
+	// The locks are decided here, once, and travel with the splat: every machine then skips exactly
+	// the texels the authority skipped, however far the star state has moved on by the time it draws.
+	FPaintSplat Accepted = Splat;
+	Accepted.LockGens = GetLockGens().Pack();
+
 	if (OnSplatSubmitted.IsBound())
 	{
-		OnSplatSubmitted.Execute(Splat);
+		OnSplatSubmitted.Execute(Accepted);
 	}
 	else
 	{
-		ApplySplat(Splat);
+		ApplySplat(Accepted);
 	}
 }
 
@@ -54,6 +59,20 @@ void UPaintSubsystem::ClearPaint()
 	{
 		Paintable->ClearPaint();
 	}
+}
+
+void UPaintSubsystem::SetStarPaint(const FPaintStarShaderState& State)
+{
+	StarPaint = State;
+	for (UPaintableComponent* const Paintable : GetPaintables())
+	{
+		Paintable->ApplyStarPaint(State);
+	}
+}
+
+FPaintLockGens UPaintSubsystem::GetLockGens() const
+{
+	return StarPaint.GetLockGens(GetWorld()->GetTimeSeconds());
 }
 
 void UPaintSubsystem::ApplySplat(const FPaintSplat& Splat)

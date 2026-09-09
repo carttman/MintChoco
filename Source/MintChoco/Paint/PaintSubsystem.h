@@ -4,6 +4,7 @@
 #include "Paint/PaintCellGrid.h"
 #include "Paint/PaintIslandLayout.h"
 #include "Paint/PaintSplat.h"
+#include "Paint/PaintStar.h"
 #include "Subsystems/WorldSubsystem.h"
 
 #include "PaintSubsystem.generated.h"
@@ -75,6 +76,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Paint")
 	void ClearPaint();
 
+	/**
+	 * The speed-star state every surface material reads - which generation is rainbow per team and
+	 * when it fades - in this world's clock. Pushed by whoever replicates it (the game state) and
+	 * handed to each surface as it begins play.
+	 */
+	void SetStarPaint(const FPaintStarShaderState& State);
+	const FPaintStarShaderState& GetStarPaint() const { return StarPaint; }
+
+	/** Which generation each team has locked at this moment; stamped into every splat SubmitSplat accepts. */
+	FPaintLockGens GetLockGens() const;
+
 	/** Sum over every registered surface, in world cm^2. */
 	UFUNCTION(BlueprintPure, Category = "Paint")
 	FPaintCoverage GetWorldCoverage() const;
@@ -97,10 +109,10 @@ public:
 	UTextureRenderTarget2D* GetScratchTarget(int32 Size);
 
 	/**
-	 * A paint buffer: per texel R holds a paint id, G the accumulated height, B the distance to
-	 * the nearest paint edge. Point sampled and linear, since ids must never be interpolated and
-	 * sRGB would corrupt the id round trip. Every buffer the brush copies between comes from here,
-	 * so the formats always match.
+	 * A paint buffer: per texel R holds a paint id plus a speed-star generation (EncodePaintTexel),
+	 * G the accumulated height, B the distance to the nearest paint edge. Point sampled and linear,
+	 * since ids must never be interpolated and sRGB would corrupt the id round trip. Every buffer
+	 * the brush copies between comes from here, so the formats always match.
 	 */
 	static UTextureRenderTarget2D* CreatePaintBuffer(UObject* Outer, int32 Size);
 
@@ -141,4 +153,6 @@ private:
 
 	UPROPERTY(Transient)
 	TMap<int32, TObjectPtr<UTextureRenderTarget2D>> ScratchTargets;
+
+	FPaintStarShaderState StarPaint;
 };

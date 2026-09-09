@@ -15,6 +15,7 @@
 #include "Paint/PaintDebugDraw.h"
 #include "Paint/PaintLog.h"
 #include "Paint/PaintSettings.h"
+#include "Paint/PaintStar.h"
 #include "Paint/PaintSubsystem.h"
 
 namespace
@@ -29,6 +30,8 @@ namespace
 	const FName BrushImpactUParam(TEXT("BrushImpactU"));
 	const FName BrushHeightAddParam(TEXT("BrushHeightAdd"));
 	const FName BrushDistRangeParam(TEXT("BrushDistRange"));
+	const FName BrushStarGenParam(TEXT("BrushStarGen"));
+	const FName BrushLockGensParam(TEXT("BrushLockGens"));
 	const FName PreviousPaintParam(TEXT("PreviousPaint"));
 	// The surface reads the paint buffer through a TextureObjectParameter. Keep that name unique:
 	// an override on a name shared by a sampler parameter and a texture-object parameter only
@@ -40,6 +43,10 @@ namespace
 	const FName BoundsMinParam(TEXT("BoundsMin"));
 	const FName BoundsSizeParam(TEXT("BoundsSize"));
 	const FName PaintEdgeFadeParam(TEXT("PaintEdgeFade"));
+	/** Per team id in xyzw: the rainbow generation, the local world time its fade starts, and how long it takes. */
+	const FName PaintStarGenParam(TEXT("PaintStarGen"));
+	const FName PaintStarFadeStartParam(TEXT("PaintStarFadeStart"));
+	const FName PaintStarFadeDurationParam(TEXT("PaintStarFadeDuration"));
 	/** One rectangle per direction, enum order: uv offset in xy, uv scale in zw, all zero when the direction is off. */
 	const FName PaintIslandParams[PaintFaceDirectionCount] = {
 		FName(TEXT("PaintIsland_Front")), FName(TEXT("PaintIsland_Back")),
@@ -212,6 +219,9 @@ void UPaintableComponent::BeginPlay()
 
 	if (Paint)
 	{
+		// A surface spawned mid-match starts from the star state already pushed.
+		ApplyStarPaint(Paint->GetStarPaint());
+
 		bAtlasRequested = true;
 		Paint->RequestAtlas(
 			*TargetMesh, SurfaceMaterialSlot, MeshLocalBounds, Layout,
@@ -312,8 +322,10 @@ void UPaintableComponent::DrawSplat(const FPaintSplat& Splat)
 
 	// Same stamp the brush draws, so ownership can only differ from the picture by the stamp's
 	// satellites and the cell resolution. Marked first: the score exists even where there is no
-	// picture (a dedicated server).
-	CellGrid.Mark(Stamp, Splat.PaintId, CellStampFraction);
+	// picture (a dedicated server). The locks come with the splat, so this machine skips what the
+	// authority skipped.
+	const FPaintLockGens Locks = FPaintLockGens::Unpack(Splat.LockGens);
+	CellGrid.Mark(Stamp, Splat.PaintId, Splat.StarGen, Locks, CellStampFraction);
 
 	if (!SurfaceMID || !PaintRenderTarget)
 	{
@@ -334,7 +346,10 @@ void UPaintableComponent::DrawSplat(const FPaintSplat& Splat)
 	}
 
 	// The brush writes the id as a normalized byte; the target stores it back as exactly PaintId.
+	// The generation and the locks go in separately so the shader can apply the lock rule itself.
 	BrushMID->SetScalarParameterValue(BrushPaintIdParam, Splat.PaintId / 255.0f);
+	BrushMID->SetScalarParameterValue(BrushStarGenParam, static_cast<float>(Splat.StarGen));
+	BrushMID->SetVectorParameterValue(BrushLockGensParam, FLinearColor(Locks.Gen[0], Locks.Gen[1], Locks.Gen[2], Locks.Gen[3]));
 	BrushMID->SetVectorParameterValue(BrushCenterParam, FLinearColor(Stamp.Center));
 	BrushMID->SetScalarParameterValue(BrushRadiusParam, Stamp.Radius);
 	BrushMID->SetVectorParameterValue(BrushAxisUParam, FLinearColor(Stamp.AxisU));
@@ -445,6 +460,21 @@ void UPaintableComponent::ClearPaint()
 		UKismetRenderingLibrary::ClearRenderTarget2D(this, PaintRenderTarget, PaintIdNoneColor);
 	}
 	CellGrid.ClearPaint();
+}
+
+void UPaintableComponent::ApplyStarPaint(const FPaintStarShaderState& State)
+{
+	if (!SurfaceMID)
+	{
+		return;
+	}
+	const auto ToColor = [](const float (&Values)[PaintTeamIdCount])
+	{
+		return FLinearColor(Values[0], Values[1], Values[2], Values[3]);
+	};
+	SurfaceMID->SetVectorParameterValue(PaintStarGenParam, ToColor(State.Gen));
+	SurfaceMID->SetVectorParameterValue(PaintStarFadeStartParam, ToColor(State.FadeStart));
+	SurfaceMID->SetVectorParameterValue(PaintStarFadeDurationParam, ToColor(State.FadeDuration));
 }
 
 void UPaintableComponent::SetDebugDraw(bool bText, bool bCells)

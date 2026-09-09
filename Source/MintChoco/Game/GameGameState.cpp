@@ -17,6 +17,11 @@ static TAutoConsoleVariable<int32> CVarShowCoverage(
 /** 화면 디버그 줄의 키. 같은 키에 다시 쓰면 새 줄이 쌓이지 않고 제자리에서 갱신된다. */
 static constexpr uint64 CoverageDebugKeyBase = 0x4D430001;
 
+AGameGameState::AGameGameState()
+{
+	StarPaint.SetNum(PaintTeamIdCount);
+}
+
 void AGameGameState::BeginPlay()
 {
 	Super::BeginPlay();
@@ -31,6 +36,7 @@ void AGameGameState::BeginPlay()
 	{
 		// 늦게 들어온 클라이언트는 로그가 월드의 BeginPlay보다 먼저 도착할 수 있다.
 		// 그때는 표면이 아직 없으므로 OnRep이 미뤄 두었고, 여기서 처음으로 그린다.
+		PushStarPaint();
 		ApplyNewSplats();
 		return;
 	}
@@ -58,6 +64,7 @@ void AGameGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
+	DOREPLIFETIME(AGameGameState, StarPaint);
 	DOREPLIFETIME(AGameGameState, SplatLog);
 	DOREPLIFETIME(AGameGameState, WorldCoverage);
 	DOREPLIFETIME(AGameGameState, MatchEndServerTime);
@@ -247,6 +254,70 @@ void AGameGameState::ApplyNewSplats()
 	{
 		Paint->ApplySplat(SplatLog.Items[AppliedSplatCount].Splat);
 	}
+}
+
+uint8 AGameGameState::BeginStarPaint(uint8 PaintId, float Duration, float FadeDuration)
+{
+	if (!HasAuthority() || !StarPaint.IsValidIndex(PaintId))
+	{
+		return 0;
+	}
+
+	const uint8 Gen = StarPaint[PaintId].Begin(GetServerWorldTimeSeconds(), Duration, FadeDuration);
+	PushStarPaint();
+	return Gen;
+}
+
+void AGameGameState::EndStarPaint(uint8 PaintId)
+{
+	if (!HasAuthority() || !StarPaint.IsValidIndex(PaintId))
+	{
+		return;
+	}
+
+	StarPaint[PaintId].End(GetServerWorldTimeSeconds());
+	PushStarPaint();
+}
+
+void AGameGameState::OnRep_StarPaint()
+{
+	PushStarPaint();
+}
+
+void AGameGameState::OnRep_ReplicatedWorldTimeSecondsDouble()
+{
+	Super::OnRep_ReplicatedWorldTimeSecondsDouble();
+
+	// 자국이 빛나거나 바래는 중일 때만 다시 민다. 평소에는 아무 표면도 이 값을 안 본다.
+	const double ServerNow = GetServerWorldTimeSeconds();
+	const bool bVisible = StarPaint.ContainsByPredicate(
+		[ServerNow](const FStarPaintState& Team) { return Team.IsVisible(ServerNow); });
+	if (bVisible)
+	{
+		PushStarPaint();
+	}
+}
+
+void AGameGameState::PushStarPaint()
+{
+	UPaintSubsystem* const Paint = GetWorld()->GetSubsystem<UPaintSubsystem>();
+	if (!Paint)
+	{
+		return;
+	}
+
+	// 재질의 Time 노드는 이 월드의 GetTimeSeconds를 센다. 서버 시각과의 차이만큼 옮겨 두면
+	// 모든 머신이 같은 순간에 바래기 시작한다.
+	const double Offset = GetServerWorldTimeSeconds() - GetWorld()->GetTimeSeconds();
+	FPaintStarShaderState State;
+	for (int32 Id = 0; Id < FMath::Min<int32>(StarPaint.Num(), PaintTeamIdCount); ++Id)
+	{
+		const FStarPaintState& Team = StarPaint[Id];
+		State.Gen[Id] = Team.Gen;
+		State.FadeStart[Id] = static_cast<float>(Team.GetFadeStart() - Offset);
+		State.FadeDuration[Id] = FMath::Max(Team.FadeDuration, UE_KINDA_SMALL_NUMBER);
+	}
+	Paint->SetStarPaint(State);
 }
 
 void AGameGameState::RefreshCoverage()

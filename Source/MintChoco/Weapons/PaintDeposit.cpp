@@ -51,7 +51,7 @@ bool FPaintDeposit::StrikeReceiver(const FHitResult& Hit, uint8 PaintId) const
 	return true;
 }
 
-bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed) const
+bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed, uint8 StarGen) const
 {
 	// A receiver is struck before the surface test: a balloon is not a paintable surface, yet the
 	// hit that bursts it is a hit all the same.
@@ -64,6 +64,7 @@ bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector
 	}
 
 	FPaintSplat Splat = BuildSplat(Hit, IncidentVelocity, PaintId, Seed);
+	Splat.StarGen = StarGen;
 	MarkTransience(Splat, Hit);
 	Paint->SubmitSplat(Splat);
 	return true;
