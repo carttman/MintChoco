@@ -30,6 +30,10 @@ void UGA_SweetSpinner::OnItemActivated(AUnit& Unit, const UItemProfile& Profile)
 	{
 		Weapon->ReleaseTrigger();
 	}
+	if (UPaintWeaponComponent* const Secondary = Unit.GetSecondaryWeapon())
+	{
+		Secondary->ReleaseTrigger();
+	}
 
 	Unit.bUseControllerRotationYaw = false;
 

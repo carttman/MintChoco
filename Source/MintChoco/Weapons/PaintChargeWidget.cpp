@@ -25,19 +25,26 @@ void UPaintChargeWidget::NativeConstruct()
 	SetVisibility(ESlateVisibility::HitTestInvisible);
 }
 
-UPaintWeaponComponent* UPaintChargeWidget::FindWeapon() const
+float UPaintChargeWidget::FindChargeFraction() const
 {
 	const APlayerController* const PlayerController = GetOwningPlayer();
 	const APawn* const Pawn = PlayerController ? PlayerController->GetPawn() : nullptr;
-	return Pawn ? Pawn->FindComponentByClass<UPaintWeaponComponent>() : nullptr;
+	if (!Pawn)
+	{
+		return 0.0f;
+	}
+
+	float Fraction = 0.0f;
+	Pawn->ForEachComponent<UPaintWeaponComponent>(/*bIncludeFromChildActors=*/false,
+		[&Fraction](const UPaintWeaponComponent* Weapon) { Fraction = FMath::Max(Fraction, Weapon->GetChargeFraction()); });
+	return Fraction;
 }
 
 void UPaintChargeWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
-	const UPaintWeaponComponent* const Weapon = FindWeapon();
-	ChargeFraction = Weapon ? Weapon->GetChargeFraction() : 0.0f;
+	ChargeFraction = FindChargeFraction();
 	ChargingTime = ChargeFraction > 0.0f ? ChargingTime + InDeltaTime : 0.0f;
 }
 

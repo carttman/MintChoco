@@ -58,6 +58,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Weapon")
 	UPaintWeaponComponent* GetPaintWeapon() const { return PaintWeapon; }
 
+	UFUNCTION(BlueprintPure, Category = "Weapon")
+	UPaintWeaponComponent* GetSecondaryWeapon() const { return SecondaryWeapon; }
+
 	UFUNCTION(BlueprintPure, Category = "Ink")
 	UInkTankComponent* GetInkTank() const { return InkTank; }
 
@@ -135,13 +138,22 @@ protected:
 	TObjectPtr<UUnitInputConfig> InputConfig;
 
 	/**
-	 * 페인트 무기. 모든 유닛이 하나씩 든다.
+	 * 주무기. 모든 유닛이 하나씩 들고, 주 발사 입력이 이 방아쇠를 당긴다.
 	 *
 	 * 무엇을 쏘는지는 컴포넌트의 Profile(무기 프로필 에셋)이 정하고, 이 클래스는
 	 * 방아쇠와 팀 색만 넘긴다. 무기 교체는 Profile 교체이지 컴포넌트 교체가 아니다.
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UPaintWeaponComponent> PaintWeapon;
+
+	/**
+	 * 보조 무기. 보조 발사 입력이 이 방아쇠를 당긴다. Profile이 비어 있으면 아무것도 하지 않는다.
+	 *
+	 * 두 무기는 한 번에 하나만 쏜다: 한쪽 방아쇠가 당겨진 동안 다른 쪽 입력은 무시된다.
+	 * 잉크 탱크는 둘이 같이 쓴다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<UPaintWeaponComponent> SecondaryWeapon;
 
 	/** 잉크 잔량. 무기가 발사마다 여기서 꺼내 쓰고, 등 뒤 병이 이 값을 보여준다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ink")
@@ -180,6 +192,10 @@ protected:
 
 	/** 입력이 가로채이거나 매핑이 빠져서 방아쇠가 풀릴 때. 차지형 무기가 이때 발사되면 안 된다. */
 	void CancelFire();
+
+	void StartSecondaryFire();
+	void StopSecondaryFire();
+	void CancelSecondaryFire();
 
 	/**
 	 * 홀드형 입력이라 Started와 Completed로 나눠 바인딩한다. Triggered는 눌린 동안

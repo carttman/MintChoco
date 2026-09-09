@@ -67,6 +67,7 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	FollowCamera->bUsePawnControlRotation = false;
 
 	PaintWeapon = CreateDefaultSubobject<UPaintWeaponComponent>(TEXT("PaintWeapon"));
+	SecondaryWeapon = CreateDefaultSubobject<UPaintWeaponComponent>(TEXT("SecondaryWeapon"));
 	InkTank = CreateDefaultSubobject<UInkTankComponent>(TEXT("InkTank"));
 
 	AbilitySystem = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystem"));
@@ -140,9 +141,14 @@ void AUnit::ApplyTeamToWeapon()
 	}
 
 	// 병 색은 무기의 페인트 id를 따라가므로(HandlePaintIdChanged) 여기서 따로 칠하지 않는다.
+	const uint8 PaintId = static_cast<uint8>(GamePlayerState->GetTeam());
 	if (PaintWeapon)
 	{
-		PaintWeapon->SetPaintId(static_cast<uint8>(GamePlayerState->GetTeam()));
+		PaintWeapon->SetPaintId(PaintId);
+	}
+	if (SecondaryWeapon)
+	{
+		SecondaryWeapon->SetPaintId(PaintId);
 	}
 }
 
@@ -264,6 +270,13 @@ void AUnit::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 		EnhancedInput->BindAction(InputConfig->FireAction, ETriggerEvent::Canceled, this, &AUnit::CancelFire);
 	}
 
+	if (InputConfig->SecondaryFireAction)
+	{
+		EnhancedInput->BindAction(InputConfig->SecondaryFireAction, ETriggerEvent::Started, this, &AUnit::StartSecondaryFire);
+		EnhancedInput->BindAction(InputConfig->SecondaryFireAction, ETriggerEvent::Completed, this, &AUnit::StopSecondaryFire);
+		EnhancedInput->BindAction(InputConfig->SecondaryFireAction, ETriggerEvent::Canceled, this, &AUnit::CancelSecondaryFire);
+	}
+
 	if (InputConfig->ItemAction)
 	{
 		EnhancedInput->BindAction(InputConfig->ItemAction, ETriggerEvent::Started, this, &AUnit::UseItem);
@@ -278,19 +291,54 @@ void AUnit::UseItem()
 	}
 }
 
+// 한쪽 방아쇠가 당겨진 동안 다른 쪽 입력은 무시한다. 무시된 눌림의 뗌은 당겨지지 않은
+// 컴포넌트에 Release/Cancel로 오는데, 그쪽은 아무것도 하지 않으므로 따로 걸러내지 않는다.
 void AUnit::StartFire()
 {
-	PaintWeapon->PullTrigger();
+	if (PaintWeapon && !(SecondaryWeapon && SecondaryWeapon->IsTriggerHeld()))
+	{
+		PaintWeapon->PullTrigger();
+	}
 }
 
 void AUnit::StopFire()
 {
-	PaintWeapon->ReleaseTrigger();
+	if (PaintWeapon)
+	{
+		PaintWeapon->ReleaseTrigger();
+	}
 }
 
 void AUnit::CancelFire()
 {
-	PaintWeapon->CancelTrigger();
+	if (PaintWeapon)
+	{
+		PaintWeapon->CancelTrigger();
+	}
+}
+
+void AUnit::StartSecondaryFire()
+{
+	if (SecondaryWeapon && !(PaintWeapon && PaintWeapon->IsTriggerHeld()))
+	{
+		SecondaryWeapon->PullTrigger();
+	}
+}
+
+void AUnit::StopSecondaryFire()
+{
+	if (SecondaryWeapon)
+	{
+		SecondaryWeapon->ReleaseTrigger();
+	}
+}
+
+void AUnit::CancelSecondaryFire()
+{
+	if (SecondaryWeapon)
+	{
+		SecondaryWeapon->CancelTrigger();
+	}
 }
 
 void AUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
