@@ -54,12 +54,21 @@ struct MINTCHOCO_API FPaintDeposit
 	/** Strikes the hit actor if it is a paint hit receiver. Returns true when something received the hit. */
 	bool StrikeReceiver(const FHitResult& Hit, uint8 PaintId) const;
 
+  	/** The hit actor owns a paint buffer. */
 	static bool IsPaintable(const FHitResult& Hit);
 
 	/**
+	 * The hit lands on something a splat may be submitted for: a paintable surface, or a static
+	 * mesh that only ever shows a passing effect. Moving geometry is out, since the effect stays
+	 * where the surface was.
+	 */
+	static bool ReceivesSplat(const FHitResult& Hit);
+
+	/**
 	 * Asks the hit surface whether it keeps paint facing this way and flags the splat transient
-	 * when it does not. Every producer of a splat calls this before submitting, so the decision is
-	 * made once, on the authority, where the hit actor is known.
+	 * when it does not, or when the hit actor has no paint buffer at all. Every producer of a
+	 * splat calls this before submitting, so the decision is made once, on the authority, where
+	 * the hit actor is known.
 	 */
 	static void MarkTransience(FPaintSplat& Splat, const FHitResult& Hit);
 };

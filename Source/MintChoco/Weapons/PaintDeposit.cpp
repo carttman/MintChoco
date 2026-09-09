@@ -1,5 +1,6 @@
 #include "Weapons/PaintDeposit.h"
 
+#include "Components/StaticMeshComponent.h"
 #include "Engine/HitResult.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
@@ -16,6 +17,16 @@ bool FPaintDeposit::IsPaintable(const FHitResult& Hit)
 	return Actor && Actor->FindComponentByClass<UPaintableComponent>();
 }
 
+bool FPaintDeposit::ReceivesSplat(const FHitResult& Hit)
+{
+	if (IsPaintable(Hit))
+	{
+		return true;
+	}
+	const UStaticMeshComponent* const Mesh = Cast<UStaticMeshComponent>(Hit.GetComponent());
+	return Mesh && Mesh->Mobility != EComponentMobility::Movable;
+}
+
 FPaintSplat FPaintDeposit::BuildSplat(const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed) const
 {
 	check(BrushProfile);
@@ -26,7 +37,7 @@ void FPaintDeposit::MarkTransience(FPaintSplat& Splat, const FHitResult& Hit)
 {
 	const AActor* const Actor = Hit.GetActor();
 	const UPaintableComponent* const Paintable = Actor ? Actor->FindComponentByClass<UPaintableComponent>() : nullptr;
-	Splat.bTransient = Paintable && !Paintable->IsWorldNormalPersistent(Hit.ImpactNormal);
+	Splat.bTransient = !Paintable || !Paintable->IsWorldNormalPersistent(Hit.ImpactNormal);
 }
 
 bool FPaintDeposit::StrikeReceiver(const FHitResult& Hit, uint8 PaintId) const
@@ -47,7 +58,7 @@ bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector
 	StrikeReceiver(Hit, PaintId);
 
 	UPaintSubsystem* const Paint = World ? World->GetSubsystem<UPaintSubsystem>() : nullptr;
-	if (!BrushProfile || !Paint || !IsPaintable(Hit))
+	if (!BrushProfile || !Paint || !ReceivesSplat(Hit))
 	{
 		return false;
 	}
