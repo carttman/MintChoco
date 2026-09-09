@@ -218,7 +218,7 @@ bool UPaintWeaponComponent::HasAuthority() const
 
 float UPaintWeaponComponent::GetShotCost() const
 {
-	return Profile ? Profile->InkCostPerShot : 0.0f;
+	return Profile ? Profile->GetInkCostPerShot() : 0.0f;
 }
 
 bool UPaintWeaponComponent::CanAffordShot() const

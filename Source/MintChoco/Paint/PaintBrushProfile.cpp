@@ -24,7 +24,7 @@ FPaintSplat UPaintBrushProfile::BuildSplat(
 	const float Stretch = FMath::Clamp(1.0f / FMath::Max(CosTheta, UE_KINDA_SMALL_NUMBER), 1.0f, MaxStretch);
 	const FVector Tangent = (Incident - FVector::DotProduct(Incident, Normal) * Normal).GetSafeNormal();
 	// A grazing hit lands "ahead" of the contact along the tangent.
-	const float CenterShift = Radius * (Stretch - 1.0f) * CenterShiftScale;
+	const float CenterShift = Radius * (Stretch - 1.0f) * GetCenterShiftScale();
 
 	FPaintSplat Splat;
 	// The shader hashes the seed with sin(), which loses precision past 16 bits; the same

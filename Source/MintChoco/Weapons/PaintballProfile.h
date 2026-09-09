@@ -42,7 +42,7 @@ public:
 	float Radius = 6.0f;
 
 	/** 0 flies straight, 1 drops like a thrown object. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball", meta = (ClampMin = "0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball", meta = (ClampMin = "0", ForceUnits = "x"))
 	float GravityScale = 0.5f;
 
 	/** What the ball leaves where it lands. */

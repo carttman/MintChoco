@@ -119,12 +119,19 @@ public:
 		return FireMode == EPaintFireMode::Automatic ? 1.0f / FMath::Max(ShotsPerSecond, 0.1f) : 0.0f;
 	}
 
+	/**
+	 * Fraction of a full ink tank one accepted shot spends; a brush pays it per stamp. 0 fires for
+	 * free, and so does a pawn that carries no tank at all.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Ink")
+	float GetInkCostPerShot() const { return InkCostPercent * 0.01f; }
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cadence")
 	EPaintFireMode FireMode = EPaintFireMode::Single;
 
 	/** Shots per second in Automatic. Continuous ignores it: a brush spaces its stamps by distance. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cadence",
-		meta = (ClampMin = "0.1", ClampMax = "60.0", EditCondition = "FireMode == EPaintFireMode::Automatic"))
+		meta = (ClampMin = "0.1", ClampMax = "60.0", ForceUnits = "Hz", EditCondition = "FireMode == EPaintFireMode::Automatic"))
 	float ShotsPerSecond = 8.0f;
 
 	/** How long the trigger must be held before releasing it fires, in Charged. */
@@ -132,10 +139,8 @@ public:
 		meta = (ClampMin = "0.05", ForceUnits = "s", EditCondition = "FireMode == EPaintFireMode::Charged"))
 	float ChargeTime = 3.0f;
 
-	/**
-	 * Fraction of a full ink tank one accepted shot spends; a brush pays it per stamp. 0 fires for
-	 * free, and so does a pawn that carries no tank at all.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ink", meta = (ClampMin = "0", ClampMax = "1"))
-	float InkCostPerShot = 0.04f;
+private:
+	/** Percent of a full ink tank one accepted shot spends. Read it through GetInkCostPerShot. */
+	UPROPERTY(EditAnywhere, Category = "Ink", meta = (ClampMin = "0", ClampMax = "100", ForceUnits = "%"))
+	float InkCostPercent = 4.0f;
 };
