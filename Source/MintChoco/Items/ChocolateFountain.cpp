@@ -8,14 +8,12 @@
 #include "Net/UnrealNetwork.h"
 
 #include "Game/Unit.h"
+#include "MeshScale.h"
 #include "MintChoco.h"
 #include "Weapons/PaintProjectile.h"
 
 namespace
 {
-	/** 엔진 BasicShapes/Sphere는 지름 100 cm. */
-	constexpr float BasicSphereRadius = 50.0f;
-
 	/** Sensor는 Wall보다 이만큼 크다. 캡슐이 Wall을 완전히 벗어나야 통과 목록에서 빠진다. */
 	constexpr float SensorMargin = 40.0f;
 }
@@ -70,7 +68,7 @@ void AChocolateFountain::ApplyShape()
 {
 	Wall->SetSphereRadius(Radius);
 	Sensor->SetSphereRadius(Radius + SensorMargin);
-	Mesh->SetRelativeScale3D(FVector(Radius / BasicSphereRadius));
+	ScaleMeshToRadius(Mesh, Radius);
 }
 
 void AChocolateFountain::BeginPlay()

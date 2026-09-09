@@ -7,13 +7,11 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 
+#include "MeshScale.h"
 #include "Weapons/PaintballProfile.h"
 
 namespace
 {
-	/** The engine's BasicShapes/Sphere is 100 cm across, so this maps a radius to its scale. */
-	constexpr float BasicSphereRadius = 50.0f;
-
 	UPrimitiveComponent* GetMovingBody(const APawn* Pawn)
 	{
 		return Pawn ? Cast<UPrimitiveComponent>(Pawn->GetRootComponent()) : nullptr;
@@ -63,7 +61,7 @@ void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId,
 	Movement->ProjectileGravityScale = Profile->GravityScale;
 
 	Sphere->SetSphereRadius(Profile->Radius);
-	Mesh->SetRelativeScale3D(FVector(Profile->Radius / BasicSphereRadius));
+	ScaleMeshToRadius(Mesh, Profile->Radius);
 
 	// A ball leaves the muzzle inside the shooter's reach; neither body may collide with the other.
 	if (APawn* const Shooter = GetInstigator())
