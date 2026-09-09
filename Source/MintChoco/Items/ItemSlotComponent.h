@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "GameplayAbilitySpecHandle.h"
+#include "Engine/TimerHandle.h"
 #include "GameplayTagContainer.h"
 
 #include "Weapons/PaintWeaponProfile.h"
@@ -65,6 +66,12 @@ public:
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastSpinnerShot(const UPaintGunProfile* Volley, const FPaintShot& Shot);
 
+	/**
+	 * 잉크병 오버라이드(무한 탄환)의 점멸 타이머를 다시 시작한다. 어빌리티가 (재)발동 때 부른다:
+	 * 갱신은 태그 수가 1에서 1로 머물러 태그 콜백이 오지 않기 때문이다.
+	 */
+	void RestartInkLook(float Duration);
+
 	/** 슬롯 내용이 바뀔 때마다, 모든 머신에서. HUD가 여기에 붙는다. */
 	UPROPERTY(BlueprintAssignable, Category = "Item")
 	FItemSlotChangedSignature OnHeldItemChanged;
@@ -87,6 +94,10 @@ private:
 	void StartEffectFeedback(const UItemProfile& Item, const FGameplayTag& Tag);
 	void StopEffectFeedback(const FGameplayTag& Tag);
 
+	/** 잉크병을 오버라이드 재질로 바꾸고 마지막 1초에 점멸을 예약한다. bOn이 거짓이면 전부 되돌린다. */
+	void SetInkLook(bool bOn, float Duration);
+	void StartInkBlink();
+
 	/** 서버 전용. HeldItem에 해당하는 스펙. 비우면 효과 종료 시 제거된다. */
 	FGameplayAbilitySpecHandle HeldSpec;
 
@@ -95,4 +106,5 @@ private:
 	TMap<FGameplayTag, TObjectPtr<UNiagaraComponent>> EffectComponents;
 
 	FDelegateHandle TagEventHandle;
+	FTimerHandle InkBlinkTimer;
 };

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
+#include "GameplayTagContainer.h"
 #include "GameFramework/Character.h"
 #include "Game/UnitDataAsset.h"
 #include "Unit.generated.h"
@@ -11,6 +12,7 @@
 class UAbilitySystemComponent;
 class UCameraComponent;
 class UEnhancedInputLocalPlayerSubsystem;
+class UGameplayEffect;
 class UInkBottleComponent;
 class UInkTankComponent;
 class UItemSlotComponent;
@@ -20,7 +22,11 @@ class USpringArmComponent;
 class UStaticMeshComponent;
 class UUnitInputConfig;
 class UUnitMovementComponent;
+struct FActiveGameplayEffectHandle;
+struct FGameplayEffectRemovalInfo;
 struct FInputActionValue;
+
+DECLARE_MULTICAST_DELEGATE(FOnHeroLandingFinished);
 
 /**
  * 플레이어와 AI가 함께 쓰는 유일한 유닛 클래스.
@@ -43,11 +49,14 @@ public:
 	explicit AUnit(const FObjectInitializer& ObjectInitializer);
 
 	virtual void PostInitializeComponents() override;
+	virtual void BeginPlay() override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void OnRep_PlayerState() override;
+	virtual bool CanJumpInternal_Implementation() const override;
+	virtual void Landed(const FHitResult& Hit) override;
 
 	//~ IAbilitySystemInterface
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
@@ -64,8 +73,41 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UItemSlotComponent* GetItemSlot() const { return ItemSlot; }
 
+	UFUNCTION(BlueprintPure, Category = "Ink")
+	UInkBottleComponent* GetInkBottle() const { return InkBottle; }
+
 	/** 서버가 클라이언트의 속도 부스트 플래그를 인정해도 되는지. 슬롯 컴포넌트가 답한다. */
 	bool IsSpeedBoostAuthorized() const;
+
+	/** PlayerState의 팀. 없으면 Teams::None. 아이템의 페인트 id와 아군 판정이 이 값을 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "Team")
+	int32 GetTeam() const;
+
+	/** 스턴 중인지(State.Status.Stunned). 모든 머신에서 답한다. */
+	UFUNCTION(BlueprintPure, Category = "Status")
+	bool IsStunned() const;
+
+	/** 슈퍼아머 중인지(State.Status.SuperArmor). 스턴과 밀어내기가 먹지 않는다. */
+	UFUNCTION(BlueprintPure, Category = "Status")
+	bool HasSuperArmor() const;
+
+	/**
+	 * 입력으로 움직일 수 없는 상태인지(스턴, 히어로 랜딩). 입력 핸들러와 무브먼트 컴포넌트가
+	 * 같은 답을 봐야 서버가 클라이언트의 가속을 그대로 쓰는 경로에서도 권위가 선다.
+	 */
+	bool IsMovementInputLocked() const;
+
+	/**
+	 * 서버 전용. 스턴을 건다(UItemSettings::StunDuration). 슈퍼아머거나 이미 스턴이면 false.
+	 * 스턴이 끝나는 순간 슈퍼아머(SuperArmorDuration)가 이어진다.
+	 */
+	bool TryApplyStun();
+
+	/** 서버 전용. From에서 멀어지는 수평 방향으로 밀어낸다(UItemSettings::Knockback*). 슈퍼아머면 무시. */
+	void Knockback(const FVector& From);
+
+	/** 히어로 랜딩의 내리꽂기가 착지한 순간. 서버와 소유 클라이언트에서 온다. 어빌리티가 여기서 끝난다. */
+	FOnHeroLandingFinished OnHeroLandingFinished;
 
 	/**
 	 * PlayerState의 팀을 무기의 페인트 id로 옮긴다. 잉크병은 그 id를 따라 색이 바뀐다.
@@ -192,6 +234,10 @@ protected:
 	/** 아이템 키. 탭 한 번이 곧 사용이라 Started만 묶는다. */
 	void UseItem();
 
+	/** 스턴이 걸리고 풀릴 때, 모든 머신에서. 연출용. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Status")
+	void BP_OnStunned(bool bStunned);
+
 private:
 	/** 어빌리티 액터 정보를 이 폰으로 맞춘다. 서버는 빙의 때, 클라이언트는 PlayerState 도착 때. */
 	void InitAbilityActorInfo();
@@ -211,6 +257,15 @@ private:
 	/** 대시 트레일을 켜고 끈다. 데디케이티드 서버에서는 아무것도 하지 않는다. */
 	void UpdateDashEffects(bool bDashing);
 
+	/** 스턴 태그가 서고 내릴 때. 서는 순간 방아쇠를 놓는다. */
+	void HandleStunTagChanged(const FGameplayTag Tag, int32 NewCount);
+
+	/** 서버 전용. 스턴 GE가 제거되면 슈퍼아머를 건다. */
+	void HandleStunEnded(const FGameplayEffectRemovalInfo& RemovalInfo);
+
+	/** 서버 전용. 상태 GE 하나를 SetByCaller 지속시간과 동적 태그로 건다. */
+	bool ApplyStatusEffect(TSubclassOf<UGameplayEffect> EffectClass, const FGameplayTag& StatusTag, float Duration, FActiveGameplayEffectHandle& OutHandle);
+
 	/**
 	 * 연출과 애니메이션용 대시 상태.
 	 *
@@ -229,4 +284,6 @@ private:
 	 * 수 있어 다시 찾아갈 수 없으므로, 넣을 때 기억해 두고 그대로 되돌린다.
 	 */
 	TWeakObjectPtr<UEnhancedInputLocalPlayerSubsystem> AppliedInputSubsystem;
+
+	FDelegateHandle StunTagHandle;
 };

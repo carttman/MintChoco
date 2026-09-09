@@ -10,7 +10,6 @@
 class UItemAbility;
 class UNiagaraSystem;
 class USoundBase;
-class UStaticMesh;
 class UTexture2D;
 
 /**
@@ -34,15 +33,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity")
 	TObjectPtr<UTexture2D> Icon;
 
-	/** 맵에 놓였을 때의 외형. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pickup")
-	TObjectPtr<UStaticMesh> PickupMesh;
-
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pickup")
 	TObjectPtr<USoundBase> PickupSound;
 
-	/** 효과 지속시간(초). 같은 아이템을 효과 중에 다시 쓰면 이 값으로 다시 시작한다. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect", meta = (ClampMin = "0.1", ForceUnits = "s"))
+	/**
+	 * 효과 지속시간(초). 같은 아이템을 효과 중에 다시 쓰면 이 값으로 다시 시작한다.
+	 * 0이면 즉발이다: GE도 상태 태그도 없이 어빌리티가 발동 직후 끝나고, 효과는 스폰된 액터가 이어받는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect", meta = (ClampMin = "0", ForceUnits = "s"))
 	float Duration = 2.0f;
 
 	/** 발동하면 도는 어빌리티. 비어 있으면 주울 수는 있어도 아무 일도 하지 않는다. */
@@ -65,6 +63,12 @@ public:
 	 * 플래그를 인정할지 판단할 때 든 아이템을 이걸로 묻는다.
 	 */
 	virtual bool GrantsSpeedBoost() const { return false; }
+
+	/** 즉발 아이템인지(Duration 0). */
+	bool IsInstant() const { return Duration <= 0.0f; }
+
+	/** 효과 중 잉크병을 오버라이드 재질(빨강)로 보이는 아이템인지(무한 탄환). 슬롯이 태그를 보고 켠다. */
+	virtual bool OverridesInkLook() const { return false; }
 
 	/** 장착·습득 시점에 비어 있으면 "아무 일도 안 일어나는" 참조를 경고로 남긴다. */
 	virtual void LogUnsetReferences(const UObject* Owner) const;

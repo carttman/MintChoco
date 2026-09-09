@@ -69,12 +69,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Balloon")
 	int32 GetLastTeam() const { return State.LastTeam; }
 
-	/**
-	 * 파열 시 탄이 날아갈 방향. 시드가 같으면 어느 머신에서나 같다. 위쪽 반구에 고르게
-	 * 퍼지되 수평보다 살짝 위로 띄워 바닥과 벽에 두루 닿게 한다.
-	 */
-	static void ComputeBurstDirections(int32 Seed, int32 Count, TArray<FVector>& OutDirections);
-
 protected:
 	/** 터지기까지 견디는 타격력의 합. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Balloon", meta = (ClampMin = "1"))

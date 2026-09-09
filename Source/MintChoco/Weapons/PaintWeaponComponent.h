@@ -131,6 +131,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Weapon")
 	FGameplayTagContainer TriggerBlockedTags;
 
+	/** Tags on the owner's ability system that make every shot free (the infinite ammo item). The tank is neither checked nor spent. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Weapon")
+	FGameplayTagContainer FreeShotTags;
+
 	UFUNCTION()
 	void OnRep_Profile();
 
@@ -142,6 +146,7 @@ private:
 	void OnShotTimer();
 	bool HasAuthority() const;
 	bool IsTriggerBlocked() const;
+	bool IsShotFree() const;
 	float GetShotCost() const;
 	bool CanAffordShot() const;
 	void SpendShot();

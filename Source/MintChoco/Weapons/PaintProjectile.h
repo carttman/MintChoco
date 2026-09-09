@@ -33,6 +33,9 @@ public:
 	 */
 	void Init(const UPaintballProfile* InProfile, uint8 InPaintId, int32 InSeed, const FVector& Velocity, bool bInCosmetic);
 
+	/** 이 공이 칠하는 id(팀). 초콜릿 돔이 상대 탄을 가려낼 때 본다. */
+	uint8 GetPaintId() const { return PaintId; }
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 

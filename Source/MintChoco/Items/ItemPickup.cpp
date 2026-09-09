@@ -122,10 +122,8 @@ void AItemPickup::OnRep_Collected()
 
 void AItemPickup::ApplyProfile()
 {
-	if (Mesh && Profile)
-	{
-		Mesh->SetStaticMesh(Profile->PickupMesh);
-	}
+	// 박스는 종류와 무관하게 같은 모양(BP_ItemPickup의 Egg 메시)이다. 종류는 HUD 아이콘과 이름으로만 구분한다.
+	// 프로필별로 바꿀 것이 생기면 여기서 한다.
 }
 
 void AItemPickup::ApplyState()

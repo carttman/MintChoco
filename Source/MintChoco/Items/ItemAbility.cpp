@@ -5,12 +5,14 @@
 #include "AbilitySystemComponent.h"
 #include "GameplayEffect.h"
 
+#include "Game/TeamTypes.h"
 #include "Game/Unit.h"
 #include "Items/ItemGameplayEffect.h"
 #include "Items/ItemGameplayTags.h"
 #include "Items/ItemProfile.h"
 #include "Items/ItemSlotComponent.h"
 #include "MintChoco.h"
+#include "Weapons/PaintWeaponComponent.h"
 
 UItemAbility::UItemAbility()
 {
@@ -20,6 +22,9 @@ UItemAbility::UItemAbility()
 	// 효과 중 같은 아이템을 다시 쓰면 이 인스턴스를 끝내고 다시 시작한다. 두 인스턴스가
 	// 동시에 도는 대신 GE 스택이 타이머를 갱신하므로 "다시 시작"이 된다.
 	bRetriggerInstancedAbility = true;
+
+	// 스턴 중에는 아이템을 쓸 수 없다. 이미 도는 효과는 끊지 않는다.
+	ActivationBlockedTags.AddTag(ItemTags::State_Status_Stunned);
 }
 
 AUnit* UItemAbility::GetUnit() const
@@ -38,6 +43,20 @@ bool UItemAbility::IsAuthority() const
 	return HasAuthority(&Info);
 }
 
+uint8 UItemAbility::GetPaintId() const
+{
+	const AUnit* const Unit = GetUnit();
+	if (!Unit)
+	{
+		return 0;
+	}
+	if (Teams::IsValidId(Unit->GetTeam()))
+	{
+		return static_cast<uint8>(Unit->GetTeam());
+	}
+	return Unit->GetPaintWeapon() ? Unit->GetPaintWeapon()->GetPaintId() : 0;
+}
+
 void UItemAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo, const FGameplayEventData* TriggerEventData)
 {
@@ -51,7 +70,7 @@ void UItemAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle, cons
 
 	AUnit* const Unit = GetUnit();
 	const UItemProfile* const Profile = GetItemProfile();
-	if (!Unit || !Profile || !EffectClass)
+	if (!Unit || !Profile || (!Profile->IsInstant() && !EffectClass))
 	{
 		UE_LOG(LogMintChoco, Warning, TEXT("%s: item ability activated without a unit, a profile or an effect class (%s / %s / %s)."),
 			*GetName(), *GetNameSafe(Unit), *GetNameSafe(Profile), *GetNameSafe(EffectClass));
@@ -68,6 +87,17 @@ void UItemAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle, cons
 		}
 	}
 
+	AppliedEffect = FActiveGameplayEffectHandle();
+
+	// 즉발: GE 없이 효과를 내고 바로 끝난다. 남는 것은 OnItemActivated가 스폰한 액터뿐이다.
+	if (Profile->IsInstant())
+	{
+		bItemStarted = true;
+		OnItemActivated(*Unit, *Profile);
+		EndAbility(Handle, ActorInfo, ActivationInfo, /*bReplicateEndAbility=*/HasAuthority(&ActivationInfo), /*bWasCancelled=*/false);
+		return;
+	}
+
 	FGameplayEffectSpecHandle Spec = MakeOutgoingGameplayEffectSpec(EffectClass, GetAbilityLevel());
 	if (!Spec.IsValid())
 	{
@@ -77,13 +107,13 @@ void UItemAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle, cons
 	Spec.Data->SetSetByCallerMagnitude(ItemTags::Data_Item_Duration, Profile->Duration);
 	Spec.Data->DynamicGrantedTags.AddTag(StateTag);
 	Spec.Data->GetContext().AddSourceObject(Profile);
-	const FActiveGameplayEffectHandle EffectHandle = ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, Spec);
+	AppliedEffect = ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, Spec);
 
 	if (HasAuthority(&ActivationInfo))
 	{
-		if (EffectHandle.IsValid())
+		if (AppliedEffect.IsValid())
 		{
-			UAbilityTask_WaitGameplayEffectRemoved* const Wait = UAbilityTask_WaitGameplayEffectRemoved::WaitForGameplayEffectRemoved(this, EffectHandle);
+			UAbilityTask_WaitGameplayEffectRemoved* const Wait = UAbilityTask_WaitGameplayEffectRemoved::WaitForGameplayEffectRemoved(this, AppliedEffect);
 			Wait->OnRemoved.AddDynamic(this, &UItemAbility::HandleEffectRemoved);
 			Wait->InvalidHandle.AddDynamic(this, &UItemAbility::HandleEffectRemoved);
 			Wait->ReadyForActivation();
@@ -126,6 +156,23 @@ void UItemAbility::EndFromTimer()
 		const bool bReplicate = IsAuthority();
 		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), bReplicate, /*bWasCancelled=*/false);
 	}
+}
+
+void UItemAbility::FinishItem()
+{
+	if (!IsActive())
+	{
+		return;
+	}
+
+	// GE를 먼저 걷는다. 서버에서는 그 제거가 WaitGameplayEffectRemoved를 깨워 EndFromTimer로 오고,
+	// 그 뒤의 EndAbility는 IsActive가 거짓이라 아무것도 안 한다. 클라이언트는 태그만 내려간다.
+	if (AppliedEffect.IsValid())
+	{
+		BP_RemoveGameplayEffectFromOwnerWithHandle(AppliedEffect);
+		AppliedEffect = FActiveGameplayEffectHandle();
+	}
+	EndFromTimer();
 }
 
 void UItemAbility::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
