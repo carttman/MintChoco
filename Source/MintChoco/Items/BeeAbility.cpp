@@ -11,23 +11,7 @@
 
 AUnit* UGA_Bee::FindNearestOpponent(const AUnit& From)
 {
-	AUnit* Nearest = nullptr;
-	float NearestDistance = TNumericLimits<float>::Max();
-	for (TActorIterator<AUnit> It(From.GetWorld()); It; ++It)
-	{
-		AUnit* const Candidate = *It;
-		if (!Candidate || !FItemAreaEffect::ShouldAffect(Candidate->GetTeam(), From.GetTeam(), Candidate == &From))
-		{
-			continue;
-		}
-		const float Distance = FVector::DistSquared(Candidate->GetActorLocation(), From.GetActorLocation());
-		if (Distance < NearestDistance)
-		{
-			NearestDistance = Distance;
-			Nearest = Candidate;
-		}
-	}
-	return Nearest;
+	return From.GetWorld() ? ABeeProjectile::FindNearestOpponent(*From.GetWorld(), From.GetActorLocation(), From.GetTeam(), &From) : nullptr;
 }
 
 void UGA_Bee::OnItemActivated(AUnit& Unit, const UItemProfile& Profile)

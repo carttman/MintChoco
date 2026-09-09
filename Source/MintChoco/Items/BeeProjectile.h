@@ -24,6 +24,27 @@ struct MINTCHOCO_API FBeeSteering
 
 	/** Current에서 Desired 쪽으로 최대 MaxAngleDeg만 돈 단위 벡터. */
 	static FVector TurnTowards(const FVector& Current, const FVector& Desired, float MaxAngleDeg);
+
+	/**
+	 * 고도 오차(목표 고도 − 현재 고도, cm)를 방향의 Z 성분으로. Scale cm 차이에서 최대 기울기
+	 * MaxRise에 닿고 그 안에서는 비례한다. 문턱값이 아니라 연속값이라 매 틱 뒤집히지 않는다.
+	 */
+	static float VerticalComponent(float AltitudeError, float Scale, float MaxRise = 0.7f);
+
+	/** 수평 단위 방향과 Z 성분을 합친 단위 벡터. Flat이 0이면 위/아래만. */
+	static FVector Combine(const FVector& Flat, float Vertical);
+
+	/**
+	 * 요와 피치를 따로 제한해 돈다. 수평 방향은 수평면 안에서 최대 MaxAngleDeg, Z 성분은 그 각도만큼만
+	 * 바뀐다. 3D 최단 호로 돌리면 크게 꺾이면서 내려갈 때 호가 수직 아래를 지나 바닥에 박힌다.
+	 */
+	static FVector TurnTowardsSplit(const FVector& Current, const FVector& WantedFlat, float WantedVertical, float MaxAngleDeg);
+
+	/**
+	 * 지면 여유(cm)에 따라 허용되는 최대 하강 성분. 여유가 Scale이면 MaxDive, 0이면 0. 회전 제한이
+	 * 따라잡기 전에 바닥에 닿지 않도록 낮을수록 얕게 내려간다.
+	 */
+	static float MaxDescent(float Clearance, float Scale, float MaxDive = 0.7f);
 };
 
 /**
@@ -44,8 +65,11 @@ public:
 	/** 서버 전용. Init 뒤에. */
 	void SetProfile(const UBeeProfile* InProfile);
 
-	/** 서버 전용. 발사 순간 고른 상대. 없으면 직진한다. */
+	/** 서버 전용. 발사 순간 고른 상대. 없으면 BeginPlay에서 가장 가까운 상대를 고르고, 그래도 없으면 직진한다. */
 	void SetTarget(AUnit* InTarget);
+
+	/** Exclude(사용자)와 Team의 아군을 뺀 가장 가까운 유닛. 팀이 없으면 Exclude만 뺀다. 없으면 nullptr. */
+	static AUnit* FindNearestOpponent(const UWorld& World, const FVector& From, int32 Team, const AActor* Exclude);
 
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
@@ -77,4 +101,8 @@ private:
 	FVector LastMark = FVector::ZeroVector;
 	float Damage = 0.0f;
 	FTimerHandle LifeTimer;
+
+	/** 고른 회피 방향과 그것을 유지할 남은 시간. 매 틱 다른 후보로 갈아타면 지그재그가 된다. */
+	FVector AvoidanceDirection = FVector::ZeroVector;
+	float AvoidanceTimeLeft = 0.0f;
 };

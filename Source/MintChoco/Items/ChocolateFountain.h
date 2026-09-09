@@ -31,8 +31,14 @@ class MINTCHOCO_API AChocolateFountain : public AActor
 public:
 	AChocolateFountain();
 
-	/** 서버 전용. SpawnActorDeferred와 FinishSpawning 사이에. */
-	void Init(int32 InTeam, float InRadius, float InLifetime);
+	/** 서버 전용. SpawnActorDeferred와 FinishSpawning 사이에. Instigator(사용자)는 스폰 파라미터로 온다. */
+	void Init(int32 InTeam, uint8 InPaintId, float InRadius, float InLifetime);
+
+	/**
+	 * 돔이 통과시키는 유닛인지. 사용자 본인은 팀이 있든 없든 항상 통과하고, 그 밖에는 같은 팀만.
+	 * 팀이 없는 세션(로비 없이 켠 PIE)에서는 본인 말고 전부 상대다. 광역 효과의 규칙과 같다.
+	 */
+	bool IsFriendly(const AUnit* Unit) const;
 
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
@@ -53,6 +59,10 @@ protected:
 
 	UPROPERTY(VisibleInstanceOnly, Replicated, Category = "ChocolateFountain")
 	int32 Team = Teams::None;
+
+	/** 사용자의 페인트 id. 팀이 있으면 팀과 같고, 없으면 무기의 id. 상대 탄을 가려낼 때 본다. */
+	UPROPERTY(VisibleInstanceOnly, Replicated, Category = "ChocolateFountain")
+	uint8 PaintId = 0;
 
 	UPROPERTY(VisibleInstanceOnly, Replicated, Category = "ChocolateFountain")
 	float Radius = 300.0f;

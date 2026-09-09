@@ -28,6 +28,6 @@ void UGA_ChocolateFountain::OnItemActivated(AUnit& Unit, const UItemProfile& Pro
 		UE_LOG(LogMintChoco, Warning, TEXT("%s: 초콜릿 분수를 스폰하지 못했다."), *GetNameSafe(&Unit));
 		return;
 	}
-	Dome->Init(Unit.GetTeam(), Fountain->Radius, Fountain->Lifetime);
+	Dome->Init(Unit.GetTeam(), GetPaintId(), Fountain->Radius, Fountain->Lifetime);
 	Dome->FinishSpawning(SpawnTransform);
 }

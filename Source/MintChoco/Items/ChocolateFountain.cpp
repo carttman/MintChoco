@@ -57,11 +57,25 @@ AChocolateFountain::AChocolateFountain()
 	Mesh->SetCastShadow(false);
 }
 
-void AChocolateFountain::Init(int32 InTeam, float InRadius, float InLifetime)
+void AChocolateFountain::Init(int32 InTeam, uint8 InPaintId, float InRadius, float InLifetime)
 {
 	Team = InTeam;
+	PaintId = InPaintId;
 	Radius = InRadius;
 	Lifetime = InLifetime;
+}
+
+bool AChocolateFountain::IsFriendly(const AUnit* Unit) const
+{
+	if (!Unit)
+	{
+		return false;
+	}
+	if (Unit == GetInstigator())
+	{
+		return true;
+	}
+	return Teams::IsValidId(Team) && Unit->GetTeam() == Team;
 }
 
 void AChocolateFountain::ApplyShape()
@@ -80,11 +94,11 @@ void AChocolateFountain::BeginPlay()
 
 	SetLifeSpan(Lifetime);
 
-	// 아군은 어디서나 벽을 통과한다. 리슨 호스트의 폰도 이 머신의 캡슐이므로 여기서 건다.
+	// 사용자와 아군은 어디서나 벽을 통과한다. 리슨 호스트의 폰도 이 머신의 캡슐이므로 여기서 건다.
 	UWorld* const World = GetWorld();
 	for (TActorIterator<AUnit> It(World); It; ++It)
 	{
-		if (*It && Teams::IsValidId(Team) && It->GetTeam() == Team)
+		if (IsFriendly(*It))
 		{
 			SetIgnoresWall(*It, true);
 		}
@@ -123,6 +137,7 @@ void AChocolateFountain::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME_CONDITION(AChocolateFountain, Team, COND_InitialOnly);
+	DOREPLIFETIME_CONDITION(AChocolateFountain, PaintId, COND_InitialOnly);
 	DOREPLIFETIME_CONDITION(AChocolateFountain, Radius, COND_InitialOnly);
 	DOREPLIFETIME_CONDITION(AChocolateFountain, Lifetime, COND_InitialOnly);
 	DOREPLIFETIME(AChocolateFountain, PassThrough);
@@ -159,8 +174,7 @@ void AChocolateFountain::ApplyPassThrough()
 	for (int32 Index = IgnoringUnits.Num() - 1; Index >= 0; --Index)
 	{
 		AUnit* const Unit = IgnoringUnits[Index];
-		const bool bFriendly = Unit && Teams::IsValidId(Team) && Unit->GetTeam() == Team;
-		if (Unit && !bFriendly && !PassThrough.Contains(Unit))
+		if (Unit && !IsFriendly(Unit) && !PassThrough.Contains(Unit))
 		{
 			SetIgnoresWall(Unit, false);
 		}
@@ -174,8 +188,7 @@ void AChocolateFountain::OnRep_PassThrough()
 
 void AChocolateFountain::AdmitTrappedOpponent(AUnit& Unit)
 {
-	const bool bFriendly = Teams::IsValidId(Team) && Unit.GetTeam() == Team;
-	if (bFriendly || PassThrough.Contains(&Unit))
+	if (IsFriendly(&Unit) || PassThrough.Contains(&Unit))
 	{
 		return;
 	}
@@ -188,7 +201,7 @@ void AChocolateFountain::OnWallBeginOverlap(UPrimitiveComponent*, AActor* OtherA
 {
 	// 상대 탄은 벽에 삼켜진다. 서버의 진짜 탄도, 클라이언트의 연출 탄도 같은 규칙이라 그림이 맞는다.
 	APaintProjectile* const Ball = Cast<APaintProjectile>(OtherActor);
-	if (Ball && Teams::IsValidId(Team) && Ball->GetPaintId() != static_cast<uint8>(Team))
+	if (Ball && Ball->GetPaintId() != PaintId)
 	{
 		Ball->Destroy();
 	}

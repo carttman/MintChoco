@@ -5,15 +5,23 @@
 #include "Components/SphereComponent.h"
 #include "Engine/HitResult.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "TimerManager.h"
 
 #include "Game/Unit.h"
 #include "Items/BeeProfile.h"
 #include "Items/ItemAreaEffect.h"
+#include "Items/ItemSettings.h"
 #include "MintChoco.h"
 #include "Weapons/PaintBurst.h"
 #include "Weapons/PaintProjectile.h"
+
+namespace
+{
+	/** 고른 회피 방향을 유지하는 시간(초). 매 틱 다시 고르면 후보 사이를 오간다. */
+	constexpr float AvoidanceCommitTime = 0.3f;
+}
 
 // ---------------------------------------------------------------- FBeeSteering
 
@@ -69,7 +77,74 @@ FVector FBeeSteering::TurnTowards(const FVector& Current, const FVector& Desired
 	return FMath::VInterpNormalRotationTo(From, To, 1.0f, MaxAngleDeg);
 }
 
+float FBeeSteering::VerticalComponent(float AltitudeError, float Scale, float MaxRise)
+{
+	const float SafeScale = FMath::Max(Scale, 1.0f);
+	return FMath::Clamp(AltitudeError / SafeScale, -MaxRise, MaxRise);
+}
+
+FVector FBeeSteering::Combine(const FVector& Flat, float Vertical)
+{
+	const float V = FMath::Clamp(Vertical, -1.0f, 1.0f);
+	FVector Horizontal(Flat.X, Flat.Y, 0.0f);
+	if (!Horizontal.Normalize())
+	{
+		return FVector(0.0f, 0.0f, V >= 0.0f ? 1.0f : -1.0f);
+	}
+	return Horizontal * FMath::Sqrt(1.0f - V * V) + FVector(0.0f, 0.0f, V);
+}
+
+FVector FBeeSteering::TurnTowardsSplit(const FVector& Current, const FVector& WantedFlat, float WantedVertical, float MaxAngleDeg)
+{
+	FVector CurrentFlat(Current.X, Current.Y, 0.0f);
+	FVector TargetFlat(WantedFlat.X, WantedFlat.Y, 0.0f);
+	if (!TargetFlat.Normalize())
+	{
+		TargetFlat = CurrentFlat.GetSafeNormal();
+	}
+	if (!CurrentFlat.Normalize())
+	{
+		CurrentFlat = TargetFlat;
+	}
+
+	// 수평면 안의 회전: 두 벡터가 수평이라 회전축이 Z다.
+	const FVector NewFlat = CurrentFlat.IsNearlyZero() ? TargetFlat : TurnTowards(CurrentFlat, TargetFlat, MaxAngleDeg);
+
+	// Z 성분은 각도만큼만 바뀐다. 정확히는 sin이지만 작은 각도에서 라디안과 같다.
+	const float CurrentVertical = FMath::Clamp(static_cast<float>(Current.Z), -1.0f, 1.0f);
+	const float Step = FMath::DegreesToRadians(FMath::Max(MaxAngleDeg, 0.0f));
+	const float NewVertical = FMath::FInterpConstantTo(CurrentVertical, FMath::Clamp(WantedVertical, -1.0f, 1.0f), 1.0f, Step);
+	return Combine(NewFlat, NewVertical);
+}
+
+float FBeeSteering::MaxDescent(float Clearance, float Scale, float MaxDive)
+{
+	const float SafeScale = FMath::Max(Scale, 1.0f);
+	return FMath::Clamp(Clearance / SafeScale, 0.0f, 1.0f) * MaxDive;
+}
+
 // ---------------------------------------------------------------- ABeeProjectile
+
+AUnit* ABeeProjectile::FindNearestOpponent(const UWorld& World, const FVector& From, int32 Team, const AActor* Exclude)
+{
+	AUnit* Nearest = nullptr;
+	float NearestDistance = TNumericLimits<float>::Max();
+	for (TActorIterator<AUnit> It(&World); It; ++It)
+	{
+		AUnit* const Candidate = *It;
+		if (!Candidate || !FItemAreaEffect::ShouldAffect(Candidate->GetTeam(), Team, Candidate == Exclude))
+		{
+			continue;
+		}
+		const float Distance = FVector::DistSquared(Candidate->GetActorLocation(), From);
+		if (Distance < NearestDistance)
+		{
+			NearestDistance = Distance;
+			Nearest = Candidate;
+		}
+	}
+	return Nearest;
+}
 
 ABeeProjectile::ABeeProjectile()
 {
@@ -109,6 +184,25 @@ void ABeeProjectile::BeginPlay()
 		// 클라이언트 복사본은 그림이다. 연출 탄이 껍질에 걸리면 서버와 그림이 어긋나므로 껍질도 끈다.
 		Shell->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		return;
+	}
+
+	// 어빌리티 없이 놓인 꿀벌(레벨에 배치한 테스트용)은 설정의 프로필과 가장 가까운 유닛을 스스로 고른다.
+	if (!Profile)
+	{
+		TArray<UItemProfile*> Items;
+		UItemSettings::Get().LoadItems(Items);
+		for (const UItemProfile* const Item : Items)
+		{
+			if (const UBeeProfile* const Bee = Cast<UBeeProfile>(Item))
+			{
+				Profile = Bee;
+				break;
+			}
+		}
+	}
+	if (!Target.IsValid())
+	{
+		Target = FindNearestOpponent(*GetWorld(), GetActorLocation(), GetTeam(), GetInstigator());
 	}
 
 	SetActorTickEnabled(true);
@@ -160,51 +254,91 @@ void ABeeProjectile::Steer(float DeltaTime)
 	const FVector Location = GetActorLocation();
 	const FVector Current = Movement->Velocity.IsNearlyZero() ? GetActorForwardVector() : Movement->Velocity.GetSafeNormal();
 
-	// 대상이 없으면 직진.
-	FVector Desired = Current;
-	float DistanceToTarget = TNumericLimits<float>::Max();
+	// 수평 방향과 고도는 따로 정한다. 조준이 바닥 쪽을 향한다고 바닥을 장애물로 세면 매 틱 꺾였다 돌아온다.
+	FVector ToTarget = Current * 1000.0f;
+	float TargetZ = Location.Z;
 	if (Target.IsValid())
 	{
-		const FVector ToTarget = Target->GetActorLocation() - Location;
-		DistanceToTarget = ToTarget.Size();
-		Desired = ToTarget.GetSafeNormal();
+		ToTarget = Target->GetActorLocation() - Location;
+		TargetZ = Target->GetActorLocation().Z;
+	}
+	FVector Flat(ToTarget.X, ToTarget.Y, 0.0f);
+	const float HorizontalDistance = Flat.Size();
+	if (!Flat.Normalize())
+	{
+		Flat = FVector(Current.X, Current.Y, 0.0f).GetSafeNormal();
+		if (Flat.IsNearlyZero())
+		{
+			Flat = GetActorForwardVector().GetSafeNormal2D();
+		}
 	}
 
-	// 앞이 막혔으면 비켜 갈 후보를 차례로 본다.
-	TArray<FVector> Candidates;
-	FBeeSteering::BuildCandidates(Desired, Candidates);
-	TArray<bool> Blocked;
-	Blocked.Reserve(Candidates.Num());
-	FVector Wanted = Candidates[0];
-	if (IsBlocked(Candidates[0]))
+	// 수평 회피. 한 번 고른 방향은 잠시 유지한다: 후보를 매 틱 다시 고르면 둘 사이를 오간다.
+	FVector Wanted = Flat;
+	bool bClimbCandidate = false;
+	if (AvoidanceTimeLeft > 0.0f && !IsBlocked(AvoidanceDirection))
 	{
-		Blocked.Add(true);
-		for (int32 Index = 1; Index < Candidates.Num(); ++Index)
+		AvoidanceTimeLeft -= DeltaTime;
+		Wanted = AvoidanceDirection;
+		bClimbCandidate = AvoidanceDirection.Z > KINDA_SMALL_NUMBER;
+	}
+	else
+	{
+		AvoidanceTimeLeft = 0.0f;
+		if (IsBlocked(Flat))
 		{
-			const bool bBlocked = IsBlocked(Candidates[Index]);
-			Blocked.Add(bBlocked);
-			if (!bBlocked)
+			TArray<FVector> Candidates;
+			FBeeSteering::BuildCandidates(Flat, Candidates);
+			TArray<bool> Blocked;
+			Blocked.Reserve(Candidates.Num());
+			Blocked.Add(true);
+			for (int32 Index = 1; Index < Candidates.Num(); ++Index)
 			{
-				break;
+				const bool bBlocked = IsBlocked(Candidates[Index]);
+				Blocked.Add(bBlocked);
+				if (!bBlocked)
+				{
+					break;
+				}
+			}
+			Wanted = FBeeSteering::Choose(Candidates, Blocked);
+			AvoidanceDirection = Wanted;
+			AvoidanceTimeLeft = AvoidanceCommitTime;
+			bClimbCandidate = Wanted.Z > KINDA_SMALL_NUMBER;
+		}
+	}
+
+	// 고도: 멀리서는 바닥 위 HoverHeight(대상이 더 높으면 대상 높이), 가까이서는 대상 높이로 내려간다.
+	// 문턱값이 아니라 오차에 비례하는 연속값이라 흔들리지 않는다. 위로 비켜 가는 후보는 그대로 둔다.
+	float WantedVertical = Wanted.Z;
+	if (!bClimbCandidate)
+	{
+		float TargetAltitude = TargetZ;
+		float Clearance = Profile->HoverHeight * 3.0f;
+		const UWorld* const World = GetWorld();
+		if (World)
+		{
+			FCollisionQueryParams Params(SCENE_QUERY_STAT(BeeHover), false, this);
+			FHitResult Ground;
+			if (World->LineTraceSingleByChannel(Ground, Location, Location - FVector(0.0f, 0.0f, Profile->HoverHeight * 3.0f), ECC_Visibility, Params))
+			{
+				Clearance = Location.Z - Ground.ImpactPoint.Z - Sphere->GetScaledSphereRadius();
+				if (HorizontalDistance > Profile->HoverHeight * 2.0f)
+				{
+					TargetAltitude = FMath::Max(TargetZ, Ground.ImpactPoint.Z + Profile->HoverHeight);
+				}
+			}
+			else if (HorizontalDistance > Profile->HoverHeight * 2.0f)
+			{
+				TargetAltitude = FMath::Max(TargetZ, Location.Z);
 			}
 		}
-		Wanted = FBeeSteering::Choose(Candidates, Blocked);
+		WantedVertical = FBeeSteering::VerticalComponent(TargetAltitude - Location.Z, Profile->HoverHeight);
+		// 바닥이 가까울수록 얕게 내려간다. 회전이 따라잡기 전에 바닥에 닿지 않게.
+		WantedVertical = FMath::Max(WantedVertical, -FBeeSteering::MaxDescent(Clearance, Profile->HoverHeight));
 	}
 
-	// 바닥에 너무 가까우면 띄운다. 대상에 달려드는 마지막 구간은 예외.
-	const UWorld* const World = GetWorld();
-	if (World && DistanceToTarget > Profile->HoverHeight * 1.5f)
-	{
-		FCollisionQueryParams Params(SCENE_QUERY_STAT(BeeHover), false, this);
-		FHitResult Ground;
-		if (World->LineTraceSingleByChannel(Ground, Location, Location - FVector(0.0f, 0.0f, Profile->HoverHeight), ECC_Visibility, Params))
-		{
-			Wanted.Z = FMath::Max(Wanted.Z, 0.35f);
-			Wanted.Normalize();
-		}
-	}
-
-	const FVector NewDirection = FBeeSteering::TurnTowards(Current, Wanted, Profile->TurnRateDeg * DeltaTime);
+	const FVector NewDirection = FBeeSteering::TurnTowardsSplit(Current, Wanted, WantedVertical, Profile->TurnRateDeg * DeltaTime);
 	Movement->Velocity = NewDirection * Profile->Speed;
 }
 
@@ -245,6 +379,7 @@ void ABeeProjectile::HandleUnitOverlap(AUnit& Unit)
 	// 아군은 지나간다. 상대에 닿으면 터진다.
 	if (FItemAreaEffect::ShouldAffect(Unit.GetTeam(), GetTeam(), /*bIsInstigator=*/false))
 	{
+		UE_LOG(LogMintChoco, Verbose, TEXT("%s: 꿀벌이 %s에 적중했다."), *GetNameSafe(GetInstigator()), *GetNameSafe(&Unit));
 		Detonate();
 	}
 }
@@ -256,11 +391,14 @@ void ABeeProjectile::HandleWorldHit(const FHitResult& Hit)
 	{
 		return;
 	}
+	UE_LOG(LogMintChoco, Verbose, TEXT("%s: 꿀벌이 %s(%s)에 부딪혔다. 위치 %s, 법선 %s."), *GetNameSafe(GetInstigator()),
+		*GetNameSafe(Hit.GetActor()), *GetNameSafe(Hit.GetComponent()), *GetActorLocation().ToCompactString(), *Hit.ImpactNormal.ToCompactString());
 	Detonate();
 }
 
 void ABeeProjectile::Expire()
 {
+	UE_LOG(LogMintChoco, Verbose, TEXT("%s: 꿀벌의 수명이 다했다."), *GetNameSafe(GetInstigator()));
 	Detonate();
 }
 
