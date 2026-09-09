@@ -1,12 +1,7 @@
 #include "Paint/PaintCellGrid.h"
 
-#include "Components/StaticMeshComponent.h"
-#include "Engine/StaticMesh.h"
-#include "Rendering/PositionVertexBuffer.h"
-#include "Rendering/StaticMeshVertexBuffer.h"
-#include "StaticMeshResources.h"
-
 #include "Paint/PaintLog.h"
+#include "Paint/PaintMeshTriangles.h"
 
 FVector PaintFaceDirectionVector(EPaintFaceDirection Direction)
 {
@@ -82,7 +77,9 @@ void FPaintCellGrid::Build(
 	float AreaScale,
 	TArrayView<const FVector3f> Positions,
 	TArrayView<const FVector3f> Normals,
-	TArrayView<const uint32> Indices)
+	TArrayView<const uint32> Indices,
+	uint8 EnabledDirections,
+	const FVector& NormalClassifyScale)
 {
 	// A voxel cap keeps a huge mesh with a tiny cell size from allocating without bound; the
 	// cell size doubles until the grid fits, which the log reports.
@@ -148,7 +145,12 @@ void FPaintCellGrid::Build(
 				FaceNormal = -FaceNormal;
 			}
 		}
-		const int32 Direction = static_cast<int32>(ClassifyPaintFaceDirection(FaceNormal));
+		const EPaintFaceDirection Face = ClassifyPaintFaceDirection(FaceNormal * NormalClassifyScale);
+		if (!(EnabledDirections & PaintDirectionBit(Face)))
+		{
+			continue;
+		}
+		const int32 Direction = static_cast<int32>(Face);
 
 		// Exact rather than sampled: the triangle is clipped to every voxel it crosses and each
 		// piece's true area lands in that voxel, so a cell border never shifts area to a neighbour.
@@ -256,67 +258,28 @@ bool FPaintCellGrid::BuildFromMesh(
 	const UStaticMeshComponent& Mesh,
 	int32 MaterialSlot,
 	float WorldCellSize,
-	float UniformScale,
-	const FBox& LocalBounds)
+	const FVector& Scale3D,
+	const FBox& LocalBounds,
+	uint8 EnabledDirections)
 {
-	const FString Owner = Mesh.GetReadableName();
-	const UStaticMesh* const Asset = Mesh.GetStaticMesh();
-	const FStaticMeshRenderData* const RenderData = Asset ? Asset->GetRenderData() : nullptr;
-	if (!RenderData || RenderData->LODResources.IsEmpty())
+	FPaintMeshTriangles Triangles;
+	if (!GatherPaintMeshTriangles(Mesh, MaterialSlot, Triangles))
 	{
-		UE_LOG(LogPaint, Warning, TEXT("%s: no render data on the mesh, coverage disabled."), *Owner);
 		return false;
 	}
 
-	// LOD 0 is the Nanite fallback on a Nanite mesh, which is plenty for cells this coarse. In a
-	// cooked build these buffers only exist on the CPU if the mesh asset has Allow CPU Access on.
-	const FStaticMeshLODResources& LOD = RenderData->LODResources[0];
-	const FPositionVertexBuffer& PositionBuffer = LOD.VertexBuffers.PositionVertexBuffer;
-	const FStaticMeshVertexBuffer& VertexBuffer = LOD.VertexBuffers.StaticMeshVertexBuffer;
-	const FIndexArrayView IndexView = LOD.IndexBuffer.GetArrayView();
-	const uint32 VertexCount = PositionBuffer.GetNumVertices();
-	if (VertexCount == 0 || IndexView.Num() == 0)
+	// Scaling the positions rather than the cell size keeps the cells world-sized on every axis,
+	// which a single divisor cannot do once the scale is non-uniform.
+	const FVector3f Scale(Scale3D.GetAbs());
+	for (FVector3f& Position : Triangles.Positions)
 	{
-		UE_LOG(LogPaint, Warning,
-			TEXT("%s: mesh geometry is not CPU-readable (enable Allow CPU Access on %s), coverage disabled."),
-			*Owner, *GetNameSafe(Asset));
-		return false;
+		Position *= Scale;
 	}
+	FBox ScaledBounds(ForceInit);
+	ScaledBounds += LocalBounds.Min * FVector(Scale);
+	ScaledBounds += LocalBounds.Max * FVector(Scale);
 
-	// Only the slot that shows paint counts; a second material on the mesh is not paintable.
-	TArray<uint32> Indices;
-	for (const FStaticMeshSection& Section : LOD.Sections)
-	{
-		const int32 End = Section.FirstIndex + Section.NumTriangles * 3;
-		if (Section.MaterialIndex != MaterialSlot || End > IndexView.Num())
-		{
-			continue;
-		}
-		Indices.Reserve(Indices.Num() + Section.NumTriangles * 3);
-		for (int32 Index = Section.FirstIndex; Index < End; ++Index)
-		{
-			Indices.Add(IndexView[Index]);
-		}
-	}
-	if (Indices.IsEmpty())
-	{
-		UE_LOG(LogPaint, Warning, TEXT("%s: material slot %d has no triangles, coverage disabled."), *Owner, MaterialSlot);
-		return false;
-	}
-
-	TArray<FVector3f> Normals;
-	if (VertexBuffer.GetNumVertices() == VertexCount)
-	{
-		Normals.SetNumUninitialized(VertexCount);
-		for (uint32 Vertex = 0; Vertex < VertexCount; ++Vertex)
-		{
-			Normals[Vertex] = FVector3f(VertexBuffer.VertexTangentZ(Vertex));
-		}
-	}
-	const TArrayView<const FVector3f> Positions(
-		static_cast<const FVector3f*>(PositionBuffer.GetVertexData()), VertexCount);
-
-	Build(LocalBounds, WorldCellSize / UniformScale, UniformScale * UniformScale, Positions, Normals, Indices);
+	Build(ScaledBounds, WorldCellSize, 1.0f, Triangles.Positions, Triangles.Normals, Triangles.Indices, EnabledDirections, FVector(Scale));
 	return IsBuilt();
 }
 

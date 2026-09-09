@@ -10,6 +10,7 @@
 class UInputAction;
 class UInputMappingContext;
 class UPaintBrushProfile;
+class UPaintChargeWidget;
 class UPaintSubsystem;
 class UPaintWeaponComponent;
 class UPaintWeaponProfile;
@@ -66,7 +67,8 @@ public:
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
-	virtual void OnPossess(APawn* InPawn) override;
+	/** SetPawn rather than OnPossess: it also runs on the owning client, where the number keys and the wheel are pressed. */
+	virtual void SetPawn(APawn* InPawn) override;
 
 	void OnPaintTriggered();
 	void OnSelectWeaponKey(FKey Key);
@@ -104,6 +106,10 @@ protected:
 	/** World coverage readout. Defaults to the C++ widget; a UMG subclass restyles it. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI")
 	TSubclassOf<USampleCoverageWidget> CoverageWidgetClass;
+
+	/** Ring around the crosshair that shows a Charged weapon's hold. Defaults to the C++ widget. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI")
+	TSubclassOf<UPaintChargeWidget> ChargeWidgetClass;
 
 	/** The brush this source stamps with: its material and how a hit becomes a splat shape. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|Paint")
@@ -196,6 +202,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<USampleCoverageWidget> CoverageWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UPaintChargeWidget> ChargeWidget;
 
 	/** The possessed pawn's weapon; re-resolved on every possess, null for a pawn without one. */
 	UPROPERTY(Transient)

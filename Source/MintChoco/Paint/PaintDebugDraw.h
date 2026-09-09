@@ -8,6 +8,9 @@ class UWorld;
 /**
  * Overlays for looking at the coverage grid in PIE. Nothing here is gameplay: the team looks
  * live in the materials and the scores in the grid; these only draw what the grid already knows.
+ *
+ * The grid lives in the mesh's scaled-local frame, so ScaledLocalToWorld is the mesh transform
+ * with its scale stripped: rotation and translation only.
  */
 namespace PaintDebug
 {
@@ -19,16 +22,14 @@ namespace PaintDebug
 	/** One line at the mesh center with the whole surface's coverage, plus one line outside each face. */
 	MINTCHOCO_API void DrawCoverageText(
 		const UWorld* World,
-		const FTransform& MeshTransform,
-		float UniformScale,
-		const FBox& LocalBounds,
+		const FTransform& ScaledLocalToWorld,
+		const FBox& ScaledBounds,
 		const FPaintCellGrid& Grid,
 		const FString& Label);
 
 	/** Every surface cell as a slab lying on the surface, colored by its paint id. */
 	MINTCHOCO_API void DrawCells(
 		const UWorld* World,
-		const FTransform& MeshTransform,
-		float UniformScale,
+		const FTransform& ScaledLocalToWorld,
 		const FPaintCellGrid& Grid);
 }

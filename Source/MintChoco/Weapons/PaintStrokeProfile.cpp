@@ -36,7 +36,7 @@ bool UPaintStrokeProfile::Fire(const FPaintFireContext& Context, FPaintStrokeSta
 		Context.ViewOrigin,
 		Context.ViewOrigin + Context.ViewDirection * TraceLength,
 		ECC_Visibility, Params);
-	if (!bHit || !FPaintDeposit::IsPaintable(Hit) || FVector::Dist(Hit.ImpactPoint, MuzzleLocation) > Reach)
+	if (!bHit || !FPaintDeposit::ReceivesSplat(Hit) || FVector::Dist(Hit.ImpactPoint, MuzzleLocation) > Reach)
 	{
 		// Dropping the anchor means sweeping off a surface and back on starts a fresh stroke
 		// rather than one that jumps the gap.

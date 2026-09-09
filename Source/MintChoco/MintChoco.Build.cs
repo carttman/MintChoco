@@ -16,6 +16,9 @@ public class MintChoco : ModuleRules
 			"DeveloperSettings",
 			"InputCore",
 			"EnhancedInput",
+			"GameplayAbilities",
+			"GameplayTags",
+			"GameplayTasks",
 			"UMG",
 			"Slate",
 			"SlateCore",
@@ -34,6 +37,7 @@ public class MintChoco : ModuleRules
 
 		PublicIncludePaths.AddRange(new string[] {
 			"MintChoco",
+			"MintChoco/Ink",
 			"MintChoco/Paint",
 			"MintChoco/Sample",
 			"MintChoco/Weapons"

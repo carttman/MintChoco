@@ -17,7 +17,9 @@ enum class EPaintFireMode : uint8
 	/** Repeats at ShotsPerSecond while the trigger is held. */
 	Automatic,
 	/** Fires every tick while held; a brush stroke throttles itself by distance instead of by time. */
-	Continuous
+	Continuous,
+	/** Fires once when the trigger is released after being held for ChargeTime; released earlier, nothing happens. */
+	Charged
 };
 
 /**
@@ -56,6 +58,10 @@ struct FPaintShot
 
 	UPROPERTY()
 	FVector_NetQuantizeNormal Direction = FVector::ForwardVector;
+
+	/** How far along Direction the shot reached, for a hitscan's tracer. A projectile leaves it 0. */
+	UPROPERTY()
+	float Distance = 0.0f;
 
 	UPROPERTY()
 	int32 Seed = 0;
@@ -102,7 +108,10 @@ public:
 	virtual void LogUnsetReferences(const UObject* Owner) const {}
 
 	/** Whether the weapon keeps firing after the first shot while the trigger is held. */
-	bool RepeatsWhileHeld() const { return FireMode != EPaintFireMode::Single; }
+	bool RepeatsWhileHeld() const
+	{
+		return FireMode == EPaintFireMode::Automatic || FireMode == EPaintFireMode::Continuous;
+	}
 
 	/** Seconds between shots while held. 0 means Continuous, which fires once per tick. */
 	float GetShotInterval() const
@@ -117,4 +126,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cadence",
 		meta = (ClampMin = "0.1", ClampMax = "60.0", EditCondition = "FireMode == EPaintFireMode::Automatic"))
 	float ShotsPerSecond = 8.0f;
+
+	/** How long the trigger must be held before releasing it fires, in Charged. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cadence",
+		meta = (ClampMin = "0.05", ForceUnits = "s", EditCondition = "FireMode == EPaintFireMode::Charged"))
+	float ChargeTime = 3.0f;
+
+	/**
+	 * Fraction of a full ink tank one accepted shot spends; a brush pays it per stamp. 0 fires for
+	 * free, and so does a pawn that carries no tank at all.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ink", meta = (ClampMin = "0", ClampMax = "1"))
+	float InkCostPerShot = 0.04f;
 };

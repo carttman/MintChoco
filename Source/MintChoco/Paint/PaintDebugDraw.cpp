@@ -30,20 +30,19 @@ namespace PaintDebug
 
 	void DrawCoverageText(
 		const UWorld* World,
-		const FTransform& MeshTransform,
-		float UniformScale,
-		const FBox& LocalBounds,
+		const FTransform& ScaledLocalToWorld,
+		const FBox& ScaledBounds,
 		const FPaintCellGrid& Grid,
 		const FString& Label)
 	{
 #if ENABLE_DRAW_DEBUG
-		const FVector LocalCenter = LocalBounds.GetCenter();
-		const FVector LocalExtent = LocalBounds.GetExtent();
+		const FVector Center = ScaledBounds.GetCenter();
+		const FVector Extent = ScaledBounds.GetExtent();
 
 		// Duration 0 lives exactly one frame, so re-issuing every tick keeps the text current
 		// without ever stacking stale copies.
 		DrawDebugString(
-			World, MeshTransform.TransformPosition(LocalCenter),
+			World, ScaledLocalToWorld.TransformPosition(Center),
 			FString::Printf(TEXT("%s  %s"), *Label, *Grid.GetCoverage().ToString()),
 			nullptr, FColor::White, 0.0f, true);
 
@@ -57,9 +56,9 @@ namespace PaintDebug
 				continue;
 			}
 			const FVector Axis = PaintFaceDirectionVector(Face);
-			const double Reach = FVector::DotProduct(Axis.GetAbs(), LocalExtent) + MarginWorld / UniformScale;
+			const double Reach = FVector::DotProduct(Axis.GetAbs(), Extent) + MarginWorld;
 			DrawDebugString(
-				World, MeshTransform.TransformPosition(LocalCenter + Axis * Reach),
+				World, ScaledLocalToWorld.TransformPosition(Center + Axis * Reach),
 				FString::Printf(TEXT("%s  %s"), FaceName(Face), *Coverage.ToString()),
 				nullptr, IdColor(PaintIdNone), 0.0f, true);
 		}
@@ -68,22 +67,21 @@ namespace PaintDebug
 
 	void DrawCells(
 		const UWorld* World,
-		const FTransform& MeshTransform,
-		float UniformScale,
+		const FTransform& ScaledLocalToWorld,
 		const FPaintCellGrid& Grid)
 	{
 #if ENABLE_DRAW_DEBUG
 		// A cell is a patch of surface, so it is drawn as a slab centered on that surface, facing
 		// its direction, rather than as the voxel it lives in (which straddles the surface). Thick
 		// enough to stand clear of the displaced paint, which would otherwise swallow a thin one.
-		const float HalfCell = Grid.GetCellSize() * UniformScale * 0.45f;
+		const float HalfCell = Grid.GetCellSize() * 0.45f;
 		const FVector Extent(HalfCell, HalfCell, HalfCell * 0.5f);
 		Grid.ForEachSurfaceCell([&](const FVector& SurfaceCenter, EPaintFaceDirection Direction, uint8 PaintId, float)
 		{
 			const bool bPainted = PaintId != PaintIdNone;
 			const FQuat FaceRotation = FRotationMatrix::MakeFromZ(PaintFaceDirectionVector(Direction)).ToQuat();
 			DrawDebugBox(
-				World, MeshTransform.TransformPosition(SurfaceCenter), Extent, MeshTransform.GetRotation() * FaceRotation,
+				World, ScaledLocalToWorld.TransformPosition(SurfaceCenter), Extent, ScaledLocalToWorld.GetRotation() * FaceRotation,
 				bPainted ? IdColor(PaintId) : FColor(70, 70, 70),
 				false, 0.0f, 0, bPainted ? 1.0f : 0.0f);
 		});
