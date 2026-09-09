@@ -427,6 +427,25 @@ void AUnit::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 	{
 		EnhancedInput->BindAction(InputConfig->ItemAction, ETriggerEvent::Started, this, &AUnit::UseItem);
 	}
+
+#if !UE_BUILD_SHIPPING
+	// 디버그: 숫자 키 1~8이 설정 목록의 아이템을 바로 슬롯에 넣는다. 입력 액션 에셋 없이 키를 직접
+	// 묶는다. Enhanced Input이 켜져 있어도 옛 키 바인딩은 그대로 동작한다.
+	const FKey DebugItemKeys[] = { EKeys::One, EKeys::Two, EKeys::Three, EKeys::Four, EKeys::Five, EKeys::Six, EKeys::Seven, EKeys::Eight };
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(DebugItemKeys); ++Index)
+	{
+		FInputKeyBinding Binding(FInputChord(DebugItemKeys[Index]), IE_Pressed);
+		Binding.bConsumeInput = false;
+		Binding.KeyDelegate.GetDelegateForManualSet().BindWeakLambda(this, [this, Index]()
+		{
+			if (ItemSlot)
+			{
+				ItemSlot->DebugGiveItem(Index);
+			}
+		});
+		PlayerInputComponent->KeyBindings.Add(MoveTemp(Binding));
+	}
+#endif
 }
 
 void AUnit::UseItem()

@@ -311,3 +311,37 @@ void UItemSlotComponent::StartInkBlink()
 		Bottle->SetBlink(true, 0.1f);
 	}
 }
+
+void UItemSlotComponent::DebugGiveItem(int32 Index)
+{
+#if !UE_BUILD_SHIPPING
+	if (HasAuthority())
+	{
+		GiveItemByIndex(Index);
+	}
+	else
+	{
+		ServerDebugGiveItem(Index);
+	}
+#endif
+}
+
+void UItemSlotComponent::ServerDebugGiveItem_Implementation(int32 Index)
+{
+#if !UE_BUILD_SHIPPING
+	GiveItemByIndex(Index);
+#endif
+}
+
+void UItemSlotComponent::GiveItemByIndex(int32 Index)
+{
+	TArray<UItemProfile*> Items;
+	UItemSettings::Get().LoadItems(Items);
+	if (!Items.IsValidIndex(Index))
+	{
+		UE_LOG(LogMintChoco, Warning, TEXT("%s: 아이템 %d번이 없다(목록 %d개)."), *GetNameSafe(GetOwner()), Index + 1, Items.Num());
+		return;
+	}
+	GiveItem(Items[Index]);
+	UE_LOG(LogMintChoco, Verbose, TEXT("%s: 디버그로 %s를 받았다."), *GetNameSafe(GetOwner()), *GetNameSafe(Items[Index]));
+}

@@ -57,6 +57,13 @@ public:
 	bool TryUseHeldItem();
 
 	/**
+	 * 디버그. UItemSettings 목록의 Index번째(0부터) 아이템을 바로 슬롯에 넣는다. 클라이언트는
+	 * 서버에 부탁한다. Shipping 빌드에서는 아무 일도 하지 않는다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Item|Debug")
+	void DebugGiveItem(int32 Index);
+
+	/**
 	 * 클라이언트가 보낸 속도 부스트 플래그를 서버가 인정해도 되는지. 효과 태그가 이미
 	 * 있거나, 그 효과를 켤 아이템을 아직 들고 있을 때(RPC가 무브보다 늦게 오는 창) 참이다.
 	 */
@@ -85,6 +92,12 @@ protected:
 	void OnRep_HeldItem();
 
 private:
+	UFUNCTION(Server, Reliable)
+	void ServerDebugGiveItem(int32 Index);
+
+	/** 서버 전용. 설정 목록의 Index번째 아이템을 준다. 범위 밖이면 경고. */
+	void GiveItemByIndex(int32 Index);
+
 	UAbilitySystemComponent* GetAbilitySystem() const;
 	bool HasAuthority() const;
 	void SetHeldItem(UItemProfile* Item);
