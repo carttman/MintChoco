@@ -45,6 +45,13 @@ bool FPaintBurstDirectionsTest::RunTest(const FString& Parameters)
 	PaintBurst::ComputeDirections(1, 4, 70.0f, 10.0f, D);
 	TestEqual(TEXT("swapped pitch range still yields directions"), D.Num(), 4);
 
+	// 반경 → 속도: 문서에 적힌 표(중력 0.5에서 3 m는 약 385)와 맞는다.
+	TestEqual(TEXT("3 m at half gravity"), PaintBurst::SpeedForRange(300.0f, 0.5f), 383.4f, 1.0f);
+	TestEqual(TEXT("4 m at half gravity"), PaintBurst::SpeedForRange(400.0f, 0.5f), 442.7f, 1.0f);
+	TestTrue(TEXT("a bigger radius needs a faster ball"),
+		PaintBurst::SpeedForRange(600.0f, 0.5f) > PaintBurst::SpeedForRange(300.0f, 0.5f));
+	TestEqual(TEXT("zero range needs no speed"), PaintBurst::SpeedForRange(0.0f, 0.5f), 0.0f);
+
 	return true;
 }
 
