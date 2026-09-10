@@ -7,7 +7,9 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/SphereComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
@@ -70,6 +72,22 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 
 	// 붐이 이미 회전을 처리했으므로 카메라가 다시 하면 이중으로 돈다.
 	FollowCamera->bUsePawnControlRotation = false;
+
+	// 카메라 프로브: 다른 유닛의 캡슐(Pawn)만 Overlap. 물리 없음, 로컬 플레이어 폰에서만 켠다.
+	CameraProbe = CreateDefaultSubobject<USphereComponent>(TEXT("CameraProbe"));
+	CameraProbe->SetupAttachment(FollowCamera);
+	CameraProbe->InitSphereRadius(40.0f);
+	CameraProbe->SetCollisionObjectType(ECC_WorldDynamic);
+	CameraProbe->SetCollisionResponseToAllChannels(ECR_Ignore);
+	CameraProbe->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+	CameraProbe->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CameraProbe->SetGenerateOverlapEvents(true);
+	CameraProbe->SetCanEverAffectNavigation(false);
+	CameraProbe->SetHiddenInGame(true);
+
+	// 다른 플레이어의 카메라 붐이 이 유닛에 걸리지 않는다. 겹침은 위 프로브가 알린다.
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	GetMesh()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 
 	PaintWeapon = CreateDefaultSubobject<UPaintWeaponComponent>(TEXT("PaintWeapon"));
 	SecondaryWeapon = CreateDefaultSubobject<UPaintWeaponComponent>(TEXT("SecondaryWeapon"));
@@ -145,6 +163,113 @@ void AUnit::BeginPlay()
 		StunTagHandle = AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_Stunned, EGameplayTagEventType::NewOrRemoved)
 			.AddUObject(this, &AUnit::HandleStunTagChanged);
 	}
+
+	// 빙의가 BeginPlay보다 먼저 온 경우(리슨 호스트)를 위해 한 번 더 맞춘다.
+	UpdateCameraProbe();
+}
+
+void AUnit::NotifyControllerChanged()
+{
+	Super::NotifyControllerChanged();
+	UpdateCameraProbe();
+}
+
+void AUnit::PawnClientRestart()
+{
+	Super::PawnClientRestart();
+	// 클라이언트에서는 Controller 복제 순서에 따라 NotifyControllerChanged가 로컬 판정 전에 올 수 있다.
+	// ClientRestart는 컨트롤러가 붙은 뒤 소유 머신에서만 오므로 여기서 확실히 켠다.
+	UpdateCameraProbe();
+}
+
+void AUnit::UnPossessed()
+{
+	Super::UnPossessed();
+	UpdateCameraProbe();
+}
+
+void AUnit::UpdateCameraProbe()
+{
+	if (!CameraProbe)
+	{
+		return;
+	}
+
+	const bool bWantsProbe = IsLocallyControlled() && IsPlayerControlled() && GetNetMode() != NM_DedicatedServer;
+	UE_LOG(LogMintChoco, Verbose, TEXT("%s: 카메라 프로브 %s (로컬 %d, 플레이어 %d)"),
+		*GetNameSafe(this), bWantsProbe ? TEXT("켬") : TEXT("끔"), IsLocallyControlled(), IsPlayerControlled());
+	if (bWantsProbe)
+	{
+		CameraProbe->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		return;
+	}
+
+	CameraProbe->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	for (const TWeakObjectPtr<AUnit>& Faded : CameraFadedUnits)
+	{
+		if (AUnit* const Other = Faded.Get())
+		{
+			Other->SetCameraFaded(false);
+		}
+	}
+	CameraFadedUnits.Reset();
+}
+
+void AUnit::OnCameraProbeBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+	AUnit* const Other = Cast<AUnit>(OtherActor);
+	if (!Other || Other == this || OtherComp != Other->GetCapsuleComponent())
+	{
+		return;
+	}
+	CameraFadedUnits.AddUnique(Other);
+	Other->SetCameraFaded(true);
+}
+
+void AUnit::OnCameraProbeEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
+{
+	AUnit* const Other = Cast<AUnit>(OtherActor);
+	if (!Other || Other == this || OtherComp != Other->GetCapsuleComponent())
+	{
+		return;
+	}
+	CameraFadedUnits.Remove(Other);
+	Other->SetCameraFaded(false);
+}
+
+void AUnit::SetCameraFaded(bool bFaded)
+{
+	USkeletalMeshComponent* const MeshComponent = GetMesh();
+	if (!MeshComponent || bFaded == bCameraFaded)
+	{
+		return;
+	}
+
+	if (bFaded)
+	{
+		if (!CameraFadeMaterial)
+		{
+			return;
+		}
+		CameraFadeOriginalMaterials.Reset();
+		for (UMaterialInterface* const Original : MeshComponent->GetMaterials())
+		{
+			CameraFadeOriginalMaterials.Add(Original);
+		}
+		for (int32 Index = 0; Index < CameraFadeOriginalMaterials.Num(); ++Index)
+		{
+			MeshComponent->SetMaterial(Index, CameraFadeMaterial);
+		}
+		bCameraFaded = true;
+		return;
+	}
+
+	for (int32 Index = 0; Index < CameraFadeOriginalMaterials.Num(); ++Index)
+	{
+		MeshComponent->SetMaterial(Index, CameraFadeOriginalMaterials[Index]);
+	}
+	CameraFadeOriginalMaterials.Reset();
+	bCameraFaded = false;
 }
 
 int32 AUnit::GetTeam() const
@@ -327,6 +452,15 @@ void AUnit::PostInitializeComponents()
 	if (SecondaryWeapon)
 	{
 		SecondaryWeapon->OnFired.AddDynamic(this, &AUnit::HandleWeaponFired);
+	}
+
+	// 블루프린트가 캡슐·메시 충돌을 덮어썼어도 카메라 채널만은 여기서 다시 무시로 둔다.
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	GetMesh()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	if (CameraProbe)
+	{
+		CameraProbe->OnComponentBeginOverlap.AddDynamic(this, &AUnit::OnCameraProbeBeginOverlap);
+		CameraProbe->OnComponentEndOverlap.AddDynamic(this, &AUnit::OnCameraProbeEndOverlap);
 	}
 
 	// 소유 클라이언트에서는 입력이, 서버에서는 압축 플래그가 이 알림을 낸다.
@@ -522,6 +656,16 @@ void AUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 
 	AppliedInputSubsystem.Reset();
+
+	// 내 카메라가 반투명하게 만든 유닛을 되돌린다. 파괴 중에는 EndOverlap 알림이 오지 않는다.
+	for (const TWeakObjectPtr<AUnit>& Faded : CameraFadedUnits)
+	{
+		if (AUnit* const Other = Faded.Get())
+		{
+			Other->SetCameraFaded(false);
+		}
+	}
+	CameraFadedUnits.Reset();
 
 	if (AbilitySystem && StunTagHandle.IsValid())
 	{
@@ -750,11 +894,16 @@ void AUnit::ApplyUnitData()
 		return;
 	}
 
+	// 페이드 중에 메시가 바뀌면 저장해 둔 원래 재질이 옛 메시 것이 된다. 풀었다가 다시 건다.
+	const bool bWasCameraFaded = bCameraFaded;
+	SetCameraFaded(false);
+
 	// 메시 교체가 애님 인스턴스를 다시 만들기 때문에 순서를 바꾸면 애님 클래스가 날아간다.
 	if (UnitData->Mesh)
 	{
 		MeshComponent->SetSkeletalMesh(UnitData->Mesh);
 	}
+	SetCameraFaded(bWasCameraFaded);
 
 	if (UnitData->AnimClass)
 	{
