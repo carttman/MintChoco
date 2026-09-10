@@ -52,7 +52,7 @@ bool FPaintProfileAssetTest::RunTest(const FString& Parameters)
 	{
 		TestNotNull(*FString::Printf(TEXT("%s: BrushProfile"), *Name), Deposit.BrushProfile.Get());
 		TestTrue(*FString::Printf(TEXT("%s: SplatVolume is positive"), *Name), Deposit.SplatVolume > 0.0f);
-		TestTrue(*FString::Printf(TEXT("%s: HeightAdd is positive"), *Name), Deposit.HeightAdd > 0.0f);
+		TestTrue(*FString::Printf(TEXT("%s: HeightAdd is positive"), *Name), Deposit.GetHeightAdd() > 0.0f);
 	};
 
 	TArray<FAssetData> Paintballs;

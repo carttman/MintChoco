@@ -24,6 +24,9 @@ UPaintWeaponComponent::UPaintWeaponComponent()
 	SetIsReplicatedByDefault(true);
 
 	TriggerBlockedTags.AddTag(ItemTags::State_Item_SweetSpinner);
+	TriggerBlockedTags.AddTag(ItemTags::State_Item_HeroLanding);
+	TriggerBlockedTags.AddTag(ItemTags::State_Status_Stunned);
+	FreeShotTags.AddTag(ItemTags::State_Item_InfiniteAmmo);
 }
 
 bool UPaintWeaponComponent::IsTriggerBlocked() const
@@ -34,6 +37,16 @@ bool UPaintWeaponComponent::IsTriggerBlocked() const
 	}
 	const UAbilitySystemComponent* const AbilitySystem = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetOwner());
 	return AbilitySystem && AbilitySystem->HasAnyMatchingGameplayTags(TriggerBlockedTags);
+}
+
+bool UPaintWeaponComponent::IsShotFree() const
+{
+	if (FreeShotTags.IsEmpty())
+	{
+		return false;
+	}
+	const UAbilitySystemComponent* const AbilitySystem = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetOwner());
+	return AbilitySystem && AbilitySystem->HasAnyMatchingGameplayTags(FreeShotTags);
 }
 
 void UPaintWeaponComponent::BeginPlay()
@@ -218,7 +231,11 @@ bool UPaintWeaponComponent::HasAuthority() const
 
 float UPaintWeaponComponent::GetShotCost() const
 {
-	return Profile ? Profile->InkCostPerShot : 0.0f;
+	// The owner predicts the free shot with its own tag; the server has the tag by the time ServerFire
+	// arrives, since the activation RPC travels the same reliable channel ahead of it.
+	if (!Profile || IsShotFree()) return 0.0f;
+
+    return Profile->GetInkCostPerShot();
 }
 
 bool UPaintWeaponComponent::CanAffordShot() const
@@ -228,9 +245,11 @@ bool UPaintWeaponComponent::CanAffordShot() const
 
 void UPaintWeaponComponent::SpendShot()
 {
-	if (Tank.IsValid())
+	// A free shot does not touch the tank at all, so the refill keeps running through the effect.
+	const float Cost = GetShotCost();
+	if (Cost > 0.0f && Tank.IsValid())
 	{
-		Tank->TryConsume(GetShotCost());
+		Tank->TryConsume(Cost);
 	}
 }
 
@@ -320,6 +339,8 @@ void UPaintWeaponComponent::MulticastShotFired_Implementation(const FPaintShot& 
 	{
 		Profile->PlayCosmetic(*GetWorld(), GetOwnerPawn(), Shot);
 	}
+	// Feedback on the machines that only watch: the owner and the server raised theirs when they fired.
+	OnFired.Broadcast(Shot.Seed);
 }
 
 void UPaintWeaponComponent::BuildContext(FPaintFireContext& OutContext, const FVector& ViewOrigin, const FVector& ViewDirection) const

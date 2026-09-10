@@ -102,6 +102,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Paint")
 	bool IsDirectionEnabled(EPaintFaceDirection Direction) const { return (EnabledDirections & PaintDirectionBit(Direction)) != 0; }
 
+	/** 대상 메시의 월드 경계. 준비 전이거나 메시가 없으면 무효 상자. 폭격이 맵 범위를 잴 때 합친다. */
+	FBox GetWorldBounds() const;
+
 	/**
 	 * Whether a splat landing here with this world-space surface normal is kept and scored, or
 	 * is only a passing effect. This is the one place a hit normal is turned into a direction, so

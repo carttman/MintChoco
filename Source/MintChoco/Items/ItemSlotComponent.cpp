@@ -8,11 +8,13 @@
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
+#include "TimerManager.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 
 #include "Game/Unit.h"
 #include "Game/UnitMovementComponent.h"
+#include "Ink/InkBottleComponent.h"
 #include "Items/ItemAbility.h"
 #include "Items/ItemGameplayTags.h"
 #include "Items/ItemProfile.h"
@@ -186,6 +188,10 @@ void UItemSlotComponent::HandleTagChanged(const FGameplayTag Tag, int32 NewCount
 	{
 		ApplySpeedBoost(bActive);
 	}
+	if (Item->OverridesInkLook())
+	{
+		SetInkLook(bActive, Item->Duration);
+	}
 
 	if (bActive)
 	{
@@ -260,4 +266,82 @@ void UItemSlotComponent::MulticastSpinnerShot_Implementation(const UPaintGunProf
 		return;
 	}
 	Volley->PlayCosmetic(*GetWorld(), Cast<APawn>(GetOwner()), Shot);
+}
+
+void UItemSlotComponent::RestartInkLook(float Duration)
+{
+	SetInkLook(true, Duration);
+}
+
+void UItemSlotComponent::SetInkLook(bool bOn, float Duration)
+{
+	const AUnit* const Unit = Cast<AUnit>(GetOwner());
+	UInkBottleComponent* const Bottle = Unit ? Unit->GetInkBottle() : nullptr;
+	UWorld* const World = GetWorld();
+	if (!Bottle || !World)
+	{
+		return;
+	}
+
+	World->GetTimerManager().ClearTimer(InkBlinkTimer);
+	Bottle->SetBlink(false);
+	Bottle->SetLookOverride(bOn);
+	if (!bOn)
+	{
+		return;
+	}
+
+	// 마지막 1초는 점멸. 지속시간이 1초 이하면 처음부터 점멸한다.
+	const float BlinkAt = Duration - 1.0f;
+	if (BlinkAt > 0.0f)
+	{
+		World->GetTimerManager().SetTimer(InkBlinkTimer, this, &UItemSlotComponent::StartInkBlink, BlinkAt, /*bLoop=*/false);
+	}
+	else
+	{
+		StartInkBlink();
+	}
+}
+
+void UItemSlotComponent::StartInkBlink()
+{
+	const AUnit* const Unit = Cast<AUnit>(GetOwner());
+	if (UInkBottleComponent* const Bottle = Unit ? Unit->GetInkBottle() : nullptr)
+	{
+		Bottle->SetBlink(true, 0.1f);
+	}
+}
+
+void UItemSlotComponent::DebugGiveItem(int32 Index)
+{
+#if !UE_BUILD_SHIPPING
+	if (HasAuthority())
+	{
+		GiveItemByIndex(Index);
+	}
+	else
+	{
+		ServerDebugGiveItem(Index);
+	}
+#endif
+}
+
+void UItemSlotComponent::ServerDebugGiveItem_Implementation(int32 Index)
+{
+#if !UE_BUILD_SHIPPING
+	GiveItemByIndex(Index);
+#endif
+}
+
+void UItemSlotComponent::GiveItemByIndex(int32 Index)
+{
+	TArray<UItemProfile*> Items;
+	UItemSettings::Get().LoadItems(Items);
+	if (!Items.IsValidIndex(Index))
+	{
+		UE_LOG(LogMintChoco, Warning, TEXT("%s: 아이템 %d번이 없다(목록 %d개)."), *GetNameSafe(GetOwner()), Index + 1, Items.Num());
+		return;
+	}
+	GiveItem(Items[Index]);
+	UE_LOG(LogMintChoco, Verbose, TEXT("%s: 디버그로 %s를 받았다."), *GetNameSafe(GetOwner()), *GetNameSafe(Items[Index]));
 }

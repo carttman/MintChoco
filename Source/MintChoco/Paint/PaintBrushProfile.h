@@ -40,31 +40,34 @@ public:
 	TObjectPtr<UMaterialInterface> BrushMaterial;
 
 	/** Radius in cm for a splat of unit volume arriving at zero speed. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning", meta = (ClampMin = "0", ForceUnits = "cm"))
 	float BaseRadius = 25.0f;
 
 	/** cm of radius added per cm/s of impact speed. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
 	float RadiusPerSpeed = 0.005f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning", meta = (ClampMin = "0", ForceUnits = "cm"))
 	float MaxRadius = 120.0f;
 
 	/** Upper bound on 1 / cos(incidence). Without it a grazing hit stretches to infinity. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning", meta = (ClampMin = "1", ForceUnits = "x"))
 	float MaxStretch = 3.0f;
-
-	/**
-	 * Fraction of the stretch-added radius the splat center slides along the tangent. 0 keeps
-	 * the ellipse centered on the contact; 1 keeps the near edge pinned there instead.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
-	float CenterShiftScale = 0.5f;
 
 	/**
 	 * Below this stretch the stamp is visually round, so aligning it to the incident tangent
 	 * just repeats one orientation every click; such splats spin from the seed instead.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Tuning", meta = (ClampMin = "1", ForceUnits = "x"))
 	float MinAlignedStretch = 1.2f;
+
+private:
+	/**
+	 * Percent of the stretch-added radius the splat center slides along the tangent. 0 keeps
+	 * the ellipse centered on the contact; 100 keeps the near edge pinned there instead.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Paint|Tuning", meta = (ClampMin = "0", ClampMax = "100", ForceUnits = "%"))
+	float CenterShiftPercent = 50.0f;
+
+	float GetCenterShiftScale() const { return CenterShiftPercent * 0.01f; }
 };

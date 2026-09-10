@@ -33,12 +33,20 @@ public:
 	 */
 	void Init(const UPaintballProfile* InProfile, uint8 InPaintId, int32 InSeed, const FVector& Velocity, bool bInCosmetic);
 
+	/** 이 공이 칠하는 id(팀). 초콜릿 돔이 상대 탄을 가려낼 때 본다. */
+	uint8 GetPaintId() const { return PaintId; }
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 
 	UFUNCTION()
 	void OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent,
 		FVector NormalImpulse, const FHitResult& Hit);
+
+	/** Pawns are overlapped rather than blocked so a ball never pushes a player; the contact is handled like a hit. */
+	UFUNCTION()
+	void OnPawnOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp,
+		int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Paint")
 	TObjectPtr<USphereComponent> Sphere;

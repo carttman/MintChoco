@@ -137,6 +137,24 @@ Each of these cost real debugging time once.
   `EditorToolset.EditorAppToolset.IsPIERunning`); the fully qualified name is "not found".
 - `ObjectTools.get_properties` cannot read a UPROPERTY without an `Edit*`/`Visible*`
   specifier either (`bCollected`, `HeldItem` were unreadable until `VisibleInstanceOnly`).
+- `ObjectTools.set_properties` takes `values` as a JSON **string** (an object is accepted and silently
+  returns false). Every object reference needs the full object path (`/Game/X/Y.Y`, a class as
+  `/Script/Module.Class`, a BP class as `/Game/X/BP_Y.BP_Y_C`, a CDO component as
+  `/Game/X/BP_Y.Default__BP_Y_C:Comp`). Collision on a mesh component is written through
+  `BodyInstance: {CollisionEnabled: "NoCollision"}`, not a top-level `CollisionEnabled`. A
+  `TSoftObjectPtr` array reads back as plain path strings, but an appended element is stored as a
+  `{refPath}` object: re-read the array before every append and pass the elements exactly as read.
+- There is no create-blueprint tool: `AssetTools.duplicate` a small BP (`BP_ItemSpawnPoint`) and
+  `BlueprintTools.set_parent` (`blueprint` + `parent_class`) to the C++ class. `DataAssetTools.create`
+  makes data assets (`folder_path`, `asset_name`, `asset_type` = class ref); `MaterialInstanceTools.create`
+  makes MICs (`parent`); `TextureTools.import_file` (`folder_path`, `asset_name`, `source_file`).
+  `MaterialTools.get_expressions`/`recompile` and `MaterialInstanceTools.list_parameters` take
+  `material_or_function` / `material`; `AssetTools.exists` takes `path`; `SceneTools.load_level` takes `level_path`.
+- When the MCP tools are not registered in the session (editor launched after the session started),
+  drive the server over HTTP from PowerShell, not bash: `ConvertTo-Json -Compress` builds the `values`
+  string safely, while every bash quoting route mangled the JSON. Pattern: POST `initialize`, keep the
+  `Mcp-Session-Id` header, POST `notifications/initialized`, then `tools/call` with `call_tool`
+  (`toolset_name`, bare `tool_name`, `arguments`); responses arrive as SSE `data:` lines.
 - `BlueprintTools.write_graph_dsl` **replaces** the event it names and leaves the other
   events alone, and a failed write rolls back; `read_graph_dsl` mislabels property
   getters (an `ItemProfile.DisplayName` getter prints as
@@ -272,6 +290,7 @@ Each of these cost real debugging time once.
 | Paint on an art mesh lands in the wrong place | The atlas is projected from the mesh bounds, so the mesh's LOD 0 must be CPU-readable (Allow CPU Access) and its Nanite fallback close to the real surface; a curved art mesh with a decimated fallback shifts by the decimation error. Check `paint atlas baked: N of M texels covered` in LogPaint. |
 | Debug cells show in the editor, coverage text does not | `DrawDebugString` rides on a player's HUD, so the text is play-only; cells draw through the line batcher and work in the editor viewport with Realtime on (`bDrawDebugCells`, rebuilt when the actor moves). |
 | A plane-cut liquid (ink bottle) looks hollow or cut open from above | The two-sided "backface = surface" trick has no top geometry: from above you see the shaded inner walls below the waterline. `UInkBottleComponent` places a real disc (`SM_InkSurface`, `M_InkSurface`) on the cut plane every tick; the disc material clips outside `BottleRadius` and ripples via WPO with the same wave as the walls. Keep the fill clamped off the end caps (`SurfaceFillMargin`) or the disc z-fights them. |
+| The camera boom snags on another player, or a player stays translucent | Units ignore `ECC_Camera` on capsule and mesh (set again in `AUnit::PostInitializeComponents`, so a Blueprint override cannot bring it back). Overlap is detected by `CameraProbe`, a sphere on the local player's camera that overlaps other units' capsules only; the overlapped unit swaps every mesh slot to `CameraFadeMaterial` (`M_UnitCameraFade`, set on `BP_Unit`) until EndOverlap, `UpdateCameraProbe` (unpossess) or the prober's `EndPlay` restores it. |
 | Other players animate in slow motion on the listen-server host | The anim blueprint derives speed from per-tick position delta. On the server a remotely controlled pawn only moves when a `ServerMove` arrives (`ClientNetSendMoveDeltaTime` 0.0166 = 60 Hz), while the mesh ticks every frame, so the ticks with no displacement drag the average down. Read `Velocity` off the movement component instead — it holds its value between moves, so it is frame-rate independent. `t.MaxFPS 60` making the symptom vanish confirms it. |
 
 ## Items (Gameplay Ability System)
@@ -291,6 +310,13 @@ subclass per item (only so stacks stay separate; duration is SetByCaller, the st
 | Using the same item twice runs two spinners | `bRetriggerInstancedAbility` must be true and the slot must reuse the existing spec (clear `RemoveAfterActivation`) instead of granting a second one. |
 | `SetStackingType` link error | It is `WITH_EDITOR`-only and unexported. Write `StackingType` in the constructor under `PRAGMA_DISABLE_DEPRECATION_WARNINGS`. |
 | Weapon still fires during the spinner | `UPaintWeaponComponent::TriggerBlockedTags` holds `State.Item.SweetSpinner`; both `PullTrigger` and `ServerFire` ask the owner's ASC. |
+| An item should run only for as long as something else lives (a thrown ball, a dome) | Give the profile `Duration` 0: the ability is instant, applies no GE and no state tag, and ends right after `OnItemActivated`. `ItemProfileAssetTest` skips the state-tag check for instant items. |
+| A unit keeps walking while stunned on the server only, or only on the client | Both sides must agree through `UUnitMovementComponent`: `GetMaxSpeed` returns 0 and `ConstrainInputAcceleration` zeroes the input while `AUnit::IsMovementInputLocked()` (Stunned or HeroLanding tag, or a hero-landing phase). The input handler alone is not authoritative because the server consumes the client acceleration verbatim. |
+| Knockback rubber-bands or double-launches | Only the server calls `LaunchCharacter` (`AUnit::Knockback`); a client RPC on top races the correction. |
+| Hero landing restarts after landing, or the server never gets the landing effect | The rise starts only on a 0→1 edge of `FLAG_Custom_2` (`bHeroLandingArmed`), and a dive is never aborted when the flag drops; `AUnit::Landed` → `FinishHeroLandingDive` decides. Phase state rides in `FSavedMove_Unit`, so replays reproduce it. |
+| Friendly pawns bounce off the chocolate dome, or trapped enemies never get released | The pass-through is a *component* ignore (`IgnoreComponentWhenMoving(Wall)`) applied on every machine; an actor-level ignore would also hide the pawn from the dome's Sensor. Enemies inside at spawn are in the replicated `PassThrough` list until the Sensor reports EndOverlap. |
+| A bee dies to its own team, or stops dead when a ball touches it | Balls hit the bee's child `Shell` (Paintball Block only); the root sphere ignores Paintball so the projectile movement never gets a blocking hit from a ball. `ReceivePaintHit` ignores the bee's own paint id. |
+| The bee zig-zags or bobs while chasing, or dives into the floor | Steer heading and altitude separately (`FBeeSteering::TurnTowardsSplit`): the obstacle probe only looks along the *flat* heading (the floor is never an obstacle), altitude is a proportional term (`VerticalComponent`) capped by ground clearance (`MaxDescent`), and a chosen avoidance direction is kept for 0.3 s. Turning the full 3D direction on the shortest arc swings through straight-down when the heading change is large, and a threshold-based hover push flips sign every tick. Measured in PIE by placing `BP_Bee` in the level (it picks the nearest unit and the settings profile on its own) and sampling `get_actor_transform`. |
 
 ## Paint hit receivers (balloon)
 

@@ -96,7 +96,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Paint|Weapon")
 	FTransform GetMuzzleTransform() const;
 
-	/** Raised after every shot the profile accepted, with the seed it used. Feedback (animation, sound) hangs here. */
+	/**
+	 * Raised once per accepted shot on every machine: on the owner when it predicts the shot, on the
+	 * server when it fires for real, on everyone else when the shot multicast lands. Feedback
+	 * (animation, sound) hangs here.
+	 */
 	UPROPERTY(BlueprintAssignable, Category = "Paint|Weapon")
 	FPaintWeaponFiredSignature OnFired;
 
@@ -131,6 +135,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Weapon")
 	FGameplayTagContainer TriggerBlockedTags;
 
+	/** Tags on the owner's ability system that make every shot free (the infinite ammo item). The tank is neither checked nor spent. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Weapon")
+	FGameplayTagContainer FreeShotTags;
+
 	UFUNCTION()
 	void OnRep_Profile();
 
@@ -142,6 +150,7 @@ private:
 	void OnShotTimer();
 	bool HasAuthority() const;
 	bool IsTriggerBlocked() const;
+	bool IsShotFree() const;
 	float GetShotCost() const;
 	bool CanAffordShot() const;
 	void SpendShot();

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "GameplayAbilitySpecHandle.h"
+#include "Engine/TimerHandle.h"
 #include "GameplayTagContainer.h"
 
 #include "Weapons/PaintWeaponProfile.h"
@@ -56,6 +57,13 @@ public:
 	bool TryUseHeldItem();
 
 	/**
+	 * 디버그. UItemSettings 목록의 Index번째(0부터) 아이템을 바로 슬롯에 넣는다. 클라이언트는
+	 * 서버에 부탁한다. Shipping 빌드에서는 아무 일도 하지 않는다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Item|Debug")
+	void DebugGiveItem(int32 Index);
+
+	/**
 	 * 클라이언트가 보낸 속도 부스트 플래그를 서버가 인정해도 되는지. 효과 태그가 이미
 	 * 있거나, 그 효과를 켤 아이템을 아직 들고 있을 때(RPC가 무브보다 늦게 오는 창) 참이다.
 	 */
@@ -64,6 +72,12 @@ public:
 	/** 스피너의 산탄을 다른 머신에서 연출로 재생한다. 진짜 공을 날린 서버만 건너뛴다. */
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastSpinnerShot(const UPaintGunProfile* Volley, const FPaintShot& Shot);
+
+	/**
+	 * 잉크병 오버라이드(무한 탄환)의 점멸 타이머를 다시 시작한다. 어빌리티가 (재)발동 때 부른다:
+	 * 갱신은 태그 수가 1에서 1로 머물러 태그 콜백이 오지 않기 때문이다.
+	 */
+	void RestartInkLook(float Duration);
 
 	/** 슬롯 내용이 바뀔 때마다, 모든 머신에서. HUD가 여기에 붙는다. */
 	UPROPERTY(BlueprintAssignable, Category = "Item")
@@ -78,6 +92,12 @@ protected:
 	void OnRep_HeldItem();
 
 private:
+	UFUNCTION(Server, Reliable)
+	void ServerDebugGiveItem(int32 Index);
+
+	/** 서버 전용. 설정 목록의 Index번째 아이템을 준다. 범위 밖이면 경고. */
+	void GiveItemByIndex(int32 Index);
+
 	UAbilitySystemComponent* GetAbilitySystem() const;
 	bool HasAuthority() const;
 	void SetHeldItem(UItemProfile* Item);
@@ -87,6 +107,10 @@ private:
 	void StartEffectFeedback(const UItemProfile& Item, const FGameplayTag& Tag);
 	void StopEffectFeedback(const FGameplayTag& Tag);
 
+	/** 잉크병을 오버라이드 재질로 바꾸고 마지막 1초에 점멸을 예약한다. bOn이 거짓이면 전부 되돌린다. */
+	void SetInkLook(bool bOn, float Duration);
+	void StartInkBlink();
+
 	/** 서버 전용. HeldItem에 해당하는 스펙. 비우면 효과 종료 시 제거된다. */
 	FGameplayAbilitySpecHandle HeldSpec;
 
@@ -95,4 +119,5 @@ private:
 	TMap<FGameplayTag, TObjectPtr<UNiagaraComponent>> EffectComponents;
 
 	FDelegateHandle TagEventHandle;
+	FTimerHandle InkBlinkTimer;
 };

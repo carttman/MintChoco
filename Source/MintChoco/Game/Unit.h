@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
+#include "GameplayTagContainer.h"
 #include "GameFramework/Character.h"
 #include "Game/UnitDataAsset.h"
 #include "Unit.generated.h"
@@ -11,16 +12,23 @@
 class UAbilitySystemComponent;
 class UCameraComponent;
 class UEnhancedInputLocalPlayerSubsystem;
+class UGameplayEffect;
 class UInkBottleComponent;
 class UInkTankComponent;
 class UItemSlotComponent;
+class UMaterialInterface;
 class UPaintWeaponComponent;
+class USphereComponent;
 class UNiagaraComponent;
 class USpringArmComponent;
 class UStaticMeshComponent;
 class UUnitInputConfig;
 class UUnitMovementComponent;
+struct FActiveGameplayEffectHandle;
+struct FGameplayEffectRemovalInfo;
 struct FInputActionValue;
+
+DECLARE_MULTICAST_DELEGATE(FOnHeroLandingFinished);
 
 /**
  * 플레이어와 AI가 함께 쓰는 유일한 유닛 클래스.
@@ -43,11 +51,24 @@ public:
 	explicit AUnit(const FObjectInitializer& ObjectInitializer);
 
 	virtual void PostInitializeComponents() override;
+	virtual void BeginPlay() override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void OnRep_PlayerState() override;
+	virtual bool CanJumpInternal_Implementation() const override;
+	virtual void Landed(const FHitResult& Hit) override;
+	virtual void NotifyControllerChanged() override;
+	/** 소유 클라이언트에서 빙의가 확정되는 지점(ClientRestart). OnRep_Controller만 믿으면 클라이언트에서 프로브가 안 켜졌다. */
+	virtual void PawnClientRestart() override;
+	virtual void UnPossessed() override;
+
+	/**
+	 * 다른 플레이어의 카메라가 이 유닛 안에 들어와 있는 동안 메시를 반투명 대체 재질로 바꾼다.
+	 * 로컬 연출이라 복제되지 않는다. 카메라를 가진 쪽(CameraProbe)이 겹침 동안만 켠다.
+	 */
+	void SetCameraFaded(bool bFaded);
 
 	//~ IAbilitySystemInterface
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
@@ -58,14 +79,50 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Weapon")
 	UPaintWeaponComponent* GetPaintWeapon() const { return PaintWeapon; }
 
+	UFUNCTION(BlueprintPure, Category = "Weapon")
+	UPaintWeaponComponent* GetSecondaryWeapon() const { return SecondaryWeapon; }
+
 	UFUNCTION(BlueprintPure, Category = "Ink")
 	UInkTankComponent* GetInkTank() const { return InkTank; }
 
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UItemSlotComponent* GetItemSlot() const { return ItemSlot; }
 
+	UFUNCTION(BlueprintPure, Category = "Ink")
+	UInkBottleComponent* GetInkBottle() const { return InkBottle; }
+
 	/** 서버가 클라이언트의 속도 부스트 플래그를 인정해도 되는지. 슬롯 컴포넌트가 답한다. */
 	bool IsSpeedBoostAuthorized() const;
+
+	/** PlayerState의 팀. 없으면 Teams::None. 아이템의 페인트 id와 아군 판정이 이 값을 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "Team")
+	int32 GetTeam() const;
+
+	/** 스턴 중인지(State.Status.Stunned). 모든 머신에서 답한다. */
+	UFUNCTION(BlueprintPure, Category = "Status")
+	bool IsStunned() const;
+
+	/** 슈퍼아머 중인지(State.Status.SuperArmor). 스턴과 밀어내기가 먹지 않는다. */
+	UFUNCTION(BlueprintPure, Category = "Status")
+	bool HasSuperArmor() const;
+
+	/**
+	 * 입력으로 움직일 수 없는 상태인지(스턴, 히어로 랜딩). 입력 핸들러와 무브먼트 컴포넌트가
+	 * 같은 답을 봐야 서버가 클라이언트의 가속을 그대로 쓰는 경로에서도 권위가 선다.
+	 */
+	bool IsMovementInputLocked() const;
+
+	/**
+	 * 서버 전용. 스턴을 건다(UItemSettings::StunDuration). 슈퍼아머거나 이미 스턴이면 false.
+	 * 스턴이 끝나는 순간 슈퍼아머(SuperArmorDuration)가 이어진다.
+	 */
+	bool TryApplyStun();
+
+	/** 서버 전용. From에서 멀어지는 수평 방향으로 밀어낸다(UItemSettings::Knockback*). 슈퍼아머면 무시. */
+	void Knockback(const FVector& From);
+
+	/** 히어로 랜딩의 내리꽂기가 착지한 순간. 서버와 소유 클라이언트에서 온다. 어빌리티가 여기서 끝난다. */
+	FOnHeroLandingFinished OnHeroLandingFinished;
 
 	/**
 	 * PlayerState의 팀을 무기의 페인트 id로 옮긴다. 잉크병은 그 id를 따라 색이 바뀐다.
@@ -130,18 +187,39 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
 
+	/**
+	 * 카메라에 붙은 작은 구. 다른 유닛의 캡슐과 겹치는 동안 그 유닛을 반투명하게 만든다.
+	 * 로컬 플레이어의 폰에서만 충돌이 켜진다(NotifyControllerChanged). 캡슐과 메시가 Camera
+	 * 채널을 무시하므로 붐이 다른 플레이어에게 막히지 않고, 그 대신 이 구가 겹침을 알린다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+	TObjectPtr<USphereComponent> CameraProbe;
+
+	/** 카메라가 안에 들어온 유닛의 메시에 씌우는 반투명 재질. 비어 있으면 페이드 없음. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera")
+	TObjectPtr<UMaterialInterface> CameraFadeMaterial;
+
 	/** 조작에 쓰이는 입력 에셋. 비어 있으면 이 유닛은 플레이어 입력을 받지 못한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UUnitInputConfig> InputConfig;
 
 	/**
-	 * 페인트 무기. 모든 유닛이 하나씩 든다.
+	 * 주무기. 모든 유닛이 하나씩 들고, 주 발사 입력이 이 방아쇠를 당긴다.
 	 *
 	 * 무엇을 쏘는지는 컴포넌트의 Profile(무기 프로필 에셋)이 정하고, 이 클래스는
 	 * 방아쇠와 팀 색만 넘긴다. 무기 교체는 Profile 교체이지 컴포넌트 교체가 아니다.
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UPaintWeaponComponent> PaintWeapon;
+
+	/**
+	 * 보조 무기. 보조 발사 입력이 이 방아쇠를 당긴다. Profile이 비어 있으면 아무것도 하지 않는다.
+	 *
+	 * 두 무기는 한 번에 하나만 쏜다: 한쪽 방아쇠가 당겨진 동안 다른 쪽 입력은 무시된다.
+	 * 잉크 탱크는 둘이 같이 쓴다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<UPaintWeaponComponent> SecondaryWeapon;
 
 	/** 잉크 잔량. 무기가 발사마다 여기서 꺼내 쓰고, 등 뒤 병이 이 값을 보여준다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ink")
@@ -181,6 +259,10 @@ protected:
 	/** 입력이 가로채이거나 매핑이 빠져서 방아쇠가 풀릴 때. 차지형 무기가 이때 발사되면 안 된다. */
 	void CancelFire();
 
+	void StartSecondaryFire();
+	void StopSecondaryFire();
+	void CancelSecondaryFire();
+
 	/**
 	 * 홀드형 입력이라 Started와 Completed로 나눠 바인딩한다. Triggered는 눌린 동안
 	 * 값 true로 계속 발생할 뿐 뗄 때 false를 내지 않으므로, 하나로 처리하면 해제가
@@ -191,6 +273,10 @@ protected:
 
 	/** 아이템 키. 탭 한 번이 곧 사용이라 Started만 묶는다. */
 	void UseItem();
+
+	/** 스턴이 걸리고 풀릴 때, 모든 머신에서. 연출용. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Status")
+	void BP_OnStunned(bool bStunned);
 
 private:
 	/** 어빌리티 액터 정보를 이 폰으로 맞춘다. 서버는 빙의 때, 클라이언트는 PlayerState 도착 때. */
@@ -205,11 +291,48 @@ private:
 	UFUNCTION()
 	void HandlePaintIdChanged(uint8 PaintId);
 
+	/**
+	 * 어느 무기든 한 발 나갈 때마다. 소유자는 예측 시점, 서버는 실제 발사, 다른 클라이언트는
+	 * 샷 멀티캐스트 시점에 온다. 발사 연출(EUnitAction::Fire)을 튼다.
+	 */
+	UFUNCTION()
+	void HandleWeaponFired(int32 Seed);
+
+	/** 연출의 몽타주 부분: 몽타주 에셋이 있으면 그것을, 없으면 Animation을 슬롯에 동적 몽타주로. */
+	void PlayFeedbackMontage(const struct FUnitActionFeedback& Feedback);
+
 	UFUNCTION()
 	void OnRep_IsDashing();
 
 	/** 대시 트레일을 켜고 끈다. 데디케이티드 서버에서는 아무것도 하지 않는다. */
 	void UpdateDashEffects(bool bDashing);
+
+	/** 로컬 플레이어 폰에서만 카메라 프로브의 충돌을 켠다. 꺼질 때는 걸어 둔 페이드를 전부 되돌린다. */
+	void UpdateCameraProbe();
+
+	UFUNCTION()
+	void OnCameraProbeBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+
+	UFUNCTION()
+	void OnCameraProbeEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+
+	/** 내 카메라가 반투명하게 만든 유닛들. 프로브가 꺼지거나 내가 사라질 때 되돌린다. */
+	TArray<TWeakObjectPtr<AUnit>> CameraFadedUnits;
+
+	/** 페이드 전의 메시 재질. 되돌릴 때 슬롯 순서대로 넣는다. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UMaterialInterface>> CameraFadeOriginalMaterials;
+
+	bool bCameraFaded = false;
+
+	/** 스턴 태그가 서고 내릴 때. 서는 순간 방아쇠를 놓는다. */
+	void HandleStunTagChanged(const FGameplayTag Tag, int32 NewCount);
+
+	/** 서버 전용. 스턴 GE가 제거되면 슈퍼아머를 건다. */
+	void HandleStunEnded(const FGameplayEffectRemovalInfo& RemovalInfo);
+
+	/** 서버 전용. 상태 GE 하나를 SetByCaller 지속시간과 동적 태그로 건다. */
+	bool ApplyStatusEffect(TSubclassOf<UGameplayEffect> EffectClass, const FGameplayTag& StatusTag, float Duration, FActiveGameplayEffectHandle& OutHandle);
 
 	/**
 	 * 연출과 애니메이션용 대시 상태.
@@ -229,4 +352,6 @@ private:
 	 * 수 있어 다시 찾아갈 수 없으므로, 넣을 때 기억해 두고 그대로 되돌린다.
 	 */
 	TWeakObjectPtr<UEnhancedInputLocalPlayerSubsystem> AppliedInputSubsystem;
+
+	FDelegateHandle StunTagHandle;
 };

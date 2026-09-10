@@ -59,7 +59,8 @@ protected:
 	int32 Segments = 48;
 
 private:
-	UPaintWeaponComponent* FindWeapon() const;
+	/** The highest charge among the pawn's weapons: whichever trigger is held with a Charged profile owns the ring. */
+	float FindChargeFraction() const;
 
 	/** Seconds the current charge has been building; drives the blink phase and resets when the hold ends. */
 	float ChargingTime = 0.0f;

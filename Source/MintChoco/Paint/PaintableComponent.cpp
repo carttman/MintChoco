@@ -598,3 +598,8 @@ FPaintLocalStamp UPaintableComponent::ComputeLocalStamp(const FPaintSplat& Splat
 	Stamp.Stretch = Splat.Stretch;
 	return Stamp;
 }
+
+FBox UPaintableComponent::GetWorldBounds() const
+{
+	return TargetMesh ? TargetMesh->Bounds.GetBox() : FBox(ForceInit);
+}

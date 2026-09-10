@@ -23,7 +23,7 @@ struct MINTCHOCO_API FPaintDeposit
 	TObjectPtr<UPaintBrushProfile> BrushProfile;
 
 	/** Scales the splat's area, so its radius follows the square root: four times the volume is twice the radius. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint", meta = (ClampMin = "0"))
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint", meta = (ClampMin = "0", ForceUnits = "x"))
 	float SplatVolume = 1.0f;
 
 	/** Height fraction one splat deposits. */
@@ -39,6 +39,9 @@ struct MINTCHOCO_API FPaintDeposit
 	float HitPower = 1.0f;
 
 	bool CanPaint() const { return BrushProfile != nullptr; }
+
+	/** Height fraction one splat deposits, 0 to 1. */
+	float GetHeightAdd() const { return HeightAddPercent * 0.01f; }
 
 	/** Builds the splat for a contact. Requires BrushProfile. */
 	FPaintSplat BuildSplat(const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed) const;
@@ -71,4 +74,9 @@ struct MINTCHOCO_API FPaintDeposit
 	 * the hit actor is known.
 	 */
 	static void MarkTransience(FPaintSplat& Splat, const FHitResult& Hit);
+
+private:
+	/** Percent of the full paint height one splat deposits. Read it through GetHeightAdd. */
+	UPROPERTY(EditAnywhere, Category = "Paint", meta = (ClampMin = "0", ClampMax = "100", ForceUnits = "%"))
+	float HeightAddPercent = 35.0f;
 };

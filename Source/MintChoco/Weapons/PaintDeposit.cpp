@@ -30,7 +30,7 @@ bool FPaintDeposit::ReceivesSplat(const FHitResult& Hit)
 FPaintSplat FPaintDeposit::BuildSplat(const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed) const
 {
 	check(BrushProfile);
-	return BrushProfile->BuildSplat(Hit, IncidentVelocity, PaintId, SplatVolume, HeightAdd, Seed);
+	return BrushProfile->BuildSplat(Hit, IncidentVelocity, PaintId, SplatVolume, GetHeightAdd(), Seed);
 }
 
 void FPaintDeposit::MarkTransience(FPaintSplat& Splat, const FHitResult& Hit)

@@ -9,6 +9,7 @@
 
 #include "MintChoco.h"
 #include "Weapons/PaintProjectile.h"
+#include "Weapons/PaintBurst.h"
 #include "Weapons/PaintballProfile.h"
 
 // ---------------------------------------------------------------- FBalloonState
@@ -118,20 +119,6 @@ void ABalloon::Inflate()
 	BP_OnInflated();
 }
 
-void ABalloon::ComputeBurstDirections(int32 Seed, int32 Count, TArray<FVector>& OutDirections)
-{
-	OutDirections.Reset(Count);
-	const FRandomStream Random(Seed);
-	for (int32 Index = 0; Index < Count; ++Index)
-	{
-		// 방위각은 고르게 돌리고, 고도는 수평 위 10~70도 사이. 대부분 바닥에 떨어지고
-		// 일부는 벽에 닿는다.
-		const float Yaw = (static_cast<float>(Index) + Random.FRand()) * (360.0f / FMath::Max(Count, 1));
-		const float Pitch = Random.FRandRange(10.0f, 70.0f);
-		OutDirections.Add(FRotator(Pitch, Yaw, 0.0f).Vector());
-	}
-}
-
 void ABalloon::MulticastBurst_Implementation(int32 Seed, uint8 PaintId)
 {
 	UWorld* const World = GetWorld();
@@ -144,7 +131,7 @@ void ABalloon::MulticastBurst_Implementation(int32 Seed, uint8 PaintId)
 	const bool bCosmetic = !HasAuthority();
 
 	TArray<FVector> Directions;
-	ComputeBurstDirections(Seed, BurstCount, Directions);
+	PaintBurst::ComputeDirections(Seed, BurstCount, 10.0f, 70.0f, Directions);
 
 	const FVector Origin = GetActorLocation();
 	for (int32 Index = 0; Index < Directions.Num(); ++Index)

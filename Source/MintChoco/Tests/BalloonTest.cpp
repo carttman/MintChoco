@@ -56,25 +56,6 @@ bool FBalloonDamageTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("a 100 hit pops at once"), State.Hit(100.0f, Teams::Mint, MaxHealth));
 	TestFalse(TEXT("zero power does nothing"), FBalloonState().Hit(0.0f, Teams::Mint, MaxHealth));
 
-	// 파열 방향은 시드에 결정적이고, 전부 위쪽 반구다.
-	TArray<FVector> A;
-	TArray<FVector> B;
-	ABalloon::ComputeBurstDirections(7, 24, A);
-	ABalloon::ComputeBurstDirections(7, 24, B);
-	TestEqual(TEXT("24 directions"), A.Num(), 24);
-	bool bSame = true;
-	bool bAllUp = true;
-	for (int32 Index = 0; Index < A.Num(); ++Index)
-	{
-		bSame &= A[Index].Equals(B[Index]);
-		bAllUp &= A[Index].Z > 0.0f && A[Index].IsNormalized();
-	}
-	TestTrue(TEXT("same seed, same directions"), bSame);
-	TestTrue(TEXT("every direction points up and is unit length"), bAllUp);
-	TArray<FVector> C;
-	ABalloon::ComputeBurstDirections(8, 24, C);
-	TestFalse(TEXT("another seed differs"), A[0].Equals(C[0]));
-
 	return true;
 }
 

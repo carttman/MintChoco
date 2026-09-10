@@ -4,9 +4,12 @@
 #include "Game/Unit.h"
 
 #include "AbilitySystemComponent.h"
+#include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/SphereComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
@@ -16,9 +19,13 @@
 #include "Game/UnitMovementComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "GameplayEffect.h"
 #include "Ink/InkBottleComponent.h"
 #include "Ink/InkTankComponent.h"
 #include "InputActionValue.h"
+#include "Items/ItemGameplayEffect.h"
+#include "Items/ItemGameplayTags.h"
+#include "Items/ItemSettings.h"
 #include "Items/ItemSlotComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "MintChoco.h"
@@ -66,7 +73,24 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	// 붐이 이미 회전을 처리했으므로 카메라가 다시 하면 이중으로 돈다.
 	FollowCamera->bUsePawnControlRotation = false;
 
+	// 카메라 프로브: 다른 유닛의 캡슐(Pawn)만 Overlap. 물리 없음, 로컬 플레이어 폰에서만 켠다.
+	CameraProbe = CreateDefaultSubobject<USphereComponent>(TEXT("CameraProbe"));
+	CameraProbe->SetupAttachment(FollowCamera);
+	CameraProbe->InitSphereRadius(40.0f);
+	CameraProbe->SetCollisionObjectType(ECC_WorldDynamic);
+	CameraProbe->SetCollisionResponseToAllChannels(ECR_Ignore);
+	CameraProbe->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+	CameraProbe->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CameraProbe->SetGenerateOverlapEvents(true);
+	CameraProbe->SetCanEverAffectNavigation(false);
+	CameraProbe->SetHiddenInGame(true);
+
+	// 다른 플레이어의 카메라 붐이 이 유닛에 걸리지 않는다. 겹침은 위 프로브가 알린다.
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	GetMesh()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+
 	PaintWeapon = CreateDefaultSubobject<UPaintWeaponComponent>(TEXT("PaintWeapon"));
+	SecondaryWeapon = CreateDefaultSubobject<UPaintWeaponComponent>(TEXT("SecondaryWeapon"));
 	InkTank = CreateDefaultSubobject<UInkTankComponent>(TEXT("InkTank"));
 
 	AbilitySystem = CreateDefaultSubobject<UAbilitySystemComponent>(TEXT("AbilitySystem"));
@@ -129,6 +153,255 @@ bool AUnit::IsSpeedBoostAuthorized() const
 	return ItemSlot && ItemSlot->IsSpeedBoostAuthorized();
 }
 
+void AUnit::BeginPlay()
+{
+	Super::BeginPlay();
+
+	// 스턴 태그는 모든 머신에 복제되므로 여기서 받으면 연출과 방아쇠 해제가 어디서나 맞는다.
+	if (AbilitySystem)
+	{
+		StunTagHandle = AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_Stunned, EGameplayTagEventType::NewOrRemoved)
+			.AddUObject(this, &AUnit::HandleStunTagChanged);
+	}
+
+	// 빙의가 BeginPlay보다 먼저 온 경우(리슨 호스트)를 위해 한 번 더 맞춘다.
+	UpdateCameraProbe();
+}
+
+void AUnit::NotifyControllerChanged()
+{
+	Super::NotifyControllerChanged();
+	UpdateCameraProbe();
+}
+
+void AUnit::PawnClientRestart()
+{
+	Super::PawnClientRestart();
+	// 클라이언트에서는 Controller 복제 순서에 따라 NotifyControllerChanged가 로컬 판정 전에 올 수 있다.
+	// ClientRestart는 컨트롤러가 붙은 뒤 소유 머신에서만 오므로 여기서 확실히 켠다.
+	UpdateCameraProbe();
+}
+
+void AUnit::UnPossessed()
+{
+	Super::UnPossessed();
+	UpdateCameraProbe();
+}
+
+void AUnit::UpdateCameraProbe()
+{
+	if (!CameraProbe)
+	{
+		return;
+	}
+
+	const bool bWantsProbe = IsLocallyControlled() && IsPlayerControlled() && GetNetMode() != NM_DedicatedServer;
+	UE_LOG(LogMintChoco, Verbose, TEXT("%s: 카메라 프로브 %s (로컬 %d, 플레이어 %d)"),
+		*GetNameSafe(this), bWantsProbe ? TEXT("켬") : TEXT("끔"), IsLocallyControlled(), IsPlayerControlled());
+	if (bWantsProbe)
+	{
+		CameraProbe->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+		return;
+	}
+
+	CameraProbe->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	for (const TWeakObjectPtr<AUnit>& Faded : CameraFadedUnits)
+	{
+		if (AUnit* const Other = Faded.Get())
+		{
+			Other->SetCameraFaded(false);
+		}
+	}
+	CameraFadedUnits.Reset();
+}
+
+void AUnit::OnCameraProbeBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+{
+	AUnit* const Other = Cast<AUnit>(OtherActor);
+	if (!Other || Other == this || OtherComp != Other->GetCapsuleComponent())
+	{
+		return;
+	}
+	CameraFadedUnits.AddUnique(Other);
+	Other->SetCameraFaded(true);
+}
+
+void AUnit::OnCameraProbeEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex)
+{
+	AUnit* const Other = Cast<AUnit>(OtherActor);
+	if (!Other || Other == this || OtherComp != Other->GetCapsuleComponent())
+	{
+		return;
+	}
+	CameraFadedUnits.Remove(Other);
+	Other->SetCameraFaded(false);
+}
+
+void AUnit::SetCameraFaded(bool bFaded)
+{
+	USkeletalMeshComponent* const MeshComponent = GetMesh();
+	if (!MeshComponent || bFaded == bCameraFaded)
+	{
+		return;
+	}
+
+	if (bFaded)
+	{
+		if (!CameraFadeMaterial)
+		{
+			return;
+		}
+		CameraFadeOriginalMaterials.Reset();
+		for (UMaterialInterface* const Original : MeshComponent->GetMaterials())
+		{
+			CameraFadeOriginalMaterials.Add(Original);
+		}
+		for (int32 Index = 0; Index < CameraFadeOriginalMaterials.Num(); ++Index)
+		{
+			MeshComponent->SetMaterial(Index, CameraFadeMaterial);
+		}
+		bCameraFaded = true;
+		return;
+	}
+
+	for (int32 Index = 0; Index < CameraFadeOriginalMaterials.Num(); ++Index)
+	{
+		MeshComponent->SetMaterial(Index, CameraFadeOriginalMaterials[Index]);
+	}
+	CameraFadeOriginalMaterials.Reset();
+	bCameraFaded = false;
+}
+
+int32 AUnit::GetTeam() const
+{
+	const AGamePlayerState* const GamePlayerState = GetPlayerState<AGamePlayerState>();
+	return GamePlayerState ? GamePlayerState->GetTeam() : Teams::None;
+}
+
+bool AUnit::IsStunned() const
+{
+	return AbilitySystem && AbilitySystem->HasMatchingGameplayTag(ItemTags::State_Status_Stunned);
+}
+
+bool AUnit::HasSuperArmor() const
+{
+	return AbilitySystem && AbilitySystem->HasMatchingGameplayTag(ItemTags::State_Status_SuperArmor);
+}
+
+bool AUnit::IsMovementInputLocked() const
+{
+	if (!AbilitySystem)
+	{
+		return false;
+	}
+	return AbilitySystem->HasMatchingGameplayTag(ItemTags::State_Status_Stunned)
+		|| AbilitySystem->HasMatchingGameplayTag(ItemTags::State_Item_HeroLanding);
+}
+
+bool AUnit::CanJumpInternal_Implementation() const
+{
+	return !IsMovementInputLocked() && Super::CanJumpInternal_Implementation();
+}
+
+void AUnit::Landed(const FHitResult& Hit)
+{
+	Super::Landed(Hit);
+
+	// 히어로 랜딩의 내리꽂기가 끝났다. 단계 정리는 무브먼트 컴포넌트가, 효과는 어빌리티가 맡는다.
+	if (UUnitMovementComponent* const Movement = GetUnitMovement())
+	{
+		if (Movement->FinishHeroLandingDive())
+		{
+			OnHeroLandingFinished.Broadcast();
+		}
+	}
+}
+
+bool AUnit::ApplyStatusEffect(TSubclassOf<UGameplayEffect> EffectClass, const FGameplayTag& StatusTag, float Duration, FActiveGameplayEffectHandle& OutHandle)
+{
+	if (!AbilitySystem || !EffectClass || Duration <= 0.0f)
+	{
+		return false;
+	}
+
+	// 아이템 GE와 같은 골격: 지속시간은 SetByCaller, 태그는 스펙의 동적 태그.
+	FGameplayEffectSpecHandle Spec = AbilitySystem->MakeOutgoingSpec(EffectClass, 1.0f, AbilitySystem->MakeEffectContext());
+	if (!Spec.IsValid())
+	{
+		return false;
+	}
+	Spec.Data->SetSetByCallerMagnitude(ItemTags::Data_Item_Duration, Duration);
+	Spec.Data->DynamicGrantedTags.AddTag(StatusTag);
+	OutHandle = AbilitySystem->ApplyGameplayEffectSpecToSelf(*Spec.Data);
+	return OutHandle.WasSuccessfullyApplied();
+}
+
+bool AUnit::TryApplyStun()
+{
+	if (!HasAuthority() || IsStunned() || HasSuperArmor())
+	{
+		return false;
+	}
+
+	FActiveGameplayEffectHandle Handle;
+	if (!ApplyStatusEffect(UGE_Stunned::StaticClass(), ItemTags::State_Status_Stunned, UItemSettings::Get().StunDuration, Handle))
+	{
+		return false;
+	}
+
+	// 슈퍼아머는 스턴이 끝나는 바로 그 순간 이어져야 "스턴 2초 후 4초"가 된다.
+	if (FOnActiveGameplayEffectRemoved_Info* const Removed = AbilitySystem->OnGameplayEffectRemoved_InfoDelegate(Handle))
+	{
+		Removed->AddUObject(this, &AUnit::HandleStunEnded);
+	}
+
+	UE_LOG(LogMintChoco, Verbose, TEXT("%s: 스턴 %.1f초."), *GetNameSafe(this), UItemSettings::Get().StunDuration);
+	return true;
+}
+
+void AUnit::HandleStunEnded(const FGameplayEffectRemovalInfo& RemovalInfo)
+{
+	// 제거 알림은 클라이언트에도 복제로 오지만, 거는 것은 서버의 일이다.
+	if (!HasAuthority())
+	{
+		return;
+	}
+	FActiveGameplayEffectHandle Handle;
+	ApplyStatusEffect(UGE_SuperArmor::StaticClass(), ItemTags::State_Status_SuperArmor, UItemSettings::Get().SuperArmorDuration, Handle);
+}
+
+void AUnit::HandleStunTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+	const bool bStunned = NewCount > 0;
+	if (bStunned && PaintWeapon)
+	{
+		// 누르고 있던 방아쇠는 놓는다. 차지 중이었다면 발사되지 않는다.
+		PaintWeapon->CancelTrigger();
+	}
+	BP_OnStunned(bStunned);
+}
+
+void AUnit::Knockback(const FVector& From)
+{
+	if (!HasAuthority() || HasSuperArmor())
+	{
+		return;
+	}
+
+	const UItemSettings& Settings = UItemSettings::Get();
+	FVector Direction = GetActorLocation() - From;
+	Direction.Z = 0.0f;
+	if (!Direction.Normalize())
+	{
+		// 정확히 위에서 터졌다. 뒤로 민다.
+		Direction = -GetActorForwardVector();
+	}
+
+	// 서버만 건다. 소유 클라이언트에는 다음 보정이 새 속도를 실어 나른다. 클라이언트 RPC로 같이
+	// 걸면 보정과 순서가 어긋나 오히려 보정이 늘어난다.
+	LaunchCharacter(Direction * Settings.KnockbackSpeed + FVector(0.0f, 0.0f, Settings.KnockbackUpSpeed), /*bXYOverride=*/true, /*bZOverride=*/true);
+}
+
 void AUnit::ApplyTeamToWeapon()
 {
 	// 팀 번호가 곧 페인트 id다(민트 0, 초코 1). 팀이 없는 PlayerState(샘플 맵)는
@@ -140,9 +413,14 @@ void AUnit::ApplyTeamToWeapon()
 	}
 
 	// 병 색은 무기의 페인트 id를 따라가므로(HandlePaintIdChanged) 여기서 따로 칠하지 않는다.
+	const uint8 PaintId = static_cast<uint8>(GamePlayerState->GetTeam());
 	if (PaintWeapon)
 	{
-		PaintWeapon->SetPaintId(static_cast<uint8>(GamePlayerState->GetTeam()));
+		PaintWeapon->SetPaintId(PaintId);
+	}
+	if (SecondaryWeapon)
+	{
+		SecondaryWeapon->SetPaintId(PaintId);
 	}
 }
 
@@ -169,6 +447,20 @@ void AUnit::PostInitializeComponents()
 	{
 		PaintWeapon->OnPaintIdChanged.AddDynamic(this, &AUnit::HandlePaintIdChanged);
 		HandlePaintIdChanged(PaintWeapon->GetPaintId());
+		PaintWeapon->OnFired.AddDynamic(this, &AUnit::HandleWeaponFired);
+	}
+	if (SecondaryWeapon)
+	{
+		SecondaryWeapon->OnFired.AddDynamic(this, &AUnit::HandleWeaponFired);
+	}
+
+	// 블루프린트가 캡슐·메시 충돌을 덮어썼어도 카메라 채널만은 여기서 다시 무시로 둔다.
+	GetCapsuleComponent()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	GetMesh()->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	if (CameraProbe)
+	{
+		CameraProbe->OnComponentBeginOverlap.AddDynamic(this, &AUnit::OnCameraProbeBeginOverlap);
+		CameraProbe->OnComponentEndOverlap.AddDynamic(this, &AUnit::OnCameraProbeEndOverlap);
 	}
 
 	// 소유 클라이언트에서는 입력이, 서버에서는 압축 플래그가 이 알림을 낸다.
@@ -264,10 +556,36 @@ void AUnit::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 		EnhancedInput->BindAction(InputConfig->FireAction, ETriggerEvent::Canceled, this, &AUnit::CancelFire);
 	}
 
+	if (InputConfig->SecondaryFireAction)
+	{
+		EnhancedInput->BindAction(InputConfig->SecondaryFireAction, ETriggerEvent::Started, this, &AUnit::StartSecondaryFire);
+		EnhancedInput->BindAction(InputConfig->SecondaryFireAction, ETriggerEvent::Completed, this, &AUnit::StopSecondaryFire);
+		EnhancedInput->BindAction(InputConfig->SecondaryFireAction, ETriggerEvent::Canceled, this, &AUnit::CancelSecondaryFire);
+	}
+
 	if (InputConfig->ItemAction)
 	{
 		EnhancedInput->BindAction(InputConfig->ItemAction, ETriggerEvent::Started, this, &AUnit::UseItem);
 	}
+
+#if !UE_BUILD_SHIPPING
+	// 디버그: 숫자 키 1~8이 설정 목록의 아이템을 바로 슬롯에 넣는다. 입력 액션 에셋 없이 키를 직접
+	// 묶는다. Enhanced Input이 켜져 있어도 옛 키 바인딩은 그대로 동작한다.
+	const FKey DebugItemKeys[] = { EKeys::One, EKeys::Two, EKeys::Three, EKeys::Four, EKeys::Five, EKeys::Six, EKeys::Seven, EKeys::Eight };
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(DebugItemKeys); ++Index)
+	{
+		FInputKeyBinding Binding(FInputChord(DebugItemKeys[Index]), IE_Pressed);
+		Binding.bConsumeInput = false;
+		Binding.KeyDelegate.GetDelegateForManualSet().BindWeakLambda(this, [this, Index]()
+		{
+			if (ItemSlot)
+			{
+				ItemSlot->DebugGiveItem(Index);
+			}
+		});
+		PlayerInputComponent->KeyBindings.Add(MoveTemp(Binding));
+	}
+#endif
 }
 
 void AUnit::UseItem()
@@ -278,19 +596,54 @@ void AUnit::UseItem()
 	}
 }
 
+// 한쪽 방아쇠가 당겨진 동안 다른 쪽 입력은 무시한다. 무시된 눌림의 뗌은 당겨지지 않은
+// 컴포넌트에 Release/Cancel로 오는데, 그쪽은 아무것도 하지 않으므로 따로 걸러내지 않는다.
 void AUnit::StartFire()
 {
-	PaintWeapon->PullTrigger();
+	if (PaintWeapon && !(SecondaryWeapon && SecondaryWeapon->IsTriggerHeld()))
+	{
+		PaintWeapon->PullTrigger();
+	}
 }
 
 void AUnit::StopFire()
 {
-	PaintWeapon->ReleaseTrigger();
+	if (PaintWeapon)
+	{
+		PaintWeapon->ReleaseTrigger();
+	}
 }
 
 void AUnit::CancelFire()
 {
-	PaintWeapon->CancelTrigger();
+	if (PaintWeapon)
+	{
+		PaintWeapon->CancelTrigger();
+	}
+}
+
+void AUnit::StartSecondaryFire()
+{
+	if (SecondaryWeapon && !(PaintWeapon && PaintWeapon->IsTriggerHeld()))
+	{
+		SecondaryWeapon->PullTrigger();
+	}
+}
+
+void AUnit::StopSecondaryFire()
+{
+	if (SecondaryWeapon)
+	{
+		SecondaryWeapon->ReleaseTrigger();
+	}
+}
+
+void AUnit::CancelSecondaryFire()
+{
+	if (SecondaryWeapon)
+	{
+		SecondaryWeapon->CancelTrigger();
+	}
 }
 
 void AUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -304,13 +657,31 @@ void AUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	AppliedInputSubsystem.Reset();
 
+	// 내 카메라가 반투명하게 만든 유닛을 되돌린다. 파괴 중에는 EndOverlap 알림이 오지 않는다.
+	for (const TWeakObjectPtr<AUnit>& Faded : CameraFadedUnits)
+	{
+		if (AUnit* const Other = Faded.Get())
+		{
+			Other->SetCameraFaded(false);
+		}
+	}
+	CameraFadedUnits.Reset();
+
+	if (AbilitySystem && StunTagHandle.IsValid())
+	{
+		AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_Stunned, EGameplayTagEventType::NewOrRemoved).Remove(StunTagHandle);
+	}
+	StunTagHandle.Reset();
+
 	Super::EndPlay(EndPlayReason);
 }
 
 void AUnit::Move(const FInputActionValue& Value)
 {
 	const FVector2D MoveInput = Value.Get<FVector2D>();
-	if (MoveInput.IsNearlyZero())
+
+	// 스턴이나 히어로 랜딩 중에는 입력을 버린다. 서버 쪽은 무브먼트 컴포넌트가 같은 규칙으로 막는다.
+	if (MoveInput.IsNearlyZero() || IsMovementInputLocked())
 	{
 		return;
 	}
@@ -407,10 +778,7 @@ void AUnit::UpdateDashEffects(bool bDashing)
 	}
 
 	// 몽타주와 소리는 진입 순간의 일회성 연출이라 공용 경로를 그대로 쓴다.
-	if (Feedback->Montage)
-	{
-		PlayAnimMontage(Feedback->Montage);
-	}
+	PlayFeedbackMontage(*Feedback);
 
 	if (Feedback->Sound)
 	{
@@ -430,6 +798,61 @@ void AUnit::UpdateDashEffects(bool bDashing)
 			// Deactivate 후 남은 파티클이 다 사라지면 스스로 정리된다. false로 두면
 			// 대시할 때마다 꺼진 컴포넌트가 메시에 하나씩 쌓인다.
 			true);
+	}
+}
+
+void AUnit::PlayFeedbackMontage(const FUnitActionFeedback& Feedback)
+{
+	if (Feedback.Montage)
+	{
+		PlayAnimMontage(Feedback.Montage);
+		return;
+	}
+
+	UAnimInstance* const AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+	if (!Feedback.Animation || !AnimInstance)
+	{
+		return;
+	}
+
+	// 몽타주 에셋 없이 시퀀스를 슬롯에 얹는다. 그래프에 그 이름의 Slot 노드가 없으면 조용히 안 보인다.
+	AnimInstance->PlaySlotAnimationAsDynamicMontage(
+		Feedback.Animation, Feedback.AnimationSlot, Feedback.AnimationBlendIn, Feedback.AnimationBlendOut);
+}
+
+void AUnit::HandleWeaponFired(int32 Seed)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	const FUnitActionFeedback* Feedback = UnitData ? UnitData->FindFeedback(EUnitAction::Fire) : nullptr;
+	if (!Feedback)
+	{
+		return;
+	}
+
+	PlayFeedbackMontage(*Feedback);
+
+	if (Feedback->Sound)
+	{
+		UGameplayStatics::SpawnSoundAttached(Feedback->Sound, GetRootComponent());
+	}
+
+	// 총구 화염 같은 일회성 이펙트. 소켓이 없으면 폰 위치에.
+	if (Feedback->FX)
+	{
+		if (Feedback->FXSocket != NAME_None)
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAttached(
+				Feedback->FX, GetMesh(), Feedback->FXSocket,
+				FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget, true);
+		}
+		else
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), Feedback->FX, GetActorLocation(), GetActorRotation());
+		}
 	}
 }
 
@@ -471,11 +894,16 @@ void AUnit::ApplyUnitData()
 		return;
 	}
 
+	// 페이드 중에 메시가 바뀌면 저장해 둔 원래 재질이 옛 메시 것이 된다. 풀었다가 다시 건다.
+	const bool bWasCameraFaded = bCameraFaded;
+	SetCameraFaded(false);
+
 	// 메시 교체가 애님 인스턴스를 다시 만들기 때문에 순서를 바꾸면 애님 클래스가 날아간다.
 	if (UnitData->Mesh)
 	{
 		MeshComponent->SetSkeletalMesh(UnitData->Mesh);
 	}
+	SetCameraFaded(bWasCameraFaded);
 
 	if (UnitData->AnimClass)
 	{
