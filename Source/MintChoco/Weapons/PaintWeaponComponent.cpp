@@ -339,6 +339,8 @@ void UPaintWeaponComponent::MulticastShotFired_Implementation(const FPaintShot& 
 	{
 		Profile->PlayCosmetic(*GetWorld(), GetOwnerPawn(), Shot);
 	}
+	// Feedback on the machines that only watch: the owner and the server raised theirs when they fired.
+	OnFired.Broadcast(Shot.Seed);
 }
 
 void UPaintWeaponComponent::BuildContext(FPaintFireContext& OutContext, const FVector& ViewOrigin, const FVector& ViewDirection) const

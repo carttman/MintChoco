@@ -4,6 +4,7 @@
 #include "Game/Unit.h"
 
 #include "AbilitySystemComponent.h"
+#include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -321,6 +322,11 @@ void AUnit::PostInitializeComponents()
 	{
 		PaintWeapon->OnPaintIdChanged.AddDynamic(this, &AUnit::HandlePaintIdChanged);
 		HandlePaintIdChanged(PaintWeapon->GetPaintId());
+		PaintWeapon->OnFired.AddDynamic(this, &AUnit::HandleWeaponFired);
+	}
+	if (SecondaryWeapon)
+	{
+		SecondaryWeapon->OnFired.AddDynamic(this, &AUnit::HandleWeaponFired);
 	}
 
 	// 소유 클라이언트에서는 입력이, 서버에서는 압축 플래그가 이 알림을 낸다.
@@ -628,10 +634,7 @@ void AUnit::UpdateDashEffects(bool bDashing)
 	}
 
 	// 몽타주와 소리는 진입 순간의 일회성 연출이라 공용 경로를 그대로 쓴다.
-	if (Feedback->Montage)
-	{
-		PlayAnimMontage(Feedback->Montage);
-	}
+	PlayFeedbackMontage(*Feedback);
 
 	if (Feedback->Sound)
 	{
@@ -651,6 +654,61 @@ void AUnit::UpdateDashEffects(bool bDashing)
 			// Deactivate 후 남은 파티클이 다 사라지면 스스로 정리된다. false로 두면
 			// 대시할 때마다 꺼진 컴포넌트가 메시에 하나씩 쌓인다.
 			true);
+	}
+}
+
+void AUnit::PlayFeedbackMontage(const FUnitActionFeedback& Feedback)
+{
+	if (Feedback.Montage)
+	{
+		PlayAnimMontage(Feedback.Montage);
+		return;
+	}
+
+	UAnimInstance* const AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+	if (!Feedback.Animation || !AnimInstance)
+	{
+		return;
+	}
+
+	// 몽타주 에셋 없이 시퀀스를 슬롯에 얹는다. 그래프에 그 이름의 Slot 노드가 없으면 조용히 안 보인다.
+	AnimInstance->PlaySlotAnimationAsDynamicMontage(
+		Feedback.Animation, Feedback.AnimationSlot, Feedback.AnimationBlendIn, Feedback.AnimationBlendOut);
+}
+
+void AUnit::HandleWeaponFired(int32 Seed)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	const FUnitActionFeedback* Feedback = UnitData ? UnitData->FindFeedback(EUnitAction::Fire) : nullptr;
+	if (!Feedback)
+	{
+		return;
+	}
+
+	PlayFeedbackMontage(*Feedback);
+
+	if (Feedback->Sound)
+	{
+		UGameplayStatics::SpawnSoundAttached(Feedback->Sound, GetRootComponent());
+	}
+
+	// 총구 화염 같은 일회성 이펙트. 소켓이 없으면 폰 위치에.
+	if (Feedback->FX)
+	{
+		if (Feedback->FXSocket != NAME_None)
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAttached(
+				Feedback->FX, GetMesh(), Feedback->FXSocket,
+				FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget, true);
+		}
+		else
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), Feedback->FX, GetActorLocation(), GetActorRotation());
+		}
 	}
 }
 

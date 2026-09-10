@@ -267,6 +267,16 @@ private:
 	UFUNCTION()
 	void HandlePaintIdChanged(uint8 PaintId);
 
+	/**
+	 * 어느 무기든 한 발 나갈 때마다. 소유자는 예측 시점, 서버는 실제 발사, 다른 클라이언트는
+	 * 샷 멀티캐스트 시점에 온다. 발사 연출(EUnitAction::Fire)을 튼다.
+	 */
+	UFUNCTION()
+	void HandleWeaponFired(int32 Seed);
+
+	/** 연출의 몽타주 부분: 몽타주 에셋이 있으면 그것을, 없으면 Animation을 슬롯에 동적 몽타주로. */
+	void PlayFeedbackMontage(const struct FUnitActionFeedback& Feedback);
+
 	UFUNCTION()
 	void OnRep_IsDashing();
 
