@@ -111,6 +111,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI")
 	TSubclassOf<UPaintChargeWidget> ChargeWidgetClass;
 
+	/**
+	 * The game HUD (held item, match timer), the same widget the game controller shows. Optional.
+	 * WBP_GameHUD carries its own charge ring, so clear ChargeWidgetClass when using it.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI")
+	TSubclassOf<UUserWidget> HUDWidgetClass;
+
 	/** The brush this source stamps with: its material and how a hit becomes a splat shape. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|Paint")
 	TObjectPtr<UPaintBrushProfile> BrushProfile;
@@ -205,6 +212,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UPaintChargeWidget> ChargeWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UUserWidget> HUDWidget;
 
 	/** The possessed pawn's weapon; re-resolved on every possess, null for a pawn without one. */
 	UPROPERTY(Transient)

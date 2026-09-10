@@ -54,19 +54,27 @@ void AGameGameMode::StartPlay()
 
 void AGameGameMode::StartItemSpawning()
 {
+	// Standalone 지점은 스스로 돌므로 여기 목록에 넣지 않는다.
 	ItemSpawnPoints.Reset();
 	for (TActorIterator<AItemSpawnPoint> It(GetWorld()); It; ++It)
 	{
-		ItemSpawnPoints.Add(*It);
+		if (It->GetSpawnMode() == EItemSpawnMode::Shared)
+		{
+			ItemSpawnPoints.Add(*It);
+		}
 	}
 
 	TArray<UItemProfile*> Items;
 	UItemSettings::Get().LoadItems(Items);
 
-	if (ItemSpawnInterval <= 0.0f || ItemSpawnPoints.IsEmpty() || Items.IsEmpty() || !UItemSettings::Get().LoadPickupClass())
+	// 고정 아이템만 놓인 테스트 맵은 설정 목록이 비어도 돈다.
+	const bool bAnyFixed = ItemSpawnPoints.ContainsByPredicate(
+		[](const AItemSpawnPoint* Point) { return Point && Point->GetFixedItem(); });
+
+	if (ItemSpawnInterval <= 0.0f || ItemSpawnPoints.IsEmpty() || (Items.IsEmpty() && !bAnyFixed) || !UItemSettings::Get().LoadPickupClass())
 	{
 		UE_LOG(LogMintChoco, Log,
-			TEXT("아이템 스폰 없음: 주기 %.1f초, 스폰 지점 %d개, 아이템 %d종, 픽업 클래스 %s."),
+			TEXT("아이템 주기 스폰 없음: 주기 %.1f초, 공유 스폰 지점 %d개, 아이템 %d종, 픽업 클래스 %s."),
 			ItemSpawnInterval, ItemSpawnPoints.Num(), Items.Num(),
 			UItemSettings::Get().PickupClass.IsNull() ? TEXT("없음") : TEXT("있음"));
 		return;
@@ -113,29 +121,19 @@ void AGameGameMode::SpawnNextItem()
 		return;
 	}
 
-	TArray<UItemProfile*> Items;
-	UItemSettings::Get().LoadItems(Items);
-	UClass* const PickupClass = UItemSettings::Get().LoadPickupClass();
-	if (Items.IsEmpty() || !PickupClass)
-	{
-		return;
-	}
-
 	AItemSpawnPoint* const Point = ItemSpawnPoints[PointIndex];
-	UItemProfile* const Item = Items[ItemRandom.RandRange(0, Items.Num() - 1)];
-
-	FActorSpawnParameters Params;
-	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AItemPickup* const Pickup = GetWorld()->SpawnActorDeferred<AItemPickup>(
-		PickupClass, Point->GetActorTransform(), this, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
-	if (!Pickup)
+	UItemProfile* const Item = Point->ChooseItem(ItemRandom);
+	UClass* const PickupClass = UItemSettings::Get().LoadPickupClass();
+	if (!Item || !PickupClass)
 	{
 		return;
 	}
 
 	const float Warning = FMath::Clamp(ItemSpawnWarning, 0.0f, ItemSpawnInterval);
-	Pickup->Initialize(Item, Point, Warning);
-	Pickup->FinishSpawning(Point->GetActorTransform());
+	if (!AItemPickup::SpawnAt(*GetWorld(), PickupClass, *Point, *Item, Warning, this))
+	{
+		return;
+	}
 
 	UE_LOG(LogMintChoco, Verbose, TEXT("아이템 예고: %s at %s, %.1f초 뒤 등장."), *GetNameSafe(Item), *GetNameSafe(Point), Warning);
 }
@@ -300,8 +298,9 @@ void AGameGameMode::ApplyTeamUnitData(APawn* Pawn, const AController* NewPlayer)
 			TEXT("%s: 팀 %d의 UnitData가 없습니다. BP_GameMode의 Team Unit Data를 확인하세요."),
 			*GetNameSafe(NewPlayer), Team);
 	}
-	else
+	else if (!TeamUnitData.IsEmpty())
 	{
+		// 팀별 캐릭터를 둔 맵에서만 뜻이 있다. 샘플 맵처럼 팀 데이터가 없는 곳은 팀 없이 도는 게 정상이다.
 		// 로비에서 팀을 고르지 않았거나 ReceiveCopyProperties가 값을 옮기지 못한 경우다.
 		// Team의 기본값이 0이던 시절에는 이 상황이 조용히 민트로 둔갑해 드러나지 않았다.
 		UE_LOG(LogMintChoco, Warning,

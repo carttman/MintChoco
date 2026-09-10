@@ -9,6 +9,8 @@ class AItemSpawnPoint;
 class UItemProfile;
 class USphereComponent;
 class UStaticMeshComponent;
+class UUserWidget;
+class UWidgetComponent;
 
 /** 픽업의 두 단계. 예고 중에는 레이저만 보이고, 활성화되면 아이템이 놓이고 밟을 수 있다. */
 UENUM(BlueprintType)
@@ -38,6 +40,12 @@ public:
 
 	/** 서버 전용. SpawnActorDeferred 뒤, FinishSpawning 전에 부른다. */
 	void Initialize(UItemProfile* InProfile, AItemSpawnPoint* InSpawnPoint, float InWarningTime);
+
+	/**
+	 * 서버 전용. 지점 위치에 픽업을 지연 스폰해 초기화하고 끝낸다. 게임모드와 Standalone 지점이 같은 길을 쓴다.
+	 * WarningTime 0이면 바로 활성 상태로 나온다. 스폰이 거부되면 nullptr.
+	 */
+	static AItemPickup* SpawnAt(UWorld& World, UClass* PickupClass, AItemSpawnPoint& Point, UItemProfile& Item, float WarningTime, AActor* Owner);
 
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UItemProfile* GetProfile() const { return Profile; }
@@ -74,6 +82,21 @@ protected:
 	/** 예고용 수직 레이저. 예고 상태에서만 보인다. 메시와 머티리얼은 BP가 정한다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	TObjectPtr<UStaticMeshComponent> Laser;
+
+	/** 아이템 위에 뜨는 이름표(스크린 공간). 활성 상태에서만 보인다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Label")
+	TObjectPtr<UWidgetComponent> Label;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Label")
+	bool bShowLabel = true;
+
+	/** 이름표 위젯. 기본은 트리를 직접 짜는 UItemLabelWidget이고, UMG 서브클래스로 바꿀 수 있다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Label")
+	TSubclassOf<UUserWidget> LabelWidgetClass;
+
+	/** 이름표가 뜨는 높이(cm). 박스 메시 위쪽. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Label", meta = (ForceUnits = "cm"))
+	float LabelHeight = 150.0f;
 
 	UFUNCTION()
 	void OnRep_Profile();
