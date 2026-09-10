@@ -175,6 +175,22 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
 
+	/**
+	 * 위아래로 볼 수 있는 한계(도). 수평이 0이고 아래가 음수다.
+	 *
+	 * 카메라 매니저가 아니라 폰이 들고 있는 이유는 이 값이 곧 무기를 겨눌 수 있는 각도이기
+	 * 때문이다. 캐릭터가 바뀌면 사격 각도도 같이 바뀌어야 하고, 카메라 매니저는 리스폰마다
+	 * 새로 만들어지므로 값을 둘 자리가 아니다.
+	 *
+	 * 클램프는 소유 클라이언트의 카메라 매니저가 걸고, 서버는 이미 클램프된 회전을
+	 * ServerMove로 받는다. 그래서 서버에 따로 걸 필요가 없다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera", meta = (ClampMin = "-89.9", ClampMax = "0", ForceUnits = "deg"))
+	float ViewPitchMin = -45.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera", meta = (ClampMin = "0", ClampMax = "89.9", ForceUnits = "deg"))
+	float ViewPitchMax = 60.0f;
+
 	/** 조작에 쓰이는 입력 에셋. 비어 있으면 이 유닛은 플레이어 입력을 받지 못한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UUnitInputConfig> InputConfig;
@@ -257,6 +273,9 @@ protected:
 private:
 	/** 어빌리티 액터 정보를 이 폰으로 맞춘다. 서버는 빙의 때, 클라이언트는 PlayerState 도착 때. */
 	void InitAbilityActorInfo();
+
+	/** 시야 피치 한계를 소유 클라이언트의 카메라 매니저에 넣는다. 리스폰마다 다시 불러야 한다. */
+	void ApplyViewPitchLimits();
 	/** 대시 의도를 무브먼트 컴포넌트에 전달한다. 컴포넌트 타입이 틀리면 여기서 드러난다. */
 	void SetDashInput(bool bWantsToDash);
 

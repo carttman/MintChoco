@@ -6,6 +6,7 @@
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraComponent.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -117,6 +118,18 @@ void AUnit::OnRep_PlayerState()
 UAbilitySystemComponent* AUnit::GetAbilitySystemComponent() const
 {
 	return AbilitySystem;
+}
+
+void AUnit::ApplyViewPitchLimits()
+{
+	// 카메라 매니저는 로컬 플레이어 컨트롤러에만 있다. 데디케이티드 서버와 원격 폰에서는
+	// 걸 대상이 없고, 걸 필요도 없다: 회전은 소유 클라이언트가 만들어 보낸다.
+	const APlayerController* const PlayerController = Cast<APlayerController>(GetController());
+	if (APlayerCameraManager* const CameraManager = PlayerController ? PlayerController->PlayerCameraManager.Get() : nullptr)
+	{
+		CameraManager->ViewPitchMin = ViewPitchMin;
+		CameraManager->ViewPitchMax = ViewPitchMax;
+	}
 }
 
 void AUnit::InitAbilityActorInfo()
@@ -368,6 +381,10 @@ void AUnit::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 			AppliedInputSubsystem = Subsystem;
 		}
 	}
+
+	// 여기가 로컬 조종 폰이 확정되는 유일한 지점이라 시야 한계도 같이 넣는다. 리스폰하면
+	// 이 함수가 다시 불리므로 새 카메라 매니저에도 자동으로 다시 걸린다.
+	ApplyViewPitchLimits();
 
 	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent);
 	if (!EnhancedInput)

@@ -11,6 +11,7 @@
 #include "Game/TeamTypes.h"
 #include "Game/Unit.h"
 #include "Paint/PaintSplat.h"
+#include "Weapons/PaintDeposit.h"
 #include "Weapons/PaintWeaponComponent.h"
 #include "Weapons/PaintballProfile.h"
 
@@ -24,7 +25,10 @@ namespace
 
 APaintProjectile::APaintProjectile()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// A plain ball needs no tick of its own. Only a ball that paints as it flies turns it on, in
+	// Init, once the profile is known; bCanEverTick has to be set here for that to be possible.
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 	InitialLifeSpan = 5.0f;
 
 	Sphere = CreateDefaultSubobject<USphereComponent>(TEXT("Sphere"));
@@ -82,6 +86,11 @@ void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId,
 			Body->IgnoreActorWhenMoving(this, true);
 		}
 	}
+
+	// Splats reach the other machines through the game state's log, so only the server's real ball
+	// may paint. A cosmetic ball ticking here would draw the same trail a second time.
+	LastTrailLocation = GetActorLocation();
+	SetActorTickEnabled(!bCosmetic && HasAuthority() && Profile->HasTrail());
 }
 
 void APaintProjectile::EndPlay(const EEndPlayReason::Type Reason)
@@ -92,6 +101,93 @@ void APaintProjectile::EndPlay(const EEndPlayReason::Type Reason)
 		Body->IgnoreActorWhenMoving(this, false);
 	}
 	Super::EndPlay(Reason);
+}
+
+void APaintProjectile::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (!Profile || TrailSplatCount >= Profile->MaxTrailSplats)
+	{
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	// Measured along the path actually flown rather than from the muzzle, so a lobbed arc is
+	// sampled at even spacing along its curve instead of bunching up near the apex.
+	const FVector Location = GetActorLocation();
+	TrailDistance += FVector::Dist(LastTrailLocation, Location);
+	LastTrailLocation = Location;
+	if (TrailDistance < Profile->TrailSpacing)
+	{
+		return;
+	}
+
+	// One sample per frame at most: a ball moving several spacings in one frame would otherwise
+	// fire a burst of traces to catch up, which is exactly the cost the spacing exists to bound.
+	TrailDistance -= Profile->TrailSpacing;
+	TrailSplatCount += PaintTrailSample(Location, TrailSampleCount++);
+}
+
+int32 APaintProjectile::PaintTrailSample(const FVector& Location, int32 SampleIndex)
+{
+	UWorld* const World = GetWorld();
+	const FVector Forward = Movement->Velocity.GetSafeNormal();
+	if (!World || Forward.IsNearlyZero())
+	{
+		return 0;
+	}
+
+	// The rays lie in the plane across the flight direction, so one ray count covers floor,
+	// ceiling and both sides however the ball is heading - no special case for "below".
+	FVector RayUp;
+	FVector RaySide;
+	Forward.FindBestAxisVectors(RayUp, RaySide);
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(PaintProjectileTrail), /*bTraceComplex=*/false, this);
+	Params.AddIgnoredActor(GetInstigator());
+
+	const int32 Rays = Profile->TrailRayCount;
+	const int32 Budget = Profile->MaxTrailSplats - TrailSplatCount;
+	// Turning the fan by a per-sample amount keeps successive samples from lining their rays up
+	// into a visible ladder. It comes from the seed, so a replay lands the marks in the same places.
+	const float Twist = 2.0f * UE_PI * static_cast<float>(HashCombineFast(static_cast<uint32>(Seed), static_cast<uint32>(SampleIndex)) & 0xFFFF) / 65536.0f;
+
+	int32 Painted = 0;
+	for (int32 Index = 0; Index < Rays && Painted < Budget; ++Index)
+	{
+		const float Angle = Twist + 2.0f * UE_PI * static_cast<float>(Index) / static_cast<float>(Rays);
+		const FVector Direction = RayUp * FMath::Cos(Angle) + RaySide * FMath::Sin(Angle);
+
+		FHitResult Hit;
+		if (!World->LineTraceSingleByChannel(Hit, Location, Location + Direction * Profile->TrailRadius, PaintballChannel, Params)
+			|| Hit.bStartPenetrating)
+		{
+			continue;
+		}
+
+		// A pawn is never painted by a trail: the mark would not stick to it, and ApplyHit would
+		// also strike it as a paint hit receiver once per sample.
+		if (Cast<APawn>(Hit.GetActor()))
+		{
+			continue;
+		}
+
+		if (Profile->bTrailSkipTransient && !FPaintDeposit::KeepsPaint(Hit))
+		{
+			continue;
+		}
+
+		// The incident velocity runs along the ray, so the brush stretches the stamp away from the
+		// path and the samples read as one stripe rather than a row of dots.
+		const int32 RaySeed = static_cast<int32>(HashCombineFast(
+			static_cast<uint32>(Seed), static_cast<uint32>(SampleIndex * Rays + Index + 1)));
+		if (Profile->TrailDeposit.ApplyHit(World, Hit, Direction * Movement->Velocity.Size(), PaintId, RaySeed))
+		{
+			++Painted;
+		}
+	}
+	return Painted;
 }
 
 void APaintProjectile::OnPawnOverlap(UPrimitiveComponent*, AActor* OtherActor, UPrimitiveComponent*, int32, bool bFromSweep, const FHitResult& SweepResult)
