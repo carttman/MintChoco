@@ -79,7 +79,7 @@ bool FItemProfileAssetTest::RunTest(const FString& Parameters)
 		if (const USweetSpinnerProfile* const Spinner = Cast<USweetSpinnerProfile>(Item))
 		{
 			TestNotNull(*FString::Printf(TEXT("%s: Volley"), *Name), Spinner->Volley.Get());
-			TestTrue(*FString::Printf(TEXT("%s: SpinRateDeg is positive"), *Name), Spinner->SpinRateDeg > 0.0f);
+			TestTrue(*FString::Printf(TEXT("%s: Turns is positive"), *Name), Spinner->Turns > 0.0f);
 			TestTrue(*FString::Printf(TEXT("%s: VolleyInterval fits the duration"), *Name),
 				Spinner->VolleyInterval > 0.0f && Spinner->VolleyInterval <= Spinner->Duration);
 			if (Spinner->Volley)
