@@ -29,8 +29,9 @@ public:
 	FPaintDeposit TrailDeposit;
 
 	/**
-	 * 자국이 달리는 방향으로 늘어나는 배율. 1이면 수직으로 떨어진 둥근 자국, 2.5면 진행 방향으로 2.5배 길게
+	 * 자국이 달린 방향으로 끌리는 배율. 1이면 수직으로 떨어진 둥근 자국, 2.5면 발 뒤로 2.5배 길게
 	 * 번진다(브러시 프로필의 MaxStretch가 상한). 자국을 비스듬한 충돌로 만들어 브러시가 알아서 늘린다.
+	 * 코너를 돈 직후에는 꼬리가 이전 자국 옆으로 삐져나오지 않도록 둥글게 시작해 직진 거리만큼 이 값까지 차오른다.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SpeedStar", meta = (ClampMin = "1", ForceUnits = "x"))
 	float TrailStretch = 2.5f;
