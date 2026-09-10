@@ -3,6 +3,7 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "Game/TeamTypes.h"
+#include "MintChoco.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
@@ -63,6 +64,62 @@ void AGameGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(AGameGameState, MatchEndServerTime);
 	DOREPLIFETIME(AGameGameState, WinningTeam);
 	DOREPLIFETIME(AGameGameState, bMatchEnded);
+	DOREPLIFETIME(AGameGameState, MatchPhase);
+	DOREPLIFETIME(AGameGameState, CountdownEndServerTime);
+	DOREPLIFETIME(AGameGameState, MatchDuration);
+}
+
+bool AGameGameState::AllowsPlayerInput(EMatchPhase Phase)
+{
+	return Phase == EMatchPhase::Playing || Phase == EMatchPhase::Ended;
+}
+
+bool AGameGameState::IsPlayerInputAllowed(const UWorld* World)
+{
+	const AGameGameState* const State = World ? World->GetGameState<AGameGameState>() : nullptr;
+	return !State || AllowsPlayerInput(State->MatchPhase);
+}
+
+void AGameGameState::SetMatchPhase(EMatchPhase NewPhase)
+{
+	if (!HasAuthority() || MatchPhase == NewPhase)
+	{
+		return;
+	}
+	MatchPhase = NewPhase;
+	// RepNotify는 권한자에게 오지 않으므로 리슨 호스트는 직접 부른다.
+	OnRep_MatchPhase();
+}
+
+void AGameGameState::OnRep_MatchPhase()
+{
+	UE_LOG(LogMintChoco, Log, TEXT("경기 단계: %s"), *UEnum::GetDisplayValueAsText(MatchPhase).ToString());
+	BP_OnMatchPhaseChanged(MatchPhase);
+}
+
+void AGameGameState::SetCountdownEndTime(double InServerTime)
+{
+	if (HasAuthority())
+	{
+		CountdownEndServerTime = InServerTime;
+	}
+}
+
+void AGameGameState::SetMatchDuration(float InSeconds)
+{
+	if (HasAuthority())
+	{
+		MatchDuration = FMath::Max(InSeconds, 0.0f);
+	}
+}
+
+float AGameGameState::GetCountdownRemaining() const
+{
+	if (MatchPhase != EMatchPhase::Countdown || CountdownEndServerTime <= 0.0)
+	{
+		return 0.0f;
+	}
+	return static_cast<float>(FMath::Max(0.0, CountdownEndServerTime - GetServerWorldTimeSeconds()));
 }
 
 void AGameGameState::SetMatchEndTime(double InServerTime)
@@ -84,6 +141,7 @@ void AGameGameState::SetMatchResult(int32 InWinningTeam)
 
 	WinningTeam = InWinningTeam;
 	bMatchEnded = true;
+	SetMatchPhase(EMatchPhase::Ended);
 
 	// RepNotify는 값을 쓴 권한자에게는 오지 않는다. 리슨 호스트의 화면도 갱신되도록 직접 부른다.
 	HandleMatchEnded();
@@ -93,7 +151,8 @@ float AGameGameState::GetRemainingTime() const
 {
 	if (MatchEndServerTime <= 0.0)
 	{
-		return 0.0f;
+		// 경기 전: 아직 줄지 않은 한 판의 길이. 타이머를 걸지 않는 디버그 구성이면 0.
+		return MatchDuration;
 	}
 
 	return static_cast<float>(FMath::Max(0.0, MatchEndServerTime - GetServerWorldTimeSeconds()));

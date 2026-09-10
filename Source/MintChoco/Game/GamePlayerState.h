@@ -28,6 +28,32 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Team")
 	FText GetNickname() const { return Nickname; }
 
+	/**
+	 * 이 플레이어의 화면이 열렸고 폰이 붙었는지. 소유 머신이 확인해 서버에 알리고, 서버가
+	 * 전원 준비를 보고 카운트다운을 시작한다(AGameGameMode). 리슨 호스트는 서버 자신이 확인한다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Match")
+	bool IsReady() const { return bReady; }
+
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+protected:
+	UPROPERTY(Replicated)
+	bool bReady = false;
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetReady();
+
+private:
+	/**
+	 * 소유 머신에서 주기적으로 "폰이 있고 가림막이 걷혔는지"를 본다. 맞으면 서버에 알리고
+	 * 멈춘다. 다른 플레이어의 PlayerState(컨트롤러가 없다)는 첫 검사에서 바로 멈춘다.
+	 */
+	void PollLocalReady();
+
+	FTimerHandle ReadyPollTimer;
+
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Replicated)
 	FText Nickname;

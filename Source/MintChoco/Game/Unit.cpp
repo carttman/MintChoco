@@ -13,6 +13,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
+#include "Game/GameGameState.h"
 #include "Game/GamePlayerState.h"
 #include "Game/TeamTypes.h"
 #include "Game/UnitInputConfig.h"
@@ -291,6 +292,11 @@ bool AUnit::HasSuperArmor() const
 
 bool AUnit::IsMovementInputLocked() const
 {
+	// 경기 전(전원 대기, 카운트다운)에는 아무도 움직이지 못한다. 단계는 복제되므로 양쪽이 같은 답을 본다.
+	if (!AGameGameState::IsPlayerInputAllowed(GetWorld()))
+	{
+		return true;
+	}
 	if (!AbilitySystem)
 	{
 		return false;
