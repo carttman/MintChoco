@@ -81,7 +81,10 @@ bool UPaintSniperProfile::Fire(const FPaintFireContext& Context, FPaintStrokeSta
 
 	if (Victim)
 	{
-		UE_LOG(LogPaint, Log, TEXT("%s sniped %s."), *GetNameSafe(Context.Instigator), *Victim->GetName());
+		// No paint on a pawn, but the impact's stun lands, scaled by how charged the shot was.
+		const bool bStunned = Impact.StrikeUnit(Hit, Context.PaintId, Context.ChargeFraction);
+		UE_LOG(LogPaint, Log, TEXT("%s sniped %s (charge %.2f, %s)."), *GetNameSafe(Context.Instigator), *Victim->GetName(),
+			Context.ChargeFraction, bStunned ? TEXT("stunned") : TEXT("no stun"));
 	}
 	else if (bHit)
 	{

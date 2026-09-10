@@ -154,14 +154,18 @@ private:
 	float GetShotCost() const;
 	bool CanAffordShot() const;
 	void SpendShot();
-	void BuildContext(FPaintFireContext& OutContext, const FVector& ViewOrigin, const FVector& ViewDirection) const;
+	void BuildContext(FPaintFireContext& OutContext, const FVector& ViewOrigin, const FVector& ViewDirection, float ChargeFraction) const;
 	FTransform ComputeMuzzleTransform(const FVector& ViewOrigin, const FVector& ViewDirection) const;
 	APawn* GetOwnerPawn() const;
 	void GetOwnerView(FVector& OutOrigin, FVector& OutDirection) const;
 
-	/** The owner's shot, fired for real with the server's muzzle and the view the owner aimed with. */
+	/**
+	 * The owner's shot, fired for real with the server's muzzle and the view the owner aimed with.
+	 * Charge is the owner's charge fraction in 1/255 steps (255 for every non-charged mode); the
+	 * server never saw the press, so it takes the owner's word for it.
+	 */
 	UFUNCTION(Server, Reliable)
-	void ServerFire(int32 Seed, FVector_NetQuantize ViewOrigin, FVector_NetQuantizeNormal ViewDirection);
+	void ServerFire(int32 Seed, FVector_NetQuantize ViewOrigin, FVector_NetQuantizeNormal ViewDirection, uint8 Charge);
 
 	UFUNCTION(Server, Reliable)
 	void ServerSetProfile(UPaintWeaponProfile* NewProfile);
@@ -181,6 +185,9 @@ private:
 
 	/** World time the trigger was pulled; a Charged profile measures its hold from here. */
 	double PressTime = 0.0;
+
+	/** Charge fraction of the shot FireOnce is about to fire. ReleaseTrigger samples it before the cancel clears the hold. */
+	float PendingChargeFraction = 1.0f;
 	bool bTriggerHeld = false;
 	bool bUseFixedSeed = false;
 	int32 NextSeed = 0;
