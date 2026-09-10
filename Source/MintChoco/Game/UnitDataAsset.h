@@ -8,6 +8,7 @@
 
 class UAnimInstance;
 class UAnimMontage;
+class UAnimSequenceBase;
 class UNiagaraSystem;
 class USkeletalMesh;
 class USoundBase;
@@ -40,8 +41,25 @@ struct FUnitActionFeedback
 {
 	GENERATED_BODY()
 
+	/** 몽타주 에셋. 있으면 Animation보다 우선한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
 	TObjectPtr<UAnimMontage> Montage;
+
+	/**
+	 * 몽타주 없이 시퀀스를 바로 재생할 때. AnimationSlot 슬롯에 동적 몽타주로 얹으므로
+	 * 애님 그래프에 같은 이름의 Slot 노드가 있어야 보인다(상체 발사면 Layered Blend의 상체 가지).
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
+	TObjectPtr<UAnimSequenceBase> Animation;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
+	FName AnimationSlot = TEXT("UpperBody");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback", meta = (ClampMin = "0", ForceUnits = "s"))
+	float AnimationBlendIn = 0.1f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback", meta = (ClampMin = "0", ForceUnits = "s"))
+	float AnimationBlendOut = 0.15f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
 	TObjectPtr<UNiagaraSystem> FX;

@@ -204,11 +204,7 @@ void APaintProjectile::OnPawnOverlap(UPrimitiveComponent*, AActor* OtherActor, U
 	// fired it (and on teammates), and those balls have no instigator to be excused by the ignore list.
 	if (const AUnit* const Unit = Cast<AUnit>(OtherActor))
 	{
-		const int32 Team = Unit->GetTeam();
-		const uint8 UnitPaintId = Teams::IsValidId(Team)
-			? static_cast<uint8>(Team)
-			: (Unit->GetPaintWeapon() ? Unit->GetPaintWeapon()->GetPaintId() : PaintIdNone);
-		if (UnitPaintId == PaintId)
+		if (Unit->GetPaintId() == PaintId)
 		{
 			return;
 		}
