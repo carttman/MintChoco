@@ -30,6 +30,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "MintChoco.h"
 #include "Net/UnrealNetwork.h"
+#include "Paint/PaintSplat.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "Weapons/PaintWeaponComponent.h"
@@ -338,25 +339,42 @@ bool AUnit::ApplyStatusEffect(TSubclassOf<UGameplayEffect> EffectClass, const FG
 
 bool AUnit::TryApplyStun()
 {
-	if (!HasAuthority() || IsStunned() || HasSuperArmor())
+	const UItemSettings& Settings = UItemSettings::Get();
+	return TryApplyStun(Settings.StunDuration, Settings.SuperArmorDuration);
+}
+
+bool AUnit::TryApplyStun(float StunSeconds, float SuperArmorSeconds)
+{
+	if (!HasAuthority() || StunSeconds <= 0.0f || IsStunned() || HasSuperArmor())
 	{
 		return false;
 	}
 
 	FActiveGameplayEffectHandle Handle;
-	if (!ApplyStatusEffect(UGE_Stunned::StaticClass(), ItemTags::State_Status_Stunned, UItemSettings::Get().StunDuration, Handle))
+	if (!ApplyStatusEffect(UGE_Stunned::StaticClass(), ItemTags::State_Status_Stunned, StunSeconds, Handle))
 	{
 		return false;
 	}
 
-	// 슈퍼아머는 스턴이 끝나는 바로 그 순간 이어져야 "스턴 2초 후 4초"가 된다.
+	// 슈퍼아머는 스턴이 끝나는 바로 그 순간 이어져야 "스턴 2초 후 4초"가 된다. 길이는 건 쪽이 정한다.
+	PendingSuperArmorSeconds = SuperArmorSeconds;
 	if (FOnActiveGameplayEffectRemoved_Info* const Removed = AbilitySystem->OnGameplayEffectRemoved_InfoDelegate(Handle))
 	{
 		Removed->AddUObject(this, &AUnit::HandleStunEnded);
 	}
 
-	UE_LOG(LogMintChoco, Verbose, TEXT("%s: 스턴 %.1f초."), *GetNameSafe(this), UItemSettings::Get().StunDuration);
+	UE_LOG(LogMintChoco, Verbose, TEXT("%s: 스턴 %.2f초, 이어서 슈퍼아머 %.2f초."), *GetNameSafe(this), StunSeconds, SuperArmorSeconds);
 	return true;
+}
+
+uint8 AUnit::GetPaintId() const
+{
+	const int32 Team = GetTeam();
+	if (Teams::IsValidId(Team))
+	{
+		return static_cast<uint8>(Team);
+	}
+	return PaintWeapon ? PaintWeapon->GetPaintId() : PaintIdNone;
 }
 
 void AUnit::HandleStunEnded(const FGameplayEffectRemovalInfo& RemovalInfo)
@@ -366,17 +384,28 @@ void AUnit::HandleStunEnded(const FGameplayEffectRemovalInfo& RemovalInfo)
 	{
 		return;
 	}
+	if (PendingSuperArmorSeconds <= 0.0f)
+	{
+		return;
+	}
 	FActiveGameplayEffectHandle Handle;
-	ApplyStatusEffect(UGE_SuperArmor::StaticClass(), ItemTags::State_Status_SuperArmor, UItemSettings::Get().SuperArmorDuration, Handle);
+	ApplyStatusEffect(UGE_SuperArmor::StaticClass(), ItemTags::State_Status_SuperArmor, PendingSuperArmorSeconds, Handle);
 }
 
 void AUnit::HandleStunTagChanged(const FGameplayTag Tag, int32 NewCount)
 {
 	const bool bStunned = NewCount > 0;
-	if (bStunned && PaintWeapon)
+	if (bStunned)
 	{
-		// 누르고 있던 방아쇠는 놓는다. 차지 중이었다면 발사되지 않는다.
-		PaintWeapon->CancelTrigger();
+		// 누르고 있던 방아쇠는 놓는다. 차지 중이었다면 발사되지 않는다(부분 충전 발사도 없다).
+		if (PaintWeapon)
+		{
+			PaintWeapon->CancelTrigger();
+		}
+		if (SecondaryWeapon)
+		{
+			SecondaryWeapon->CancelTrigger();
+		}
 	}
 	BP_OnStunned(bStunned);
 }

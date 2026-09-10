@@ -18,7 +18,7 @@ enum class EPaintFireMode : uint8
 	Automatic,
 	/** Fires every tick while held; a brush stroke throttles itself by distance instead of by time. */
 	Continuous,
-	/** Fires once when the trigger is released after being held for ChargeTime; released earlier, nothing happens. */
+	/** Fires once when the trigger is released after being held for at least MinChargeToFire of ChargeTime; released earlier, nothing happens. */
 	Charged
 };
 
@@ -35,6 +35,9 @@ struct FPaintFireContext
 	FVector ViewDirection = FVector::ForwardVector;
 	uint8 PaintId = 0;
 	int32 Seed = 0;
+
+	/** How charged a Charged shot was on release, 0 to 1. Always 1 for the other fire modes. Scales the stun a hit carries. */
+	float ChargeFraction = 1.0f;
 
 	/**
 	 * False on a client: the profile only decides whether this shot would fire and describes it,
@@ -138,6 +141,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cadence",
 		meta = (ClampMin = "0.05", ForceUnits = "s", EditCondition = "FireMode == EPaintFireMode::Charged"))
 	float ChargeTime = 3.0f;
+
+	/**
+	 * Charge fraction (held time / ChargeTime) the trigger needs on release to fire at all, in Charged.
+	 * 1 fires only a full charge; lower lets a partial charge fire, with the profile scaling its
+	 * effect (a sniper's stun) by the fraction it got.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cadence",
+		meta = (ClampMin = "0", ClampMax = "1", EditCondition = "FireMode == EPaintFireMode::Charged"))
+	float MinChargeToFire = 1.0f;
 
 private:
 	/** Percent of a full ink tank one accepted shot spends. Read it through GetInkCostPerShot. */

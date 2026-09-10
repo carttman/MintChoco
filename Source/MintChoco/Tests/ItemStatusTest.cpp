@@ -7,6 +7,7 @@
 #include "Items/ItemGameplayEffect.h"
 #include "Items/ItemGameplayTags.h"
 #include "Items/ItemSettings.h"
+#include "Weapons/PaintDeposit.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -54,6 +55,16 @@ bool FItemStatusRulesTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("stun duration is positive"), Settings.StunDuration > 0.0f);
 	TestTrue(TEXT("super armor duration is positive"), Settings.SuperArmorDuration > 0.0f);
 	TestTrue(TEXT("knockback speed is positive"), Settings.KnockbackSpeed > 0.0f);
+
+	// 무기 접촉의 스턴: 기본은 없음(0), 차지 비율에 비례, 뒤따르는 슈퍼아머는 1초.
+	FPaintDeposit Deposit;
+	TestEqual(TEXT("a deposit stuns nobody by default"), Deposit.StunSecondsFor(1.0f), 0.0f);
+	TestEqual(TEXT("weapon super armor defaults to one second"), Deposit.StunSuperArmorDuration, 1.0f);
+	Deposit.StunDuration = 1.0f;
+	TestEqual(TEXT("full charge: the whole stun"), Deposit.StunSecondsFor(1.0f), 1.0f, 1e-4f);
+	TestEqual(TEXT("half charge: half the stun"), Deposit.StunSecondsFor(0.5f), 0.5f, 1e-4f);
+	TestEqual(TEXT("charge is clamped"), Deposit.StunSecondsFor(3.0f), 1.0f, 1e-4f);
+	TestEqual(TEXT("no charge: no stun"), Deposit.StunSecondsFor(0.0f), 0.0f);
 
 	return true;
 }

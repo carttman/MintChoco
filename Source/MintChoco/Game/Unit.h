@@ -113,10 +113,23 @@ public:
 	bool IsMovementInputLocked() const;
 
 	/**
-	 * 서버 전용. 스턴을 건다(UItemSettings::StunDuration). 슈퍼아머거나 이미 스턴이면 false.
-	 * 스턴이 끝나는 순간 슈퍼아머(SuperArmorDuration)가 이어진다.
+	 * 서버 전용. 아이템 스턴을 건다(UItemSettings::StunDuration, 이어서 SuperArmorDuration).
+	 * 슈퍼아머거나 이미 스턴이면 false.
 	 */
 	bool TryApplyStun();
+
+	/**
+	 * 서버 전용. 지속시간을 지정한 스턴. 무기 적중은 짧은 스턴과 짧은 슈퍼아머를 쓴다(FPaintDeposit).
+	 * 스턴이 끝나는 순간 SuperArmorSeconds 동안 슈퍼아머가 이어진다. 0 이하의 스턴은 걸지 않는다.
+	 */
+	bool TryApplyStun(float StunSeconds, float SuperArmorSeconds);
+
+	/**
+	 * 이 유닛의 페인트 색. 팀이 있으면 팀 id, 없으면(샘플 맵) 주무기의 페인트 id.
+	 * 같은 색의 탄과 효과는 이 유닛을 지나친다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Team")
+	uint8 GetPaintId() const;
 
 	/** 서버 전용. From에서 멀어지는 수평 방향으로 밀어낸다(UItemSettings::Knockback*). 슈퍼아머면 무시. */
 	void Knockback(const FVector& From);
@@ -330,6 +343,9 @@ private:
 
 	/** 서버 전용. 스턴 GE가 제거되면 슈퍼아머를 건다. */
 	void HandleStunEnded(const FGameplayEffectRemovalInfo& RemovalInfo);
+
+	/** 진행 중인 스턴이 끝날 때 이어질 슈퍼아머 길이. TryApplyStun이 정한다. */
+	float PendingSuperArmorSeconds = 0.0f;
 
 	/** 서버 전용. 상태 GE 하나를 SetByCaller 지속시간과 동적 태그로 건다. */
 	bool ApplyStatusEffect(TSubclassOf<UGameplayEffect> EffectClass, const FGameplayTag& StatusTag, float Duration, FActiveGameplayEffectHandle& OutHandle);
