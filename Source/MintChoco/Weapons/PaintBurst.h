@@ -5,6 +5,7 @@
 
 #include "PaintBurst.generated.h"
 
+class UNiagaraSystem;
 class UPaintballProfile;
 
 /** 파열 방향 계산. 풍선과 APaintBurst가 같은 함수를 써서 같은 시드에 같은 그림이 나온다. */
@@ -47,6 +48,17 @@ struct MINTCHOCO_API FPaintBurstParams
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Burst")
 	int32 Seed = 0;
+
+	/**
+	 * 터진 자리에서 한 번 재생하는 연출. 비어 있으면 아무것도 하지 않으므로, 값을 넣지 않은
+	 * 아이템(히어로 랜딩, 꿀벌)은 그대로다.
+	 *
+	 * 탄과 같은 복제를 탄다: 초기 복제로 실린 이 참조가 각 머신의 BeginPlay 전에 도착하고,
+	 * 데디케이티드 서버를 뺀 모두가 자기 화면에 한 번씩 띄운다. 시드가 필요 없는 연출이라
+	 * 머신마다 조금 달라도 상관없다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Burst")
+	TObjectPtr<UNiagaraSystem> BurstFX;
 };
 
 /**
@@ -81,6 +93,9 @@ protected:
 
 private:
 	void Burst();
+
+	/** 데디케이티드 서버가 아니면 BurstFX를 그 자리에 한 번 띄운다. */
+	void SpawnBurstFX();
 
 	bool bBurst = false;
 };
