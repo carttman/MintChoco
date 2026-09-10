@@ -5,6 +5,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 
+#include "Game/Unit.h"
 #include "Paint/PaintBrushProfile.h"
 #include "Paint/PaintSplat.h"
 #include "Paint/PaintSubsystem.h"
@@ -51,11 +52,22 @@ bool FPaintDeposit::StrikeReceiver(const FHitResult& Hit, uint8 PaintId) const
 	return true;
 }
 
-bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed) const
+bool FPaintDeposit::StrikeUnit(const FHitResult& Hit, uint8 PaintId, float Charge) const
+{
+	AUnit* const Unit = Cast<AUnit>(Hit.GetActor());
+	if (!Unit || Unit->GetPaintId() == PaintId)
+	{
+		return false;
+	}
+	return Unit->TryApplyStun(StunSecondsFor(Charge), StunSuperArmorDuration);
+}
+
+bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed, float Charge) const
 {
 	// A receiver is struck before the surface test: a balloon is not a paintable surface, yet the
-	// hit that bursts it is a hit all the same.
+	// hit that bursts it is a hit all the same. A unit is not a surface either; it takes the stun.
 	StrikeReceiver(Hit, PaintId);
+	StrikeUnit(Hit, PaintId, Charge);
 
 	UPaintSubsystem* const Paint = World ? World->GetSubsystem<UPaintSubsystem>() : nullptr;
 	if (!BrushProfile || !Paint || !ReceivesSplat(Hit))
