@@ -128,12 +128,16 @@ Each of these cost real debugging time once.
   edits through a fresh MIC, or save and restart the editor; a PIE-created MID
   renders whatever shader its parent material loaded at editor start.
 - `EditorAppToolset.CaptureViewport` with `captureTransform` renders the **editor
-  world**, not the PIE world. Use `CaptureEditorImage` for PIE; `SceneTools.find_actors`
-  does search the PIE world while it runs, and PIE actors address as
+  world**, not the PIE world. During Simulate, `SetCameraTransform` then `CaptureViewport`
+  with `captureTransform: null` renders the simulate world at that camera, without editor
+  sprites or wireframes; `CaptureEditorImage` grabs the whole editor window instead.
+  `SceneTools.find_actors` does search the PIE world while it runs, and PIE actors address as
   `/Game/<Path>/UEDPIE_0_<Map>.<Map>:PersistentLevel.<Actor>_C_0`.
 - There is no console-command or editor-python route: `ProgrammaticToolset` only
   orchestrates registered tools, and `EditorAppToolset.SearchCVars` only reads.
   `try/except` inside a script does not reliably catch `execute_tool` failures.
+  `time.sleep` inside a script lets the engine tick (Lumen settles), but a long script loses the
+  MCP session and its result: 14 viewport captures did, 6 plus a 30 s sleep did not.
 - The MCP server is **not** started with the editor: someone has to run the console
   command `ModelContextProtocol.StartServer`. When launching the editor yourself, pass it
   on the command line so no hand is needed:
@@ -150,8 +154,9 @@ Each of these cost real debugging time once.
   `BodyInstance: {CollisionEnabled: "NoCollision"}`, not a top-level `CollisionEnabled`. A
   `TSoftObjectPtr` array reads back as plain path strings, but an appended element is stored as a
   `{refPath}` object: re-read the array before every append and pass the elements exactly as read.
-- There is no create-blueprint tool: `AssetTools.duplicate` a small BP (`BP_ItemSpawnPoint`) and
-  `BlueprintTools.set_parent` (`blueprint` + `parent_class`) to the C++ class. `DataAssetTools.create`
+- `BlueprintTools.create` (`folder_path`, `asset_name`, `asset_type` = parent class ref) makes a
+  Blueprint; `ActorTools.add_component` on the Blueprint asset returns the template
+  `/Game/X/BP_Y.BP_Y_C:Comp_GEN_VARIABLE`, which `ObjectTools` writes directly. `DataAssetTools.create`
   makes data assets (`folder_path`, `asset_name`, `asset_type` = class ref); `MaterialInstanceTools.create`
   makes MICs (`parent`); `TextureTools.import_file` (`folder_path`, `asset_name`, `source_file`).
   `MaterialTools.get_expressions`/`recompile` and `MaterialInstanceTools.list_parameters` take
