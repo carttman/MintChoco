@@ -498,6 +498,13 @@ void AUnit::PostInitializeComponents()
 		CameraProbe->OnComponentEndOverlap.AddDynamic(this, &AUnit::OnCameraProbeEndOverlap);
 	}
 
+	// 벽 옆면 스플랫은 데칼이라 박스 안에 들어온 유닛에도 묻는다. 블루프린트가 붙인 메시까지 전부 받지 않게 한다.
+	TInlineComponentArray<UPrimitiveComponent*> Primitives(this);
+	for (UPrimitiveComponent* const Primitive : Primitives)
+	{
+		Primitive->SetReceivesDecals(false);
+	}
+
 	// 소유 클라이언트에서는 입력이, 서버에서는 압축 플래그가 이 알림을 낸다.
 	// 어느 쪽이든 실제로 상태가 바뀔 때만 한 번씩 온다.
 	if (UUnitMovementComponent* Movement = GetUnitMovement())

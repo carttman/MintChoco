@@ -53,7 +53,11 @@ void APaintSideSplat::OnPaintSplat_Implementation(const FPaintSplat& Splat)
 	// The stamp reaches Radius * Stretch along U and Radius along V, satellites almost to the
 	// rim, and the drip runs below that: one generous box covers every orientation of "down".
 	const float Reach = Splat.Radius * FMath::Max(Splat.Stretch, 1.0f) * (1.0f + DripLength);
-	Decal->DecalSize = FVector(Splat.Radius, Reach, Reach);
+
+	// Along the normal the box is a thin slab around the wall, so little beyond the wall enters it;
+	// the material fades what still does (a floor at its foot) by how it faces the projection.
+	constexpr float ProjectionHalfDepth = 10.0f;
+	Decal->DecalSize = FVector(ProjectionHalfDepth, Reach, Reach);
 	Decal->SetDecalMaterial(DecalMaterial);
 	Decal->MarkRenderStateDirty();
 
