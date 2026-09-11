@@ -59,6 +59,10 @@ struct MINTCHOCO_API FPaintBurstParams
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Burst")
 	TObjectPtr<UNiagaraSystem> BurstFX;
+
+	/** BurstFX가 뜨는 균일 배율. 1이 에셋 원래 크기다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Burst", meta = (ClampMin = "0.01"))
+	float BurstFXScale = 1.0f;
 };
 
 /**
