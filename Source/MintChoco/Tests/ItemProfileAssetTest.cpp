@@ -70,6 +70,7 @@ bool FItemProfileAssetTest::RunTest(const FString& Parameters)
 		TestNotNull(*FString::Printf(TEXT("%s: AbilityClass"), *Name), Item->AbilityClass.Get());
 		TestTrue(*FString::Printf(TEXT("%s: Duration is not negative"), *Name), Item->Duration >= 0.0f);
 		TestFalse(*FString::Printf(TEXT("%s: DisplayName"), *Name), Item->DisplayName.IsEmpty());
+		TestTrue(*FString::Printf(TEXT("%s: ActivateFXScale is positive"), *Name), Item->ActivateFXScale > 0.0f);
 		// 즉발 아이템은 상태 태그가 없다. 지속형은 있어야 슬롯이 연출을 찾는다.
 		if (!Item->IsInstant())
 		{

@@ -10,6 +10,7 @@
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 #include "NiagaraComponent.h"
+#include "NiagaraComponentPool.h"
 #include "NiagaraFunctionLibrary.h"
 
 #include "Game/Unit.h"
@@ -240,7 +241,8 @@ void UItemSlotComponent::StartEffectFeedback(const UItemProfile& Item, const FGa
 	{
 		UNiagaraComponent* const FX = UNiagaraFunctionLibrary::SpawnSystemAttached(
 			Item.ActivateFX, AttachTo, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator,
-			EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true);
+			FVector(Item.ActivateFXScale), EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true,
+			ENCPoolMethod::None);
 		if (FX)
 		{
 			EffectComponents.Add(Tag, FX);
