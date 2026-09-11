@@ -76,6 +76,11 @@ namespace PaintDebug
 		// enough to stand clear of the displaced paint, which would otherwise swallow a thin one.
 		const float HalfCell = Grid.GetCellSize() * 0.45f;
 		const FVector Extent(HalfCell, HalfCell, HalfCell * 0.5f);
+		Grid.ForEachExcludedCell([&](const FVector& Center)
+		{
+			DrawDebugPoint(World, ScaledLocalToWorld.TransformPosition(Center) + FVector(0, 0, 3),
+				5.0f, FColor::Orange, false, 0.0f);
+		});
 		Grid.ForEachSurfaceCell([&](const FVector& SurfaceCenter, EPaintFaceDirection Direction, uint8 PaintId, float)
 		{
 			const bool bPainted = PaintId != PaintIdNone;

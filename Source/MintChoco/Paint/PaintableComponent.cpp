@@ -14,6 +14,7 @@
 
 #include "Paint/PaintDebugDraw.h"
 #include "Paint/PaintLog.h"
+#include "Paint/PaintPlatformCoverage.h"
 #include "Paint/PaintSettings.h"
 #include "Paint/PaintSubsystem.h"
 
@@ -135,6 +136,10 @@ bool UPaintableComponent::PrepareSurface()
 	// bPaintReady, so nothing gets scored that was not drawn.
 	if (CellGrid.BuildFromMesh(*TargetMesh, SurfaceMaterialSlot, UPaintSettings::Get().ScoreCellSize, Scale3D, MeshLocalBounds, EnabledDirections))
 	{
+		if (PaintPlatformCoverage::IsEnabled(GetWorld()))
+		{
+			PaintPlatformCoverage::Filter(*TargetMesh, CellGrid);
+		}
 		const FIntVector& Dims = CellGrid.GetDims();
 		UE_LOG(LogPaint, Log, TEXT("%s: cell grid %d x %d x %d, %d surface cells, %.0f cm^2."),
 			*GetReadableName(), Dims.X, Dims.Y, Dims.Z, CellGrid.GetSurfaceCellCount(), CellGrid.GetCoverage().TotalArea);
@@ -457,6 +462,7 @@ void UPaintableComponent::SetDebugDraw(bool bText, bool bCells)
 bool UPaintableComponent::IsWorldNormalPersistent(const FVector& WorldNormal) const
 {
 	if (!TargetMesh) return false;
+	if (PaintPlatformCoverage::IsEnabled(GetWorld()) && !PaintPlatformCoverage::IsWalkableNormal(*TargetMesh, WorldNormal)) return false;
 	
 	// A hit normal is a true geometric normal, which the transform's inverse transpose maps: undo
 	// the rotation, then multiply by the scale the inverse transpose divided out.
@@ -473,6 +479,10 @@ UStaticMeshComponent* UPaintableComponent::FindTargetMesh() const
 
 uint8 UPaintableComponent::ResolveEnabledDirections() const
 {
+	if (PaintPlatformCoverage::IsEnabled(GetWorld()))
+	{
+		return PaintPlatformCoverage::ResolveDirections(*TargetMesh, SurfaceMaterialSlot);
+	}
 	const bool Flags[PaintFaceDirectionCount] = {bPaintFront, bPaintBack, bPaintRight, bPaintLeft, bPaintUp, bPaintDown};
 	uint8 Mask = 0;
 	for (int32 Direction = 0; Direction < PaintFaceDirectionCount; ++Direction)

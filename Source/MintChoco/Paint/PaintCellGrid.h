@@ -117,6 +117,10 @@ public:
 
 	void ClearPaint();
 
+	/** Removes non-playable cells from BOTH the denominator and ownership totals. Call once before play. */
+	void FilterSurfaceCells(TFunctionRef<bool(const FVector& SurfaceCenter, EPaintFaceDirection Direction)> IsIncluded);
+	void ForEachExcludedCell(TFunctionRef<void(const FVector& SurfaceCenter)> Visitor) const;
+
 	FPaintCoverage GetCoverage() const;
 	FPaintCoverage GetCoverage(EPaintFaceDirection Direction) const;
 
@@ -148,6 +152,7 @@ private:
 
 	/** Where the surface actually sits inside the voxel; a voxel straddles its surface, so its center does not. */
 	TArray<FVector3f> SurfaceCenters;
+	TArray<FVector3f> ExcludedCenters;
 
 	/** Kept incrementally so a coverage query never walks the cells. */
 	float Totals[PaintFaceDirectionCount][PaintIdCount] = {};

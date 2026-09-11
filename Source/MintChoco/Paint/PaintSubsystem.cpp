@@ -1,6 +1,10 @@
 #include "Paint/PaintSubsystem.h"
 
 #include "Async/Async.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMeshActor.h"
+#include "EngineUtils.h"
+#include "Materials/MaterialInterface.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/TextureRenderTarget2D.h"
@@ -9,10 +13,42 @@
 
 #include "Paint/PaintAtlasBaker.h"
 #include "Paint/PaintLog.h"
+#include "Paint/PaintPlatformCoverage.h"
 #include "Paint/PaintSettings.h"
 #include "Paint/PaintSplatEffect.h"
 #include "Paint/PaintableComponent.h"
 #include "Screen/ScreenFadeSubsystem.h"
+
+void UPaintSubsystem::OnWorldBeginPlay(UWorld& InWorld)
+{
+	Super::OnWorldBeginPlay(InWorld);
+	if (!PaintPlatformCoverage::IsEnabled(&InWorld)) return;
+	const UPaintSettings& Settings = UPaintSettings::Get();
+	UStaticMesh* SourceRamp = Settings.PlatformRampSourceMesh.LoadSynchronous();
+	UStaticMesh* Ramp = Settings.PlatformRampMesh.LoadSynchronous();
+	UMaterialInterface* Material = Settings.PlatformRampMaterial.LoadSynchronous();
+	if (!Ramp || !Material)
+	{
+		UE_LOG(LogPaint, Error, TEXT("Playable platforms: test ramp mesh/material is missing."));
+		return;
+	}
+	int32 Count = 0;
+	for (TActorIterator<AStaticMeshActor> It(&InWorld); It; ++It)
+	{
+		UStaticMeshComponent* Mesh = It->GetStaticMeshComponent();
+		if (!Mesh || !Mesh->GetStaticMesh() || (Mesh->GetStaticMesh() != Ramp && Mesh->GetStaticMesh() != SourceRamp) ||
+			It->FindComponentByClass<UPaintableComponent>()) continue;
+		// Only the play-world instance changes; the shared mesh, material and other maps stay untouched.
+		Mesh->SetStaticMesh(Ramp);
+		Mesh->SetMaterial(0, Material);
+		UPaintableComponent* Paintable = NewObject<UPaintableComponent>(*It, NAME_None, RF_Transient);
+		It->AddInstanceComponent(Paintable);
+		Paintable->RegisterComponent();
+		++Count;
+	}
+	UE_LOG(LogPaint, Log, TEXT("Playable platforms: enabled only in %s; %d test ramps registered."),
+		*InWorld.GetOutermost()->GetName(), Count);
+}
 
 void UPaintSubsystem::RegisterPaintable(UPaintableComponent* Paintable)
 {
