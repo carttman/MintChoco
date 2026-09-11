@@ -234,4 +234,57 @@ bool FPaintChargeFXProfileTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+/**
+ * 총구 연출을 넣은 프로필의 크기 범위가 뒤집혀 있거나 0이면, 발사는 되는데 아무것도 보이지 않는다.
+ * 그 조합만 막는다: 연출을 넣지 않은 프로필은 그대로 통과한다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPaintMuzzleFXProfileTest,
+	"MintChoco.Paint.Weapons.MuzzleFXProfiles",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPaintMuzzleFXProfileTest::RunTest(const FString& Parameters)
+{
+	IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+	Registry.ScanPathsSynchronous({ProfileFolder}, /*bForceRescan=*/true);
+
+	TArray<FAssetData> Profiles;
+	FindProfileAssets(Registry, UPaintWeaponProfile::StaticClass(), Profiles);
+
+	for (const FAssetData& Asset : Profiles)
+	{
+		const UPaintWeaponProfile* const Profile = Cast<UPaintWeaponProfile>(Asset.GetAsset());
+		if (!Profile || !Profile->MuzzleFX)
+		{
+			continue;
+		}
+		const FString Name = Asset.AssetName.ToString();
+		TestTrue(*FString::Printf(TEXT("%s: MuzzleFXScale is positive"), *Name), Profile->MuzzleFXScale > 0.0f);
+		TestTrue(
+			*FString::Printf(TEXT("%s: MuzzleFXChargeScale ends are positive"), *Name),
+			Profile->MuzzleFXChargeScale.X > 0.0 && Profile->MuzzleFXChargeScale.Y > 0.0);
+		TestTrue(
+			*FString::Printf(TEXT("%s: MuzzleFXChargeScale runs from small to large"), *Name),
+			Profile->MuzzleFXChargeScale.X <= Profile->MuzzleFXChargeScale.Y);
+	}
+
+	// 스나이퍼는 부분 충전으로도 발사돼야 크기 범위가 실제로 보인다.
+	const UPaintWeaponProfile* const Sniper = LoadObject<UPaintWeaponProfile>(
+		nullptr, TEXT("/Game/Blueprints/Weapons/Profiles/DA_Weapon_Sniper.DA_Weapon_Sniper"));
+	if (TestNotNull(TEXT("DA_Weapon_Sniper loads"), Sniper))
+	{
+		TestNotNull(TEXT("DA_Weapon_Sniper: MuzzleFX"), Sniper->MuzzleFX.Get());
+		TestNotNull(TEXT("DA_Weapon_Sniper: ChargeFX"), Sniper->ChargeFX.Get());
+		TestTrue(TEXT("DA_Weapon_Sniper: a partial charge can fire"), Sniper->MinChargeToFire < 1.0f);
+	}
+
+	const UPaintWeaponProfile* const Shotgun = LoadObject<UPaintWeaponProfile>(
+		nullptr, TEXT("/Game/Blueprints/Weapons/Profiles/DA_Weapon_Shotgun.DA_Weapon_Shotgun"));
+	if (TestNotNull(TEXT("DA_Weapon_Shotgun loads"), Shotgun))
+	{
+		TestNotNull(TEXT("DA_Weapon_Shotgun: MuzzleFX"), Shotgun->MuzzleFX.Get());
+	}
+	return true;
+}
+
 #endif
