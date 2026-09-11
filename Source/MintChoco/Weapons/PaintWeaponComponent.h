@@ -12,6 +12,7 @@
 
 class APawn;
 class UInkTankComponent;
+class UNiagaraComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPaintWeaponFiredSignature, int32, Seed);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPaintWeaponPaintIdSignature, uint8, PaintId);
@@ -145,6 +146,9 @@ protected:
 	UFUNCTION()
 	void OnRep_PaintId();
 
+	UFUNCTION()
+	void OnRep_Charging();
+
 private:
 	bool FireOnce();
 	void OnShotTimer();
@@ -156,6 +160,17 @@ private:
 	void SpendShot();
 	void BuildContext(FPaintFireContext& OutContext, const FVector& ViewOrigin, const FVector& ViewDirection, float ChargeFraction) const;
 	FTransform ComputeMuzzleTransform(const FVector& ViewOrigin, const FVector& ViewDirection) const;
+
+	/** The mesh that carries the muzzle socket, or null when the owner has no such socket. */
+	USkeletalMeshComponent* GetMuzzleMesh() const;
+
+	/** Plays the profile's muzzle FX once on this machine. Charge only matters in Charged. */
+	void PlayMuzzleFX(float ChargeFraction);
+
+	/** Records the hold locally, relays it to the machines that only watch, and drives the FX here. */
+	void SetCharging(bool bNewCharging);
+	void StartChargeFX();
+	void StopChargeFX();
 	APawn* GetOwnerPawn() const;
 	void GetOwnerView(FVector& OutOrigin, FVector& OutDirection) const;
 
@@ -166,6 +181,13 @@ private:
 	 */
 	UFUNCTION(Server, Reliable)
 	void ServerFire(int32 Seed, FVector_NetQuantize ViewOrigin, FVector_NetQuantizeNormal ViewDirection, uint8 Charge);
+
+	/**
+	 * The owner's hold, relayed so the other machines can show it. The owner never receives its
+	 * own copy: it drove the FX from its own press, and a late echo would restart the loop.
+	 */
+	UFUNCTION(Server, Reliable)
+	void ServerSetCharging(bool bNewCharging);
 
 	UFUNCTION(Server, Reliable)
 	void ServerSetProfile(UPaintWeaponProfile* NewProfile);
@@ -185,6 +207,14 @@ private:
 
 	/** World time the trigger was pulled; a Charged profile measures its hold from here. */
 	double PressTime = 0.0;
+
+	/** True while a Charged trigger is held. Replicated for the machines that only watch. */
+	UPROPERTY(ReplicatedUsing = OnRep_Charging)
+	bool bCharging = false;
+
+	/** The hold FX loops, so it has to be switched off by hand rather than expiring. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> ChargeFXComponent;
 
 	/** Charge fraction of the shot FireOnce is about to fire. ReleaseTrigger samples it before the cancel clears the hold. */
 	float PendingChargeFraction = 1.0f;

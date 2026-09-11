@@ -7,6 +7,7 @@
 #include "PaintWeaponProfile.generated.h"
 
 class APawn;
+class UNiagaraSystem;
 
 /** How long one trigger pull lasts. Part of the profile, so one asset says when it fires as well as what flies. */
 UENUM(BlueprintType)
@@ -71,6 +72,13 @@ struct FPaintShot
 
 	UPROPERTY()
 	uint8 PaintId = 0;
+
+	/**
+	 * How charged the shot was, in 1/255 steps; 255 for every non-charged mode. The machines that
+	 * only replay the shot have no press of their own to measure, so the muzzle FX scale rides here.
+	 */
+	UPROPERTY()
+	uint8 Charge = 255;
 };
 
 /**
@@ -150,6 +158,58 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cadence",
 		meta = (ClampMin = "0", ClampMax = "1", EditCondition = "FireMode == EPaintFireMode::Charged"))
 	float MinChargeToFire = 1.0f;
+
+	/**
+	 * Played once per accepted shot, on every machine that renders the shooter. Attached to the
+	 * owner's muzzle socket so it follows the gun; unset plays nothing.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX")
+	TObjectPtr<UNiagaraSystem> MuzzleFX;
+
+	/** Uniform scale MuzzleFX spawns at, before any charge scaling. 1 is the asset's own size. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX", meta = (ClampMin = "0.01"))
+	float MuzzleFXScale = 1.0f;
+
+	/**
+	 * In Charged, the multiplier at MinChargeToFire (X) and at a full charge (Y). A weapon that
+	 * only fires at a full charge can reach Y alone, so lowering MinChargeToFire is what makes the
+	 * range visible.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX",
+		meta = (EditCondition = "FireMode == EPaintFireMode::Charged"))
+	FVector2D MuzzleFXChargeScale = FVector2D(0.5, 1.5);
+
+	/**
+	 * Looping FX for a Charged weapon's hold: spawned at the muzzle when the trigger goes down and
+	 * switched off when the shot leaves or the hold is cancelled. Unset shows nothing.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX",
+		meta = (EditCondition = "FireMode == EPaintFireMode::Charged"))
+	TObjectPtr<UNiagaraSystem> ChargeFX;
+
+	/** Uniform scale ChargeFX spawns at. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX",
+		meta = (ClampMin = "0.01", EditCondition = "FireMode == EPaintFireMode::Charged"))
+	float ChargeFXScale = 1.0f;
+
+	/**
+	 * Uniform scale one shot's muzzle FX spawns at. Charged walks between the ends of
+	 * MuzzleFXChargeScale by how far past MinChargeToFire the shot got; every other mode is fixed.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FX")
+	float GetMuzzleFXScale(float ChargeFraction) const
+	{
+		if (FireMode != EPaintFireMode::Charged)
+		{
+			return MuzzleFXScale;
+		}
+		const float Minimum = FMath::Clamp(MinChargeToFire, 0.0f, 1.0f);
+		// A full-charge-only weapon has one reachable size; dividing by zero here would be it too.
+		const float Alpha = Minimum >= 1.0f
+			? 1.0f
+			: FMath::Clamp((ChargeFraction - Minimum) / (1.0f - Minimum), 0.0f, 1.0f);
+		return MuzzleFXScale * FMath::Lerp(static_cast<float>(MuzzleFXChargeScale.X), static_cast<float>(MuzzleFXChargeScale.Y), Alpha);
+	}
 
 private:
 	/** Percent of a full ink tank one accepted shot spends. Read it through GetInkCostPerShot. */
