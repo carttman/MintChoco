@@ -20,6 +20,12 @@ struct MINTCHOCO_API FUnitAnimMath
 	 * 1D 블렌드스페이스에 방향 축을 줄 때 쓴다.
 	 */
 	static float MoveDirectionDegrees(const FVector& Velocity, const FRotator& ActorRotation);
+
+	/**
+	 * 마지막 발사 후 HoldSeconds가 아직 지나지 않았는지. LastFiredTime이 음수면 한 번도 쏘지 않은 것이다.
+	 * HoldSeconds가 0 이하면 항상 거짓.
+	 */
+	static bool IsFireHoldActive(double Now, double LastFiredTime, float HoldSeconds);
 };
 
 /**
@@ -39,6 +45,7 @@ class MINTCHOCO_API UUnitAnimInstance : public UAnimInstance
 public:
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+	virtual void NativeUninitializeAnimation() override;
 
 protected:
 	//~ 이동
@@ -103,6 +110,16 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Unit|Aim")
 	bool bIsFiring = false;
 
+	/**
+	 * 주무기나 보조 무기가 마지막으로 한 발 쏜 뒤 FireHoldTime초 동안 참. 쏠 때마다 다시 늘어난다.
+	 *
+	 * 무기의 OnFired를 받으므로 모든 머신에서 같다: 소유자는 예측 발사 순간, 서버는 실제 발사,
+	 * 다른 클라이언트는 샷 멀티캐스트가 도착한 순간. 짧게 클릭한 단발도 이 시간만큼 조준 자세가
+	 * 유지된다. 상체 에임 오프셋 전환(Blend Poses by bool)에 쓴다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|Aim")
+	bool bRecentlyFired = false;
+
 	//~ 튜닝
 
 	/** 이 속력(cm/s)을 넘어야 "이동 중"이다. */
@@ -117,6 +134,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning", meta = (ClampMin = "0"))
 	float AimPitchInterpSpeed = 18.0f;
 
+	/** 마지막 발사 후 bRecentlyFired를 유지하는 시간(초). */
+	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning", meta = (ClampMin = "0", ForceUnits = "s"))
+	float FireHoldTime = 0.5f;
+
 private:
 	/** 소유 폰. 유닛이 아니면 이동·공중 값만 채우고 상태는 기본값으로 둔다. */
 	UPROPERTY(Transient)
@@ -124,4 +145,17 @@ private:
 
 	/** 첫 업데이트에서는 보간 없이 맞춘다(0에서 미끄러져 올라오지 않게). */
 	bool bAimPitchInitialized = false;
+
+	/** 두 무기의 OnFired에서. 이 머신의 월드 시각을 기록한다. */
+	UFUNCTION()
+	void HandleWeaponFired(int32 Seed);
+
+	/** 발사 알림을 받을 유닛을 바꾼다. 옛 유닛의 무기에서는 풀고 새 유닛의 무기에 건다. nullptr이면 풀기만 한다. */
+	void BindWeapons(AUnit* NewUnit);
+
+	/** 발사 알림을 걸어 둔 유닛. 폰이 바뀌거나 사라지면 NativeUpdateAnimation이 다시 건다. */
+	TWeakObjectPtr<AUnit> BoundUnit;
+
+	/** 이 머신에서 마지막 발사를 본 월드 시각. 음수면 아직 없다. */
+	double LastFiredTime = -1.0;
 };
