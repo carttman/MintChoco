@@ -7,6 +7,18 @@
 
 struct FPaintCoverage;
 
+/** The bar's pure geometry, so the rule that keeps the two fills from overlapping is testable. */
+struct MINTCHOCO_API FPaintCoverageBarMath
+{
+	/**
+	 * The two fills as fractions of the bar, 0 to 1. Shares are absolute, so their sum is the
+	 * painted part of the world and whatever is left is drawn as the bare middle. Mint keeps its
+	 * share and Choco is cut to the space left, so a sum over 1 - which replication can show
+	 * briefly while the two values arrive - never draws one fill over the other.
+	 */
+	static void ComputeFills(float RawMint, float RawChoco, float& OutMint, float& OutChoco);
+};
+
 /**
  * The match score as one bar: Mint grows from the left, Choco from the right, and the gap left in
  * the middle is the unpainted remainder, so the three numbers are read from one shape without a

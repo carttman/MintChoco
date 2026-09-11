@@ -13,6 +13,15 @@
 #include "Paint/PaintCellGrid.h"
 #include "Paint/PaintSubsystem.h"
 
+void FPaintCoverageBarMath::ComputeFills(float RawMint, float RawChoco, float& OutMint, float& OutChoco)
+{
+	OutMint = FMath::Clamp(RawMint, 0.0f, 1.0f);
+	// The two fills grow towards each other and must never overlap, or the gap would stop meaning
+	// "unpainted". Clamping Choco against the space Mint left keeps the reading honest while
+	// replication catches up.
+	OutChoco = FMath::Clamp(RawChoco, 0.0f, 1.0f - OutMint);
+}
+
 UPaintCoverageBarWidget::UPaintCoverageBarWidget(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
@@ -130,11 +139,9 @@ int32 UPaintCoverageBarWidget::NativePaint(const FPaintArgs& Args, const FGeomet
 	const float Top = Size.Y - Height;
 	const float Width = Size.X;
 
-	const float Mint = FMath::Clamp(MintFraction, 0.0f, 1.0f);
-	// The two fills grow towards each other and must never overlap, or the gap would stop meaning
-	// "unpainted". Clamping Choco against the space Mint left keeps the reading honest while
-	// replication catches up.
-	const float Choco = FMath::Clamp(ChocoFraction, 0.0f, 1.0f - Mint);
+	float Mint = 0.0f;
+	float Choco = 0.0f;
+	FPaintCoverageBarMath::ComputeFills(MintFraction, ChocoFraction, Mint, Choco);
 
 	if (BorderThickness > 0.0f && BorderColor.A > 0.0f)
 	{
