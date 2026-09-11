@@ -5,6 +5,7 @@
 
 #include "PaintProjectile.generated.h"
 
+class UMaterialInterface;
 class UPaintballProfile;
 class UProjectileMovementComponent;
 class USphereComponent;
@@ -15,8 +16,12 @@ inline constexpr ECollisionChannel PaintballChannel = ECC_GameTraceChannel1;
 
 /**
  * A paintball in flight. It carries the profile that launched it and paints with its real impact
- * velocity, which is the one thing a hitscan has to fake. The visual mesh is set on the Blueprint;
- * radius and gravity come from the profile.
+ * velocity, which is the one thing a hitscan has to fake. The visual mesh and the team body
+ * materials are set on the Blueprint; radius and gravity come from the profile.
+ *
+ * The body material reads three Custom Primitive Data slots written at launch: 0 = launch speed
+ * (cm/s), 1 = wobble phase in [0, 1) derived from the seed, 2 = birth time (world seconds). The
+ * mesh's local +X is the flight direction, since the rotation follows the velocity.
  */
 UCLASS(Abstract, BlueprintType)
 class MINTCHOCO_API APaintProjectile : public AActor
@@ -35,6 +40,9 @@ public:
 
 	/** 이 공이 칠하는 id(팀). 초콜릿 돔이 상대 탄을 가려낼 때 본다. */
 	uint8 GetPaintId() const { return PaintId; }
+
+	/** The body material a ball of this paint id wears, or null when the id has none and keeps the mesh's own. */
+	UMaterialInterface* GetTeamMaterial(uint8 InPaintId) const;
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
@@ -56,6 +64,10 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Paint")
 	TObjectPtr<UProjectileMovementComponent> Movement;
+
+	/** One body material per paint id, in team order. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Paint")
+	TArray<TObjectPtr<UMaterialInterface>> TeamMaterials;
 
 private:
 	UPROPERTY(Transient)

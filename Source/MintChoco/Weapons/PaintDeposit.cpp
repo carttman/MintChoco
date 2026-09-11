@@ -62,7 +62,7 @@ bool FPaintDeposit::StrikeUnit(const FHitResult& Hit, uint8 PaintId, float Charg
 	return Unit->TryApplyStun(StunSecondsFor(Charge), StunSuperArmorDuration);
 }
 
-bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed, float Charge) const
+bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed, float Charge, uint8 StarGen) const
 {
 	// A receiver is struck before the surface test: a balloon is not a paintable surface, yet the
 	// hit that bursts it is a hit all the same. A unit is not a surface either; it takes the stun.
@@ -76,6 +76,7 @@ bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector
 	}
 
 	FPaintSplat Splat = BuildSplat(Hit, IncidentVelocity, PaintId, Seed);
+	Splat.StarGen = StarGen;
 	MarkTransience(Splat, Hit);
 	Paint->SubmitSplat(Splat);
 	return true;

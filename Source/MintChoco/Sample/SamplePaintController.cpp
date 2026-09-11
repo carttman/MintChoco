@@ -52,6 +52,7 @@ void ASamplePaintController::BeginPlay()
 	SeedWidget = AddLocalWidget(SeedWidgetClass);
 	CoverageWidget = AddLocalWidget(CoverageWidgetClass);
 	ChargeWidget = AddLocalWidget(ChargeWidgetClass);
+	HUDWidget = AddLocalWidget(HUDWidgetClass);
 }
 
 void ASamplePaintController::SetupInputComponent()

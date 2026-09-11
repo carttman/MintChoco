@@ -4,12 +4,14 @@
 #include "Components/SceneComponent.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/WidgetComponent.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
 #include "Game/Unit.h"
+#include "Items/ItemLabelWidget.h"
 #include "Items/ItemProfile.h"
 #include "Items/ItemSlotComponent.h"
 #include "Items/ItemSpawnPoint.h"
@@ -45,6 +47,16 @@ AItemPickup::AItemPickup()
 	Laser->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Laser->SetGenerateOverlapEvents(false);
 	Laser->SetCastShadow(false);
+
+	// 스크린 공간이라 카메라를 따로 보지 않아도 늘 정면이고 글자 크기가 거리와 무관하다.
+	Label = CreateDefaultSubobject<UWidgetComponent>(TEXT("Label"));
+	Label->SetupAttachment(RootComponent);
+	Label->SetWidgetSpace(EWidgetSpace::Screen);
+	Label->SetDrawAtDesiredSize(true);
+	Label->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Label->SetGenerateOverlapEvents(false);
+	Label->SetVisibility(false);
+	LabelWidgetClass = UItemLabelWidget::StaticClass();
 }
 
 void AItemPickup::Initialize(UItemProfile* InProfile, AItemSpawnPoint* InSpawnPoint, float InWarningTime)
@@ -58,9 +70,33 @@ void AItemPickup::Initialize(UItemProfile* InProfile, AItemSpawnPoint* InSpawnPo
 	}
 }
 
+AItemPickup* AItemPickup::SpawnAt(UWorld& World, UClass* PickupClass, AItemSpawnPoint& Point, UItemProfile& Item, float WarningTime, AActor* Owner)
+{
+	if (!PickupClass) return nullptr;
+
+	const FTransform Transform = Point.GetActorTransform();
+	AItemPickup* const Pickup = World.SpawnActorDeferred<AItemPickup>(
+		PickupClass, Transform, Owner, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!Pickup)
+	{
+		return nullptr;
+	}
+
+	Pickup->Initialize(&Item, &Point, WarningTime);
+	Pickup->FinishSpawning(Transform);
+	return Pickup;
+}
+
 void AItemPickup::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (Label)
+	{
+		Label->SetWidgetClass(bShowLabel ? LabelWidgetClass : nullptr);
+		Label->SetRelativeLocation(FVector(0.0f, 0.0f, LabelHeight));
+		Label->InitWidget();
+	}
 
 	ApplyProfile();
 	ApplyState();
@@ -122,8 +158,16 @@ void AItemPickup::OnRep_Collected()
 
 void AItemPickup::ApplyProfile()
 {
-	// 박스는 종류와 무관하게 같은 모양(BP_ItemPickup의 Egg 메시)이다. 종류는 HUD 아이콘과 이름으로만 구분한다.
-	// 프로필별로 바꿀 것이 생기면 여기서 한다.
+	// 박스는 종류와 무관하게 같은 모양(BP_ItemPickup의 Egg 메시)이다. 종류는 이름표와 HUD로만 구분한다.
+	if (!Label || !Profile) return;
+
+    if (UItemLabelWidget* const Widget = Cast<UItemLabelWidget>(Label->GetUserWidgetObject()))
+	{
+		const FText Name = Profile->DisplayName.IsEmpty() ? FText::FromString(Profile->GetName()) : Profile->DisplayName;
+		Widget->SetLabel(Name);
+	}
+	// 프로필이 상태보다 늦게 복제돼도 이름표가 켜진다.
+	Label->SetVisibility(State == EItemPickupState::Active && bShowLabel);
 }
 
 void AItemPickup::ApplyState()
@@ -137,6 +181,10 @@ void AItemPickup::ApplyState()
 	if (Laser)
 	{
 		Laser->SetVisibility(!bActive);
+	}
+	if (Label)
+	{
+		Label->SetVisibility(bActive && bShowLabel && Profile != nullptr);
 	}
 	if (Trigger)
 	{

@@ -105,6 +105,7 @@ void FPaintCellGrid::Build(
 
 	const int32 CellCount = Dims.X * Dims.Y * Dims.Z * PaintFaceDirectionCount;
 	Ids.Init(PaintIdNone, CellCount);
+	StarGens.Init(0, CellCount);
 	Areas.Init(0.0f, CellCount);
 	SurfaceCenters.Init(FVector3f::ZeroVector, CellCount);
 	FMemory::Memzero(Totals);
@@ -283,12 +284,15 @@ bool FPaintCellGrid::BuildFromMesh(
 	return IsBuilt();
 }
 
-int32 FPaintCellGrid::Mark(const FPaintLocalStamp& Stamp, uint8 PaintId, float CoreFraction)
+int32 FPaintCellGrid::Mark(const FPaintLocalStamp& Stamp, uint8 PaintId, uint8 StarGen, const FPaintLockGens& Locks, float CoreFraction)
 {
 	if (!IsBuilt() || PaintId >= PaintIdCount)
 	{
 		return 0;
 	}
+
+	// The same clamp and "unpainted carries no generation" rule the buffer byte follows.
+	const uint8 Gen = DecodePaintStarGen(EncodePaintTexel(PaintId, StarGen));
 
 	// The brush body is the ellipsoid with semi-axes (f R S, f R, R): f of the radius across the
 	// surface (the stamp's main disc is f = 0.5 wide), but the full radius along the normal,
@@ -322,7 +326,7 @@ int32 FPaintCellGrid::Mark(const FPaintLocalStamp& Stamp, uint8 PaintId, float C
 				for (int32 Direction = 0; Direction < PaintFaceDirectionCount; ++Direction)
 				{
 					const int32 Cell = Base + Direction;
-					if (Areas[Cell] <= 0.0f || Ids[Cell] == PaintId)
+					if (Areas[Cell] <= 0.0f)
 					{
 						continue;
 					}
@@ -335,9 +339,28 @@ int32 FPaintCellGrid::Mark(const FPaintLocalStamp& Stamp, uint8 PaintId, float C
 						continue;
 					}
 
-					Totals[Direction][Ids[Cell]] -= Areas[Cell];
+					// A locked cell is a running star's trail: no other id takes it, and its own id
+					// paints over it without disturbing the generation the lock is keyed on.
+					const uint8 PrevId = Ids[Cell];
+					const bool bSameId = PrevId == PaintId;
+					const bool bLocked = Locks.Locks(PrevId, StarGens[Cell]);
+					if (bLocked && !bSameId)
+					{
+						continue;
+					}
+					if (bSameId)
+					{
+						if (!bLocked)
+						{
+							StarGens[Cell] = Gen;
+						}
+						continue;
+					}
+
+					Totals[Direction][PrevId] -= Areas[Cell];
 					Totals[Direction][PaintId] += Areas[Cell];
 					Ids[Cell] = PaintId;
+					StarGens[Cell] = Gen;
 					++Changed;
 				}
 			}
@@ -352,6 +375,7 @@ void FPaintCellGrid::ClearPaint()
 	for (int32 Cell = 0; Cell < Ids.Num(); ++Cell)
 	{
 		Ids[Cell] = PaintIdNone;
+		StarGens[Cell] = 0;
 		Totals[Cell % PaintFaceDirectionCount][PaintIdNone] += Areas[Cell];
 	}
 }
@@ -383,7 +407,7 @@ FPaintCoverage FPaintCellGrid::GetCoverage(EPaintFaceDirection Direction) const
 }
 
 void FPaintCellGrid::ForEachSurfaceCell(
-	TFunctionRef<void(const FVector& SurfaceCenter, EPaintFaceDirection Direction, uint8 PaintId, float Area)> Visitor) const
+	TFunctionRef<void(const FVector& SurfaceCenter, EPaintFaceDirection Direction, uint8 PaintId, uint8 StarGen, float Area)> Visitor) const
 {
 	for (int32 Cell = 0; Cell < Areas.Num(); ++Cell)
 	{
@@ -393,6 +417,7 @@ void FPaintCellGrid::ForEachSurfaceCell(
 				FVector(SurfaceCenters[Cell]),
 				static_cast<EPaintFaceDirection>(Cell % PaintFaceDirectionCount),
 				Ids[Cell],
+				StarGens[Cell],
 				Areas[Cell]);
 		}
 	}
