@@ -8,6 +8,10 @@
 #include "GameFramework/ProjectileMovementComponent.h"
 
 #include "MeshScale.h"
+#include "Game/TeamTypes.h"
+#include "Game/Unit.h"
+#include "Paint/PaintSplat.h"
+#include "Weapons/PaintWeaponComponent.h"
 #include "Weapons/PaintballProfile.h"
 
 namespace
@@ -31,16 +35,22 @@ APaintProjectile::APaintProjectile()
 	Sphere = CreateDefaultSubobject<USphereComponent>(TEXT("Sphere"));
 	SetRootComponent(Sphere);
 	Sphere->InitSphereRadius(6.0f);
-	// BlockAllDynamic hits paintable meshes and pawns alike. The camera probe is excused so a ball
-	// never shoves the spring arm, and other balls are excused because every pellet of a shot
-	// leaves the same muzzle point: overlapping at birth, they would otherwise hit each other on
-	// their first move and die before flying.
+	// Blocks paintable meshes and hit receivers, but only *overlaps* pawns: a ball still dies and
+	// reports the contact the moment it touches a pawn, yet it never blocks or shoves the pawn (a
+	// blocking ball is a body the character movement depenetrates from). Query only, no physics body,
+	// for the same reason. The camera probe is excused so a ball never shoves the spring arm, and
+	// other balls are excused because every pellet of a shot leaves the same muzzle point:
+	// overlapping at birth, they would otherwise hit each other on their first move and die before flying.
 	Sphere->SetCollisionProfileName(TEXT("BlockAllDynamic"));
+	Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	Sphere->SetCollisionObjectType(PaintballChannel);
 	Sphere->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
 	Sphere->SetCollisionResponseToChannel(PaintballChannel, ECR_Ignore);
+	Sphere->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+	Sphere->SetGenerateOverlapEvents(true);
 	Sphere->SetNotifyRigidBodyCollision(true);
 	Sphere->OnComponentHit.AddDynamic(this, &APaintProjectile::OnHit);
+	Sphere->OnComponentBeginOverlap.AddDynamic(this, &APaintProjectile::OnPawnOverlap);
 
 	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
 	Mesh->SetupAttachment(Sphere);
@@ -106,8 +116,44 @@ void APaintProjectile::EndPlay(const EEndPlayReason::Type Reason)
 	Super::EndPlay(Reason);
 }
 
+void APaintProjectile::OnPawnOverlap(UPrimitiveComponent*, AActor* OtherActor, UPrimitiveComponent*, int32, bool bFromSweep, const FHitResult& SweepResult)
+{
+	// Only pawns overlap; everything else blocks and arrives through OnHit. The shooter is already
+	// on the ignore list, so this is another pawn. A sweep result carries the impact point; a
+	// non-sweep overlap (the pawn walked into a ball) uses the ball itself as the contact.
+	if (!Cast<APawn>(OtherActor))
+	{
+		return;
+	}
+
+	// A ball of the pawn's own colour passes through: the burst of an item lands on the user who
+	// fired it (and on teammates), and those balls have no instigator to be excused by the ignore list.
+	if (const AUnit* const Unit = Cast<AUnit>(OtherActor))
+	{
+		if (Unit->GetPaintId() == PaintId)
+		{
+			return;
+		}
+	}
+
+	FHitResult Hit = SweepResult;
+	if (!bFromSweep)
+	{
+		Hit.ImpactPoint = GetActorLocation();
+		Hit.Location = GetActorLocation();
+		Hit.ImpactNormal = -Movement->Velocity.GetSafeNormal();
+		Hit.Normal = Hit.ImpactNormal;
+		Hit.HitObjectHandle = FActorInstanceHandle(OtherActor);
+	}
+	OnHit(nullptr, OtherActor, nullptr, FVector::ZeroVector, Hit);
+}
+
 void APaintProjectile::OnHit(UPrimitiveComponent*, AActor*, UPrimitiveComponent*, FVector, const FHitResult& Hit)
 {
+	if (!IsValid(this) || IsActorBeingDestroyed())
+	{
+		return;
+	}
 	if (Profile && !bCosmetic)
 	{
 		// The hit fires from inside the move, before the movement component zeroes its velocity,

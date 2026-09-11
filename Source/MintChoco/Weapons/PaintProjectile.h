@@ -51,6 +51,11 @@ protected:
 	void OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent,
 		FVector NormalImpulse, const FHitResult& Hit);
 
+	/** Pawns are overlapped rather than blocked so a ball never pushes a player; the contact is handled like a hit. */
+	UFUNCTION()
+	void OnPawnOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp,
+		int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Paint")
 	TObjectPtr<USphereComponent> Sphere;
 

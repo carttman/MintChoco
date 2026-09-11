@@ -9,7 +9,23 @@
 #include "GameGameState.generated.h"
 
 /**
+ * 한 판의 단계. 서버가 정하고 복제된다.
+ * WaitingForPlayers(전원 준비 대기) → Countdown(3초) → Playing(타이머 진행) → Ended(결과).
+ */
+UENUM(BlueprintType)
+enum class EMatchPhase : uint8
+{
+	WaitingForPlayers	UMETA(DisplayName = "플레이어 대기"),
+	Countdown			UMETA(DisplayName = "카운트다운"),
+	Playing				UMETA(DisplayName = "경기 중"),
+	Ended				UMETA(DisplayName = "종료"),
+};
+
+/**
  * 게임 맵의 GameState. 페인트에서 서버가 권한을 가진 두 가지를 모든 머신에 나른다.
+ *
+ * 경기 단계(EMatchPhase)도 여기서 나른다. 카운트다운과 경기 종료는 남은 초가 아니라 서버
+ * 시각 하나를 복제하고 각 머신이 GetServerWorldTimeSeconds로 남은 시간을 계산한다.
  *
  * 하나는 스플랫 로그. 서버가 확정한 스플랫이 순서대로 쌓이고, 각 클라이언트는 아직
  * 안 그린 항목을 자기 표면에 그린다. 늦게 들어온 클라이언트도 같은 로그를 받아
@@ -58,6 +74,41 @@ public:
 
 	/** 서버 전용. 스피드 스타 하나가 끝났다. 그 팀의 마지막 스타면 자국이 바래기 시작한다. */
 	void EndStarPaint(uint8 PaintId);
+	//~ 경기 단계
+
+	UFUNCTION(BlueprintPure, Category = "Match")
+	EMatchPhase GetMatchPhase() const { return MatchPhase; }
+
+	/** 타이머가 도는 중인지. 준비 대기와 카운트다운 동안은 false. */
+	UFUNCTION(BlueprintPure, Category = "Match")
+	bool IsMatchLive() const { return MatchPhase == EMatchPhase::Playing; }
+
+	/** 카운트다운 단계에서 남은 초. 다른 단계면 0. */
+	UFUNCTION(BlueprintPure, Category = "Match")
+	float GetCountdownRemaining() const;
+
+	/** 한 판의 길이(초). 경기 전에는 GetRemainingTime이 이 값을 돌려준다. */
+	UFUNCTION(BlueprintPure, Category = "Match")
+	float GetMatchDuration() const { return MatchDuration; }
+
+	/** 이 단계에서 플레이어가 움직이고 쏠 수 있는지. 대기·카운트다운 동안은 묶인다. 순수 함수라 테스트 대상. */
+	static bool AllowsPlayerInput(EMatchPhase Phase);
+
+	/** 월드의 GameState가 AGameGameState면 그 단계의 규칙, 아니면(샘플 맵) 항상 허용. */
+	static bool IsPlayerInputAllowed(const UWorld* World);
+
+	/** 서버 전용. 단계를 바꾼다. 같은 단계면 아무것도 하지 않는다. */
+	void SetMatchPhase(EMatchPhase NewPhase);
+
+	/** 서버 전용. 카운트다운이 끝나는 서버 월드 시각. */
+	void SetCountdownEndTime(double InServerTime);
+
+	/** 서버 전용. 한 판의 길이. 경기 시작 전 HUD가 보여줄 값이다. */
+	void SetMatchDuration(float InSeconds);
+
+	/** 단계가 바뀔 때 서버와 모든 클라이언트에서 한 번씩. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Match")
+	void BP_OnMatchPhaseChanged(EMatchPhase NewPhase);
 
 	/** 서버 전용. 경기가 끝나는 서버 월드 시각을 정한다. */
 	void SetMatchEndTime(double InServerTime);
@@ -108,6 +159,19 @@ protected:
 	 */
 	UPROPERTY(Replicated)
 	double MatchEndServerTime = 0.0;
+
+	UPROPERTY(ReplicatedUsing = OnRep_MatchPhase)
+	EMatchPhase MatchPhase = EMatchPhase::WaitingForPlayers;
+
+	/** 카운트다운이 끝나는(경기가 시작되는) 서버 월드 시각. */
+	UPROPERTY(Replicated)
+	double CountdownEndServerTime = 0.0;
+
+	UPROPERTY(Replicated)
+	float MatchDuration = 0.0f;
+
+	UFUNCTION()
+	void OnRep_MatchPhase();
 
 	UPROPERTY(Replicated)
 	int32 WinningTeam = INDEX_NONE;

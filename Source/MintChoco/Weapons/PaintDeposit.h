@@ -38,7 +38,21 @@ struct MINTCHOCO_API FPaintDeposit
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint", meta = (ClampMin = "0"))
 	float HitPower = 1.0f;
 
+	/**
+	 * Seconds an enemy unit hit by this contact is stunned; 0 leaves units alone. A charged shot
+	 * scales it by its charge fraction (StunSecondsFor). Teammates and the shooter are never stunned.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint", meta = (ClampMin = "0", ForceUnits = "s"))
+	float StunDuration = 0.0f;
+
+	/** Super armor that follows a stun from this contact, so a unit is not chain-stunned by the next pellet. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint", meta = (ClampMin = "0", ForceUnits = "s"))
+	float StunSuperArmorDuration = 1.0f;
+
 	bool CanPaint() const { return BrushProfile != nullptr; }
+
+	/** Stun for a shot at Charge (0 to 1) of full strength: StunDuration at 1, proportionally less below. */
+	float StunSecondsFor(float Charge) const { return StunDuration * FMath::Clamp(Charge, 0.0f, 1.0f); }
 
 	/** Height fraction one splat deposits, 0 to 1. */
 	float GetHeightAdd() const { return HeightAddPercent * 0.01f; }
@@ -53,10 +67,16 @@ struct MINTCHOCO_API FPaintDeposit
 	 * is also painted. StarGen marks the splat as a speed-star trail of that generation; 0 is
 	 * plain paint.
 	 */
-	bool ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed, uint8 StarGen = 0) const;
+	bool ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed, float Charge = 1.0f, uint8 StarGen = 0) const;
 
 	/** Strikes the hit actor if it is a paint hit receiver. Returns true when something received the hit. */
 	bool StrikeReceiver(const FHitResult& Hit, uint8 PaintId) const;
+
+	/**
+	 * Stuns the hit actor if it is a unit of another colour and this contact carries a stun
+	 * (StunSecondsFor(Charge) > 0). Server only, as the stun itself is. Returns true when a stun landed.
+	 */
+	bool StrikeUnit(const FHitResult& Hit, uint8 PaintId, float Charge = 1.0f) const;
 
   	/** The hit actor owns a paint buffer. */
 	static bool IsPaintable(const FHitResult& Hit);

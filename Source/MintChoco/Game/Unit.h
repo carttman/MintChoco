@@ -16,7 +16,9 @@ class UGameplayEffect;
 class UInkBottleComponent;
 class UInkTankComponent;
 class UItemSlotComponent;
+class UMaterialInterface;
 class UPaintWeaponComponent;
+class USphereComponent;
 class UNiagaraComponent;
 class USpringArmComponent;
 class UStaticMeshComponent;
@@ -57,6 +59,16 @@ public:
 	virtual void OnRep_PlayerState() override;
 	virtual bool CanJumpInternal_Implementation() const override;
 	virtual void Landed(const FHitResult& Hit) override;
+	virtual void NotifyControllerChanged() override;
+	/** 소유 클라이언트에서 빙의가 확정되는 지점(ClientRestart). OnRep_Controller만 믿으면 클라이언트에서 프로브가 안 켜졌다. */
+	virtual void PawnClientRestart() override;
+	virtual void UnPossessed() override;
+
+	/**
+	 * 다른 플레이어의 카메라가 이 유닛 안에 들어와 있는 동안 메시를 반투명 대체 재질로 바꾼다.
+	 * 로컬 연출이라 복제되지 않는다. 카메라를 가진 쪽(CameraProbe)이 겹침 동안만 켠다.
+	 */
+	void SetCameraFaded(bool bFaded);
 
 	//~ IAbilitySystemInterface
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
@@ -101,10 +113,23 @@ public:
 	bool IsMovementInputLocked() const;
 
 	/**
-	 * 서버 전용. 스턴을 건다(UItemSettings::StunDuration). 슈퍼아머거나 이미 스턴이면 false.
-	 * 스턴이 끝나는 순간 슈퍼아머(SuperArmorDuration)가 이어진다.
+	 * 서버 전용. 아이템 스턴을 건다(UItemSettings::StunDuration, 이어서 SuperArmorDuration).
+	 * 슈퍼아머거나 이미 스턴이면 false.
 	 */
 	bool TryApplyStun();
+
+	/**
+	 * 서버 전용. 지속시간을 지정한 스턴. 무기 적중은 짧은 스턴과 짧은 슈퍼아머를 쓴다(FPaintDeposit).
+	 * 스턴이 끝나는 순간 SuperArmorSeconds 동안 슈퍼아머가 이어진다. 0 이하의 스턴은 걸지 않는다.
+	 */
+	bool TryApplyStun(float StunSeconds, float SuperArmorSeconds);
+
+	/**
+	 * 이 유닛의 페인트 색. 팀이 있으면 팀 id, 없으면(샘플 맵) 주무기의 페인트 id.
+	 * 같은 색의 탄과 효과는 이 유닛을 지나친다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Team")
+	uint8 GetPaintId() const;
 
 	/** 서버 전용. From에서 멀어지는 수평 방향으로 밀어낸다(UItemSettings::Knockback*). 슈퍼아머면 무시. */
 	void Knockback(const FVector& From);
@@ -174,6 +199,18 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
+
+	/**
+	 * 카메라에 붙은 작은 구. 다른 유닛의 캡슐과 겹치는 동안 그 유닛을 반투명하게 만든다.
+	 * 로컬 플레이어의 폰에서만 충돌이 켜진다(NotifyControllerChanged). 캡슐과 메시가 Camera
+	 * 채널을 무시하므로 붐이 다른 플레이어에게 막히지 않고, 그 대신 이 구가 겹침을 알린다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
+	TObjectPtr<USphereComponent> CameraProbe;
+
+	/** 카메라가 안에 들어온 유닛의 메시에 씌우는 반투명 재질. 비어 있으면 페이드 없음. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera")
+	TObjectPtr<UMaterialInterface> CameraFadeMaterial;
 
 	/** 조작에 쓰이는 입력 에셋. 비어 있으면 이 유닛은 플레이어 입력을 받지 못한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
@@ -267,17 +304,48 @@ private:
 	UFUNCTION()
 	void HandlePaintIdChanged(uint8 PaintId);
 
+	/**
+	 * 어느 무기든 한 발 나갈 때마다. 소유자는 예측 시점, 서버는 실제 발사, 다른 클라이언트는
+	 * 샷 멀티캐스트 시점에 온다. 발사 연출(EUnitAction::Fire)을 튼다.
+	 */
+	UFUNCTION()
+	void HandleWeaponFired(int32 Seed);
+
+	/** 연출의 몽타주 부분: 몽타주 에셋이 있으면 그것을, 없으면 Animation을 슬롯에 동적 몽타주로. */
+	void PlayFeedbackMontage(const struct FUnitActionFeedback& Feedback);
+
 	UFUNCTION()
 	void OnRep_IsDashing();
 
 	/** 대시 트레일을 켜고 끈다. 데디케이티드 서버에서는 아무것도 하지 않는다. */
 	void UpdateDashEffects(bool bDashing);
 
+	/** 로컬 플레이어 폰에서만 카메라 프로브의 충돌을 켠다. 꺼질 때는 걸어 둔 페이드를 전부 되돌린다. */
+	void UpdateCameraProbe();
+
+	UFUNCTION()
+	void OnCameraProbeBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+
+	UFUNCTION()
+	void OnCameraProbeEndOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+
+	/** 내 카메라가 반투명하게 만든 유닛들. 프로브가 꺼지거나 내가 사라질 때 되돌린다. */
+	TArray<TWeakObjectPtr<AUnit>> CameraFadedUnits;
+
+	/** 페이드 전의 메시 재질. 되돌릴 때 슬롯 순서대로 넣는다. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UMaterialInterface>> CameraFadeOriginalMaterials;
+
+	bool bCameraFaded = false;
+
 	/** 스턴 태그가 서고 내릴 때. 서는 순간 방아쇠를 놓는다. */
 	void HandleStunTagChanged(const FGameplayTag Tag, int32 NewCount);
 
 	/** 서버 전용. 스턴 GE가 제거되면 슈퍼아머를 건다. */
 	void HandleStunEnded(const FGameplayEffectRemovalInfo& RemovalInfo);
+
+	/** 진행 중인 스턴이 끝날 때 이어질 슈퍼아머 길이. TryApplyStun이 정한다. */
+	float PendingSuperArmorSeconds = 0.0f;
 
 	/** 서버 전용. 상태 GE 하나를 SetByCaller 지속시간과 동적 태그로 건다. */
 	bool ApplyStatusEffect(TSubclassOf<UGameplayEffect> EffectClass, const FGameplayTag& StatusTag, float Duration, FActiveGameplayEffectHandle& OutHandle);

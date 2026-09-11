@@ -15,6 +15,12 @@ namespace PaintBurst
 	 * 사이에서 무작위. 위쪽 반구에 고르게 퍼져 바닥과 벽에 두루 닿는다.
 	 */
 	MINTCHOCO_API void ComputeDirections(int32 Seed, int32 Count, float MinPitchDeg, float MaxPitchDeg, TArray<FVector>& OutDirections);
+
+	/**
+	 * 45도로 던진 탄이 RangeCm까지 날아가는 속도(cm/s). 사거리 = v² / (980 × GravityScale)를 뒤집은 것.
+	 * 반경을 손으로 속도로 환산하지 않고 그대로 쓰기 위한 함수다.
+	 */
+	MINTCHOCO_API float SpeedForRange(float RangeCm, float GravityScale);
 }
 
 /** APaintBurst 하나가 뿌리는 것. 서버가 정해 초기 복제로 모든 머신에 간다. */

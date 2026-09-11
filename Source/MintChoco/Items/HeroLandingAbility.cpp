@@ -47,6 +47,12 @@ void UGA_HeroLanding::OnItemActivated(AUnit& Unit, const UItemProfile& Profile)
 		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 		Params.Owner = &Unit;
 		Marker = World->SpawnActor<AActor>(Landing->AimMarkerClass, Unit.GetActorLocation(), FRotator::ZeroRotator, Params);
+		if (Marker)
+		{
+			// 표시일 뿐이라 아무것도 막지 않는다. 마커는 이 머신에만 있으므로, 충돌을 켜 두면
+			// 내 화면에서만 다른 플레이어가 밀리거나 걸려 서버와 어긋난다.
+			Marker->SetActorEnableCollision(false);
+		}
 
 		UAbilityTask_Tick* const Tick = UAbilityTask_Tick::TickEveryFrame(this);
 		Tick->OnTick.AddDynamic(this, &UGA_HeroLanding::HandleTick);

@@ -155,5 +155,5 @@ bool UGA_SpeedStar::DropMark(AUnit& Unit, const USpeedStarProfile& Profile, cons
 	const FVector Incident = Flat.IsNearlyZero()
 		? FVector::DownVector
 		: (-Flat * Sin - FVector::UpVector * Cos).GetSafeNormal();
-	return Profile.TrailDeposit.ApplyHit(World, Hit, Incident * TrailImpactSpeed, PaintId, FMath::Rand(), StarGen);
+	return Profile.TrailDeposit.ApplyHit(World, Hit, Incident * TrailImpactSpeed, PaintId, FMath::Rand(), 1.0f, StarGen);
 }

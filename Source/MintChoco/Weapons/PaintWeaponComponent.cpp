@@ -2,6 +2,7 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Game/GameGameState.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
@@ -31,6 +32,12 @@ UPaintWeaponComponent::UPaintWeaponComponent()
 
 bool UPaintWeaponComponent::IsTriggerBlocked() const
 {
+	// Nobody fires before the match starts (ready wait, countdown). A world without the game
+	// state (the sample map) is always allowed.
+	if (!AGameGameState::IsPlayerInputAllowed(GetWorld()))
+	{
+		return true;
+	}
 	if (TriggerBlockedTags.IsEmpty())
 	{
 		return false;
@@ -177,8 +184,11 @@ void UPaintWeaponComponent::PullTrigger()
 void UPaintWeaponComponent::ReleaseTrigger()
 {
 	// FireOnce refuses a trigger that is not held, so the charged shot goes before the cancel.
-	if (GetChargeFraction() >= 1.0f)
+	// GetChargeFraction is 0 outside Charged, so nothing else fires on release.
+	const float Charge = GetChargeFraction();
+	if (Profile && Profile->FireMode == EPaintFireMode::Charged && Charge > 0.0f && Charge >= Profile->MinChargeToFire)
 	{
+		PendingChargeFraction = Charge;
 		FireOnce();
 	}
 	CancelTrigger();
@@ -264,8 +274,12 @@ bool UPaintWeaponComponent::FireOnce()
 	FVector ViewDirection;
 	GetOwnerView(ViewOrigin, ViewDirection);
 
+	// Only a Charged shot carries a partial charge; everything else fires at full strength.
+	const float ChargeFraction = Profile->FireMode == EPaintFireMode::Charged ? PendingChargeFraction : 1.0f;
+	PendingChargeFraction = 1.0f;
+
 	FPaintFireContext Context;
-	BuildContext(Context, ViewOrigin, ViewDirection);
+	BuildContext(Context, ViewOrigin, ViewDirection, ChargeFraction);
 	Context.bAuthority = HasAuthority();
 
 	// The seed is spent by the profile's attempt, not by its success; a pinned seed just stays.
@@ -294,14 +308,14 @@ bool UPaintWeaponComponent::FireOnce()
 		// The owner sees its ball leave at once and the server's version of the shot never
 		// reaches it (the multicast skips the owner), so the two cannot pile up.
 		Profile->PlayCosmetic(*Context.World, Context.Instigator, Shot);
-		ServerFire(Seed, ViewOrigin, ViewDirection);
+		ServerFire(Seed, ViewOrigin, ViewDirection, static_cast<uint8>(FMath::RoundToInt(ChargeFraction * 255.0f)));
 	}
 
 	OnFired.Broadcast(Seed);
 	return true;
 }
 
-void UPaintWeaponComponent::ServerFire_Implementation(int32 Seed, FVector_NetQuantize ViewOrigin, FVector_NetQuantizeNormal ViewDirection)
+void UPaintWeaponComponent::ServerFire_Implementation(int32 Seed, FVector_NetQuantize ViewOrigin, FVector_NetQuantizeNormal ViewDirection, uint8 Charge)
 {
 	// The owner checked its own tank before asking, but only the server's copy is the truth.
 	// The same goes for a blocking tag: an owner that fired anyway is refused here.
@@ -311,7 +325,7 @@ void UPaintWeaponComponent::ServerFire_Implementation(int32 Seed, FVector_NetQua
 	}
 
 	FPaintFireContext Context;
-	BuildContext(Context, ViewOrigin, ViewDirection);
+	BuildContext(Context, ViewOrigin, ViewDirection, Profile->FireMode == EPaintFireMode::Charged ? Charge / 255.0f : 1.0f);
 	Context.Seed = Seed;
 	Context.bAuthority = true;
 
@@ -339,9 +353,11 @@ void UPaintWeaponComponent::MulticastShotFired_Implementation(const FPaintShot& 
 	{
 		Profile->PlayCosmetic(*GetWorld(), GetOwnerPawn(), Shot);
 	}
+	// Feedback on the machines that only watch: the owner and the server raised theirs when they fired.
+	OnFired.Broadcast(Shot.Seed);
 }
 
-void UPaintWeaponComponent::BuildContext(FPaintFireContext& OutContext, const FVector& ViewOrigin, const FVector& ViewDirection) const
+void UPaintWeaponComponent::BuildContext(FPaintFireContext& OutContext, const FVector& ViewOrigin, const FVector& ViewDirection, float ChargeFraction) const
 {
 	OutContext.World = GetWorld();
 	OutContext.Instigator = GetOwnerPawn();
@@ -349,6 +365,7 @@ void UPaintWeaponComponent::BuildContext(FPaintFireContext& OutContext, const FV
 	OutContext.ViewOrigin = ViewOrigin;
 	OutContext.ViewDirection = ViewDirection;
 	OutContext.PaintId = PaintId;
+	OutContext.ChargeFraction = FMath::Clamp(ChargeFraction, 0.0f, 1.0f);
 }
 
 APawn* UPaintWeaponComponent::GetOwnerPawn() const

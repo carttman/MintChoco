@@ -29,27 +29,118 @@ void AGameGameMode::StartPlay()
 {
 	Super::StartPlay();
 
-	StartItemSpawning();
-
-	if (MatchDuration <= 0.0f)
-	{
-		return;
-	}
-
 	AGameGameState* const State = GetGameState<AGameGameState>();
 	if (!State)
 	{
 		UE_LOG(LogMintChoco, Warning,
-			TEXT("AGameGameMode::StartPlay: GameState가 AGameGameState가 아니라 경기 타이머를 걸지 못했다."));
+			TEXT("AGameGameMode::StartPlay: GameState가 AGameGameState가 아니라 경기 단계를 돌리지 못했다. 바로 시작한다."));
+		StartItemSpawning();
 		return;
 	}
 
-	// 남은 초가 아니라 끝나는 시각만 복제한다. 클라이언트는 GetServerWorldTimeSeconds()로
-	// 남은 시간을 직접 계산하므로 복제는 이 한 번이면 된다.
-	State->SetMatchEndTime(State->GetServerWorldTimeSeconds() + MatchDuration);
-
+	// 전원 준비 → 카운트다운 → 경기. HUD는 경기 전에도 한 판의 길이를 보여준다.
+	State->SetMatchDuration(MatchDuration);
+	State->SetMatchPhase(EMatchPhase::WaitingForPlayers);
+	WaitStartTime = State->GetServerWorldTimeSeconds();
 	GetWorldTimerManager().SetTimer(
-		MatchTimer, this, &AGameGameMode::OnMatchTimeExpired, MatchDuration, /*bLoop=*/false);
+		ReadyCheckTimer, this, &AGameGameMode::CheckPlayersReady, ReadyCheckInterval, /*bLoop=*/true);
+}
+
+bool AGameGameMode::AreAllReady(const TArray<bool>& bReady)
+{
+	if (bReady.IsEmpty())
+	{
+		return false;
+	}
+	for (const bool bOne : bReady)
+	{
+		if (!bOne)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+void AGameGameMode::CheckPlayersReady()
+{
+	AGameGameState* const State = GetGameState<AGameGameState>();
+	if (!State)
+	{
+		return;
+	}
+
+	TArray<bool> bReady;
+	for (const APlayerState* const PlayerState : State->PlayerArray)
+	{
+		const AGamePlayerState* const GamePlayerState = Cast<AGamePlayerState>(PlayerState);
+		// 관전자나 비활성 PlayerState는 세지 않는다.
+		if (!GamePlayerState || GamePlayerState->IsInactive() || GamePlayerState->IsSpectator())
+		{
+			continue;
+		}
+		bReady.Add(GamePlayerState->IsReady() && IsValid(GamePlayerState->GetPawn()));
+	}
+
+	const double Waited = State->GetServerWorldTimeSeconds() - WaitStartTime;
+	const bool bAllReady = AreAllReady(bReady);
+	const bool bTimedOut = ReadyTimeout > 0.0f && Waited >= ReadyTimeout;
+	if (!bAllReady && !bTimedOut)
+	{
+		return;
+	}
+
+	if (!bAllReady)
+	{
+		int32 ReadyCount = 0;
+		for (const bool bOne : bReady)
+		{
+			ReadyCount += bOne ? 1 : 0;
+		}
+		UE_LOG(LogMintChoco, Warning, TEXT("준비 대기 %.0f초 초과: %d/%d명만 준비됐지만 카운트다운을 시작한다."),
+			ReadyTimeout, ReadyCount, bReady.Num());
+	}
+	StartCountdown();
+}
+
+void AGameGameMode::StartCountdown()
+{
+	GetWorldTimerManager().ClearTimer(ReadyCheckTimer);
+
+	AGameGameState* const State = GetGameState<AGameGameState>();
+	if (!State || CountdownDuration <= 0.0f)
+	{
+		StartMatch();
+		return;
+	}
+
+	State->SetCountdownEndTime(State->GetServerWorldTimeSeconds() + CountdownDuration);
+	State->SetMatchPhase(EMatchPhase::Countdown);
+	GetWorldTimerManager().SetTimer(CountdownTimer, this, &AGameGameMode::StartMatch, CountdownDuration, /*bLoop=*/false);
+}
+
+void AGameGameMode::StartMatch()
+{
+	GetWorldTimerManager().ClearTimer(ReadyCheckTimer);
+	GetWorldTimerManager().ClearTimer(CountdownTimer);
+
+	StartItemSpawning();
+
+	AGameGameState* const State = GetGameState<AGameGameState>();
+	if (!State)
+	{
+		return;
+	}
+
+	if (MatchDuration > 0.0f)
+	{
+		// 남은 초가 아니라 끝나는 시각만 복제한다. 클라이언트는 GetServerWorldTimeSeconds()로
+		// 남은 시간을 직접 계산하므로 복제는 이 한 번이면 된다.
+		State->SetMatchEndTime(State->GetServerWorldTimeSeconds() + MatchDuration);
+		GetWorldTimerManager().SetTimer(
+			MatchTimer, this, &AGameGameMode::OnMatchTimeExpired, MatchDuration, /*bLoop=*/false);
+	}
+	State->SetMatchPhase(EMatchPhase::Playing);
 }
 
 void AGameGameMode::StartItemSpawning()

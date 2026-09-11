@@ -80,6 +80,12 @@ public:
 
 	virtual float GetMaxSpeed() const override;
 	virtual FVector ConstrainInputAcceleration(const FVector& InputAcceleration) const override;
+
+	/**
+	 * 내리꽂는 동안에는 0. 낙하 모드로 직선을 그어야 조준한 지점에 정확히 떨어진다.
+	 * 중력이 걸리면 궤적이 아래로 휘어 표시된 착지점보다 앞에서 땅에 닿는다.
+	 */
+	virtual float GetGravityZ() const override;
 	virtual void UpdateFromCompressedFlags(uint8 Flags) override;
 	virtual FNetworkPredictionData_Client* GetPredictionData_Client() const override;
 	virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
