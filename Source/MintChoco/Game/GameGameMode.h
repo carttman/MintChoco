@@ -50,6 +50,9 @@ public:
 	 */
 	static int32 PickFreeSpawnIndex(const TArray<bool>& bFree, const FRandomStream& Random);
 
+	/** 모든 플레이어가 준비됐는지. 플레이어가 없으면 false. 순수 함수라 테스트가 액터 없이 검사한다. */
+	static bool AreAllReady(const TArray<bool>& bReady);
+
 protected:
 	/** 아이템이 나오는 주기(초). 0 이하면 아이템이 나오지 않는다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Items", meta = (ClampMin = "0.0", ForceUnits = "s"))
@@ -61,6 +64,18 @@ protected:
 	/** 한 판의 길이(초). 0 이하로 두면 타이머를 걸지 않아 경기가 끝나지 않는다(디버그용). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0.0"))
 	float MatchDuration = 90.0f;
+
+	/** 전원이 준비된 뒤 경기 시작까지의 카운트다운(초). 0이면 바로 시작한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float CountdownDuration = 3.0f;
+
+	/** 전원 준비를 기다리는 상한(초). 넘기면 준비되지 않은 플레이어가 있어도 카운트다운을 시작한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float ReadyTimeout = 20.0f;
+
+	/** 준비 상태를 다시 보는 주기(초). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0.05", ForceUnits = "s"))
+	float ReadyCheckInterval = 0.25f;
 
 	/**
 	 * 1위와 2위의 상대 격차가 이 값 이하면 무승부로 친다. 0.1 = 두 팀이 칠한 양의 10% 차이.
@@ -114,10 +129,24 @@ protected:
 	UUnitDataAsset* FindUnitDataForTeam(int32 Team) const;
 
 private:
+	/** 모든 PlayerState가 준비됐거나 ReadyTimeout이 지났으면 카운트다운으로 넘어간다. */
+	void CheckPlayersReady();
+
+	/** 단계 Countdown. CountdownDuration 뒤 StartMatch. */
+	void StartCountdown();
+
+	/** 단계 Playing. 아이템 스폰과 경기 타이머가 여기서 시작된다. */
+	void StartMatch();
+
 	/** 시간이 다 됐을 때. 커버리지를 다시 재고 더 많이 칠한 팀을 승팀으로 확정한다. 같으면 무승부. */
 	void OnMatchTimeExpired();
 
+	FTimerHandle ReadyCheckTimer;
+	FTimerHandle CountdownTimer;
 	FTimerHandle MatchTimer;
+
+	/** 준비 대기를 시작한 서버 시각. ReadyTimeout의 기준. */
+	double WaitStartTime = 0.0;
 
 	/** 스폰된 폰이 AUnit이면 팀에 맞는 캐릭터 정의를 넣는다. 아니면 경고를 남긴다. */
 	void ApplyTeamUnitData(APawn* Pawn, const AController* NewPlayer) const;

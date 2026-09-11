@@ -20,6 +20,12 @@ void PaintBurst::ComputeDirections(int32 Seed, int32 Count, float MinPitchDeg, f
 	}
 }
 
+float PaintBurst::SpeedForRange(float RangeCm, float GravityScale)
+{
+	// 980 cm/s²가 기본 중력. 반경 300에 중력 0.5면 383 cm/s가 나온다.
+	return FMath::Sqrt(FMath::Max(RangeCm, 0.0f) * 980.0f * FMath::Max(GravityScale, UE_KINDA_SMALL_NUMBER));
+}
+
 APaintBurst::APaintBurst()
 {
 	PrimaryActorTick.bCanEverTick = false;

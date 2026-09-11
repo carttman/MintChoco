@@ -2,6 +2,7 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Game/GameGameState.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
@@ -34,6 +35,12 @@ UPaintWeaponComponent::UPaintWeaponComponent()
 
 bool UPaintWeaponComponent::IsTriggerBlocked() const
 {
+	// Nobody fires before the match starts (ready wait, countdown). A world without the game
+	// state (the sample map) is always allowed.
+	if (!AGameGameState::IsPlayerInputAllowed(GetWorld()))
+	{
+		return true;
+	}
 	if (TriggerBlockedTags.IsEmpty())
 	{
 		return false;

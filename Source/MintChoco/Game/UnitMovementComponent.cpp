@@ -192,6 +192,13 @@ bool UUnitMovementComponent::FinishHeroLandingDive()
 	return true;
 }
 
+float UUnitMovementComponent::GetGravityZ() const
+{
+	// 내리꽂기는 조준한 점을 향한 직선이다. 중력을 그대로 두면 같은 속도로도 궤적이 휘어
+	// 표시된 착지점보다 앞에 떨어진다(거리가 멀수록 크게).
+	return HeroPhase == EHeroLandingPhase::Dive ? 0.0f : Super::GetGravityZ();
+}
+
 void UUnitMovementComponent::PhysCustom(float DeltaTime, int32 Iterations)
 {
 	if (CustomMovementMode == CustomMode_HeroLanding)
@@ -254,7 +261,12 @@ void UUnitMovementComponent::PhysHeroLanding(float DeltaTime, int32 Iterations)
 	HeroPhase = EHeroLandingPhase::Dive;
 	HeroPhaseTime = 0.0f;
 
-	FVector DiveDirection = HeroDiveTarget - UpdatedComponent->GetComponentLocation();
+	// 캡슐 중심이 지면의 착지점으로 가면 발이 먼저 땅에 닿아 그만큼 앞에서 멈춘다. 얕게 꽂을수록
+	// 그 차이가 커지므로, 캡슐 반높이만큼 올린 점을 향한다. 그러면 발바닥이 착지점에 닿는다.
+	const float HalfHeight = CharacterOwner && CharacterOwner->GetCapsuleComponent()
+		? CharacterOwner->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()
+		: 0.0f;
+	FVector DiveDirection = HeroDiveTarget + FVector(0.0f, 0.0f, HalfHeight) - UpdatedComponent->GetComponentLocation();
 	if (!DiveDirection.Normalize() || DiveDirection.Z > -0.1f)
 	{
 		DiveDirection = FVector::DownVector;

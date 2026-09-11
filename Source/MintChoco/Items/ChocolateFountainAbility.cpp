@@ -7,6 +7,7 @@
 #include "Items/ChocolateFountain.h"
 #include "Items/ChocolateFountainProfile.h"
 #include "MintChoco.h"
+#include "Weapons/PaintBurst.h"
 
 void UGA_ChocolateFountain::OnItemActivated(AUnit& Unit, const UItemProfile& Profile)
 {
@@ -30,4 +31,7 @@ void UGA_ChocolateFountain::OnItemActivated(AUnit& Unit, const UItemProfile& Pro
 	}
 	Dome->Init(Unit.GetTeam(), GetPaintId(), Fountain->Radius, Fountain->Lifetime);
 	Dome->FinishSpawning(SpawnTransform);
+
+	// 돔이 덮는 만큼 발밑을 칠한다. 사용자 팀 색이라 돔 벽에 삼켜지지 않고 그대로 통과한다.
+	APaintBurst::Spawn(*World, SpawnTransform.GetLocation(), Fountain->MakeBurst(GetPaintId(), FMath::Rand()));
 }

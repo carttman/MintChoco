@@ -338,6 +338,25 @@ team to hit it owns the pop, `MulticastBurst(Seed, PaintId)` launches `BurstCoun
 `BurstPaintball` (real on the server, cosmetic on clients), and it re-inflates after `RespawnDelay`.
 Its collision blocks only the `Paintball` channel, so pawns and the camera pass through.
 
+## Match flow (game maps)
+
+`AGameGameMode::StartPlay` no longer starts the clock. `AGameGameState::MatchPhase` (replicated)
+runs WaitingForPlayers → Countdown → Playing → Ended. Each `AGamePlayerState` polls on its owning
+machine until it has a pawn and the screen fade is clear, then sets `bReady` (server RPC); the mode
+starts the countdown when every non-spectator PlayerState is ready and has a pawn, or after
+`ReadyTimeout`. `StartMatch` starts item spawning and the match timer. Countdown and end are server
+timestamps (`GetCountdownRemaining`, `GetRemainingTime`); before the match `GetRemainingTime` returns
+the full `MatchDuration`. Movement and both triggers are locked until Playing
+(`AGameGameState::IsPlayerInputAllowed`, checked in `AUnit::IsMovementInputLocked` and
+`UPaintWeaponComponent::IsTriggerBlocked`; a world without `AGameGameState` is always allowed).
+`UGameHudWidget` (parent of `WBP_GameHUD`) drives `Txt_Timer` (red under `TimerWarningSeconds`) and
+`Txt_Countdown` (waiting text, 3-2-1, START!, last `FinalCountdownSeconds`).
+
+| Symptom | Check first |
+|---|---|
+| The countdown never starts | A PlayerState never reported ready: it needs a local PlayerController, a valid pawn, and `UScreenFadeSubsystem::IsCovered()` false. `LogMintChoco` prints `준비 완료` per player and a warning when `ReadyTimeout` fires. |
+| Players can move during the countdown | The phase is read from the world's `AGameGameState`; a map using another GameState class locks nothing. |
+
 ## Screen fade (map transitions)
 
 `UScreenFadeSubsystem` (`Source/MintChoco/Screen/`) owns the cover widget across maps. Every

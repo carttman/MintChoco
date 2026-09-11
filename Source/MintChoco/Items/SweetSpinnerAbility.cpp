@@ -3,7 +3,6 @@
 #include "Abilities/Tasks/AbilityTask_Repeat.h"
 
 #include "Game/Unit.h"
-#include "Items/AbilityTask_Tick.h"
 #include "Items/ItemGameplayEffect.h"
 #include "Items/ItemGameplayTags.h"
 #include "Items/ItemSlotComponent.h"
@@ -35,15 +34,10 @@ void UGA_SweetSpinner::OnItemActivated(AUnit& Unit, const UItemProfile& Profile)
 		Secondary->ReleaseTrigger();
 	}
 
-	Unit.bUseControllerRotationYaw = false;
-
-	UAbilityTask_Tick* const Tick = UAbilityTask_Tick::TickEveryFrame(this);
-	Tick->OnTick.AddDynamic(this, &UGA_SweetSpinner::HandleTick);
-	Tick->ReadyForActivation();
-
 	if (IsAuthority() && Spinner->Volley)
 	{
-		const int32 VolleyCount = FMath::Max(1, FMath::RoundToInt(Profile.Duration / Spinner->VolleyInterval));
+		StartYaw = static_cast<float>(Unit.GetActorRotation().Yaw);
+		VolleyCount = Spinner->GetVolleyCount();
 		UAbilityTask_Repeat* const Repeat = UAbilityTask_Repeat::RepeatAction(this, Spinner->VolleyInterval, VolleyCount);
 		Repeat->OnPerformAction.AddDynamic(this, &UGA_SweetSpinner::HandleVolley);
 		Repeat->ReadyForActivation();
@@ -52,18 +46,7 @@ void UGA_SweetSpinner::OnItemActivated(AUnit& Unit, const UItemProfile& Profile)
 
 void UGA_SweetSpinner::OnItemEnded(AUnit& Unit, const UItemProfile& Profile)
 {
-	// 다시 켜는 순간 컨트롤 요로 스냅한다. 회전은 이미 여러 바퀴 돈 뒤라 어디서 멈추든 같다.
-	Unit.bUseControllerRotationYaw = true;
 	Spinner = nullptr;
-}
-
-void UGA_SweetSpinner::HandleTick(float DeltaTime)
-{
-	AUnit* const Unit = GetUnit();
-	if (Unit && Spinner)
-	{
-		Unit->AddActorWorldRotation(FRotator(0.0f, Spinner->SpinRateDeg * DeltaTime, 0.0f));
-	}
 }
 
 void UGA_SweetSpinner::HandleVolley(int32 ActionNumber)
@@ -75,15 +58,22 @@ void UGA_SweetSpinner::HandleVolley(int32 ActionNumber)
 		return;
 	}
 
-	// 조준점 대신 액터 정면. 총구에서 정면으로 보는 시선을 넘기면 총 프로필의 조준 트레이스가
-	// 그 방향의 첫 표면으로 수렴한다.
-	const FTransform Muzzle = Weapon->GetMuzzleTransform();
+	// 이 발의 방향. 캐릭터는 그대로이므로 액터 정면이 아니라 계산한 요를 쓴다.
+	// 피치는 프로필이 정한 고정값이라 모든 발이 같은 높이로 나간다.
+	const float Yaw = SweetSpinner::VolleyYawDegrees(StartYaw, ActionNumber, VolleyCount, Spinner->Turns);
+	const FRotator Rotation(Spinner->PitchDeg, Yaw, 0.0f);
+
+	// 원점은 캐릭터 중심의 손 높이. 손의 총구를 쓰면 한쪽에 고정된 채 몸을 가로질러 쏘게 된다.
+	FVector Origin = Unit->GetActorLocation();
+	Origin.Z = Weapon->GetMuzzleTransform().GetLocation().Z;
+
+	// 총 프로필의 조준 트레이스는 시선(ViewOrigin, ViewDirection)에서 그 방향의 첫 표면으로 수렴한다.
 	FPaintFireContext Context;
 	Context.World = GetWorld();
 	Context.Instigator = Unit;
-	Context.Muzzle = Muzzle;
-	Context.ViewOrigin = Muzzle.GetLocation();
-	Context.ViewDirection = Unit->GetActorForwardVector();
+	Context.Muzzle = FTransform(Rotation, Origin);
+	Context.ViewOrigin = Origin;
+	Context.ViewDirection = Rotation.Vector();
 	Context.PaintId = Weapon->GetPaintId();
 	Context.Seed = FMath::Rand();
 	Context.bAuthority = true;
