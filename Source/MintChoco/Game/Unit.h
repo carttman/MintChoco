@@ -327,6 +327,9 @@ private:
 	/** 실제로 대시 상태가 바뀔 때 무브먼트 컴포넌트가 알려준다. */
 	void HandleDashStateChanged(bool bDashing);
 
+	/** 실제로 속도 부스트 상태가 바뀔 때 무브먼트 컴포넌트가 알려준다. */
+	void HandleSpeedBoostStateChanged(bool bBoosting);
+
 	/** 무기의 페인트 id가 바뀌면(로컬 세팅이든 복제든) 잉크병을 그 팀 색으로 맞춘다. */
 	UFUNCTION()
 	void HandlePaintIdChanged(uint8 PaintId);
@@ -361,6 +364,12 @@ private:
 
 	/** 대시 트레일을 켜고 끈다. 데디케이티드 서버에서는 아무것도 하지 않는다. */
 	void UpdateDashEffects(bool bDashing);
+
+	UFUNCTION()
+	void OnRep_IsSpeedBoosting();
+
+	/** 속도 부스트 FX를 켜고 끈다. 대시와 같은 규칙이며, 데디케이티드 서버에서는 아무것도 하지 않는다. */
+	void UpdateSpeedBoostEffects(bool bBoosting);
 
 	/** 로컬 플레이어 폰에서만 카메라 프로브의 충돌을 켠다. 꺼질 때는 걸어 둔 페이드를 전부 되돌린다. */
 	void UpdateCameraProbe();
@@ -404,6 +413,17 @@ private:
 	/** 지속되는 트레일이라 시작할 때 만들고 끝날 때 직접 꺼야 한다. */
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> DashTrailComponent;
+
+	/**
+	 * 연출용 속도 부스트 상태. 대시와 같은 이유로 서버가 복제한다: 부스트 의도는
+	 * 압축 플래그로 서버까지만 가고 다른 클라이언트에는 닿지 않는다.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_IsSpeedBoosting)
+	bool bIsSpeedBoosting = false;
+
+	/** 부스트가 끝날 때까지 붙어 있는 FX. 끝나면 직접 꺼야 한다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> SpeedBoostFXComponent;
 
 	/**
 	 * 컨텍스트를 넣어준 서브시스템. EndPlay 시점에는 Controller가 이미 떨어져 나갔을

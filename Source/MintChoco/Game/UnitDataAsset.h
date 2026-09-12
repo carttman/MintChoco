@@ -31,6 +31,8 @@ enum class EUnitAction : uint8
 	Fire	UMETA(DisplayName = "페인트 발사"),
 	Hit		UMETA(DisplayName = "피격"),
 	Death	UMETA(DisplayName = "사망"),
+	/** 스피드 스타가 켜 둔 속도 부스트. 상태가 지속되는 동안 FX가 계속 붙어 있는다. */
+	SpeedBoost	UMETA(DisplayName = "속도 부스트"),
 };
 
 /**
