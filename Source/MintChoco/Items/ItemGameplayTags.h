@@ -16,6 +16,12 @@ namespace ItemTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Item_HeroLanding);
 
 	/**
+	 * 조준 중인 아이템. 지속형 아이템처럼 효과를 내는 상태가 아니라 아직 조준만 하고 있다는 뜻이다.
+	 * 무기 발사가 이 태그로 막히고(TriggerBlockedTags), 그 좌클릭이 조준 확정으로 간다.
+	 */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(State_Item_Aiming);
+
+	/**
 	 * 상대가 거는 상태. 아이템 태그(State.Item.*)는 "내가 쓴 아이템"이고, 이쪽은 "내가 당한 것"이다.
 	 * 스턴 중에는 이동·점프·발사·아이템이 막히고, 슈퍼아머 중에는 스턴과 밀어내기가 무시된다.
 	 */

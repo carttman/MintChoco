@@ -686,6 +686,14 @@ void AUnit::UseItem()
 // 컴포넌트에 Release/Cancel로 오는데, 그쪽은 아무것도 하지 않으므로 따로 걸러내지 않는다.
 void AUnit::StartFire()
 {
+	// 조준 중인 아이템이 있으면 좌클릭은 그쪽으로 간다. 무기는 상태 태그로 이미
+	// 막혀 있지만, 클릭 자체를 소비해야 조준이 확정된다.
+	if (ItemSlot && ItemSlot->IsAiming())
+	{
+		ItemSlot->ConfirmAim();
+		return;
+	}
+
 	if (PaintWeapon && !(SecondaryWeapon && SecondaryWeapon->IsTriggerHeld()))
 	{
 		PaintWeapon->PullTrigger();

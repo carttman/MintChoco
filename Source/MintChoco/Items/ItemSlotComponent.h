@@ -57,6 +57,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Item")
 	bool TryUseHeldItem();
 
+	/** 조준 모드 아이템이 동작 중인지. 맞으면 좌클릭을 무기 대신 그 아이템이 가져간다. */
+	UFUNCTION(BlueprintPure, Category = "Item")
+	bool IsAiming() const;
+
+	/**
+	 * 조준을 확정한다. 예측 클라이언트가 먼저 알리고 서버에도 보낸다 — 무기의
+	 * 발사 예측과 같은 규칙이라 둘이 같은 순간을 본다.
+	 */
+	void ConfirmAim();
+
+	/** 조준이 확정됐다. 조준 어빌리티가 여기에 붙는다. */
+	FSimpleMulticastDelegate OnAimConfirmed;
+
 	/**
 	 * 디버그. UItemSettings 목록의 Index번째(0부터) 아이템을 바로 슬롯에 넣는다. 클라이언트는
 	 * 서버에 부탁한다. Shipping 빌드에서는 아무 일도 하지 않는다.
@@ -115,6 +128,9 @@ protected:
 private:
 	UFUNCTION(Server, Reliable)
 	void ServerDebugGiveItem(int32 Index);
+
+	UFUNCTION(Server, Reliable)
+	void ServerConfirmAim();
 
 	/** 서버 전용. 설정 목록의 Index번째 아이템을 준다. 범위 밖이면 경고. */
 	void GiveItemByIndex(int32 Index);

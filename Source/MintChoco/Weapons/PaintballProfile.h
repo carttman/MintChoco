@@ -46,6 +46,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball", meta = (ClampMin = "0", ForceUnits = "x"))
 	float GravityScale = 0.5f;
 
+	/**
+	 * Seconds of flight before gravity switches to DropGravityScale. 0 - the default - keeps one
+	 * gravity for the whole flight, which is what every ball did before this existed.
+	 *
+	 * This is how a gun states its reach: the ball flies where it was aimed, then falls out of the
+	 * air rather than vanishing at an invisible line. Straight distance is muzzle speed x this,
+	 * so the value reads as a range once the gun's speed is known.
+	 *
+	 * Every machine runs the switch off the same timer from the same launch, so the server's ball
+	 * and the clients' cosmetic ones fall together. Leave it 0 on anything whose reach is set by
+	 * the ballistic range formula instead (the burst items), or their radius stops matching.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball", meta = (ClampMin = "0", ForceUnits = "s"))
+	float DropAfter = 0.0f;
+
+	/** Gravity once DropAfter has passed. Higher reads as a sharper break in the arc. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball",
+		meta = (ClampMin = "0", ForceUnits = "x", EditCondition = "DropAfter > 0"))
+	float DropGravityScale = 4.0f;
+
 	/** What the ball leaves where it lands. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball")
 	FPaintDeposit Deposit;

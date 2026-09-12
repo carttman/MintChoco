@@ -4,6 +4,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/HitResult.h"
 #include "Engine/World.h"
+#include "TimerManager.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "NiagaraFunctionLibrary.h"
@@ -82,6 +83,12 @@ void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId,
 	Movement->Velocity = Velocity;
 	Movement->ProjectileGravityScale = Profile->GravityScale;
 
+	// 사거리를 보이지 않는 선에서 지우는 대신, 날던 공이 힘을 잃고 떨어지는 것으로 보여준다.
+	if (Profile->DropAfter > 0.0f)
+	{
+		GetWorldTimerManager().SetTimer(DropTimer, this, &APaintProjectile::ApplyDropGravity, Profile->DropAfter, /*bLoop=*/false);
+	}
+
 	Sphere->SetSphereRadius(Profile->Radius);
 	ScaleMeshToRadius(Mesh, Profile->Radius);
 
@@ -150,6 +157,15 @@ void APaintProjectile::Tick(float DeltaSeconds)
 	// fire a burst of traces to catch up, which is exactly the cost the spacing exists to bound.
 	TrailDistance -= Profile->TrailSpacing;
 	TrailSplatCount += PaintTrailSample(Location, TrailSampleCount++);
+}
+
+void APaintProjectile::ApplyDropGravity()
+{
+	if (Movement && Profile)
+	{
+		// 컴포넌트가 매 프레임 읽는 값이라, 바꾸는 순간부터 다음 프레임에 바로 적용된다.
+		Movement->ProjectileGravityScale = Profile->DropGravityScale;
+	}
 }
 
 int32 APaintProjectile::PaintTrailSample(const FVector& Location, int32 SampleIndex)

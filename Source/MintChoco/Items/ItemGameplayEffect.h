@@ -47,6 +47,12 @@ class MINTCHOCO_API UGE_InfiniteAmmo : public UItemGameplayEffect
 };
 
 UCLASS()
+class MINTCHOCO_API UGE_DessertBombardment : public UItemGameplayEffect
+{
+	GENERATED_BODY()
+};
+
+UCLASS()
 class MINTCHOCO_API UGE_HeroLanding : public UItemGameplayEffect
 {
 	GENERATED_BODY()

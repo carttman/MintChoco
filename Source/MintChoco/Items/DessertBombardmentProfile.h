@@ -7,6 +7,7 @@
 
 #include "DessertBombardmentProfile.generated.h"
 
+class AActor;
 class APaintRain;
 class UPaintballProfile;
 
@@ -22,6 +23,13 @@ class MINTCHOCO_API UDessertBombardmentProfile : public UItemProfile
 public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment")
 	TObjectPtr<UPaintballProfile> Paintball;
+
+	/**
+	 * 조준 중 발사 경로를 보여주는 미리보기. 조준하는 본인 화면에만 생기며,
+	 * 매 프레임 사용자 위치와 수평 시선 방향을 따라간다. 비워 두면 표시 없이 조준만 한다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment")
+	TSubclassOf<AActor> AimPreviewClass;
 
 	/** 비워 두면 APaintRain 그대로. 연출을 붙이려면 서브클래스 BP. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment")

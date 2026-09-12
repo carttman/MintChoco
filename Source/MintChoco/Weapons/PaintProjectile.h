@@ -80,6 +80,9 @@ private:
 	 */
 	int32 PaintTrailSample(const FVector& Location, int32 SampleIndex);
 
+	/** DropAfter가 지났다. 여기서부터 무겁게 떨어진다. */
+	void ApplyDropGravity();
+
 	UPROPERTY(Transient)
 	TObjectPtr<const UPaintballProfile> Profile;
 
@@ -92,4 +95,10 @@ private:
 	float TrailDistance = 0.0f;
 	int32 TrailSampleCount = 0;
 	int32 TrailSplatCount = 0;
+
+	/**
+	 * 중력을 바꾸는 타이머. Tick이 아닌 이유는 Tick이 궤적 도포용이라 서버의 진짜 탄에서만
+	 * 켜지기 때문이다. 타이머는 모든 머신에서 같은 시각에 돌아 연출 탄도 함께 떨어진다.
+	 */
+	FTimerHandle DropTimer;
 };
