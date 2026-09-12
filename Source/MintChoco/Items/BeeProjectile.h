@@ -98,6 +98,13 @@ private:
 	TObjectPtr<const UBeeProfile> Profile;
 
 	TWeakObjectPtr<AUnit> Target;
+
+	/**
+	 * 실제로 부딪힌 상대. 쫓던 Target과 다를 수 있고(다른 상대에 먼저 닿는다), 벽이나 수명으로
+	 * 터질 때는 비어 있다. OnDetonate가 "상대에게 맞았는지"를 이것으로 가른다.
+	 */
+	TWeakObjectPtr<AUnit> StruckUnit;
+
 	FVector LastMark = FVector::ZeroVector;
 	float Damage = 0.0f;
 	FTimerHandle LifeTimer;

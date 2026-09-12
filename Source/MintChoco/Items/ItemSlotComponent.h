@@ -13,6 +13,7 @@
 class UAbilitySystemComponent;
 class UItemProfile;
 class UNiagaraComponent;
+class UNiagaraSystem;
 class UPaintGunProfile;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FItemSlotChangedSignature, UItemProfile*, Item);
@@ -72,6 +73,26 @@ public:
 	/** 스피너의 산탄을 다른 머신에서 연출로 재생한다. 진짜 공을 날린 서버만 건너뛴다. */
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastSpinnerShot(const UPaintGunProfile* Volley, const FPaintShot& Shot);
+
+	/**
+	 * 한 번 터지고 마는 아이템 연출을 모든 머신에서 재생한다. 서버가 부른다.
+	 *
+	 * 붙이지 않고 월드 좌표에 두는 것이 요점이다: 사용자가 곧바로 솟아올라도 이펙트는 터진
+	 * 자리에 남는다. 어빌리티는 서버와 소유 클라이언트에만 있으므로 구경하는 머신에는 이
+	 * 경로로만 닿는다.
+	 */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastPlayFXAt(UNiagaraSystem* System, FVector_NetQuantize Location, float Scale);
+
+	/**
+	 * 유닛에 붙여 Duration 동안 띄워 두는 아이템 연출. 서버가 부른다.
+	 *
+	 * 루프하는 이펙트를 쓰므로 스스로 꺼지지 않는다. 각 머신이 Duration 뒤에 Deactivate만 하고,
+	 * 남은 파티클이 제 수명을 마치면 bAutoDestroy가 컴포넌트를 치운다. 시작 시각만 보내고
+	 * 길이는 각자 재는 구조라 RPC가 한 번이면 된다.
+	 */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastPlayAttachedFX(UNiagaraSystem* System, float Scale, float ZOffset, float Duration);
 
 	/**
 	 * 잉크병 오버라이드(무한 탄환)의 점멸 타이머를 다시 시작한다. 어빌리티가 (재)발동 때 부른다:

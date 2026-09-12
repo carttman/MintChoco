@@ -10,6 +10,7 @@
 
 class APaintProjectile;
 class APawn;
+class UNiagaraSystem;
 
 /**
  * What a paintball is: the actor that flies, its size and weight, and what it leaves where it
@@ -62,6 +63,18 @@ public:
 	 * opt-in per ball rather than a flag on the gun: a 15-pellet volley at 10 Hz must not have one.
 	 * Keep HitPower at 0 here, or a ball flying past a balloon would strike it once per sample.
 	 */
+	/**
+	 * 이 공이 어딘가에 떨어질 때 그 자리에서 한 번 터지는 이펙트. 비어 있으면 아무것도 하지 않는다.
+	 *
+	 * RPC가 없다: 머신마다 자기 공이 있고(서버는 진짜, 나머지는 연출용) 각자 제 OnHit에서
+	 * 그리므로, 한 번의 착탄이 각 화면에 한 번씩 보인다. 무기별로 켜고 끄라고 공 프로필에 둔다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball|FX")
+	TObjectPtr<UNiagaraSystem> ImpactFX;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball|FX", meta = (ClampMin = "0.01"))
+	float ImpactFXScale = 1.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball|Trail")
 	FPaintDeposit TrailDeposit;
 

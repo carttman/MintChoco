@@ -6,6 +6,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "NiagaraFunctionLibrary.h"
 
 #include "MeshScale.h"
 #include "Game/TeamTypes.h"
@@ -238,6 +239,21 @@ void APaintProjectile::OnHit(UPrimitiveComponent*, AActor*, UPrimitiveComponent*
 			Velocity = (Hit.TraceEnd - Hit.TraceStart).GetSafeNormal() * Movement->InitialSpeed;
 		}
 		Profile->Deposit.ApplyHit(GetWorld(), Hit, Velocity, PaintId, Seed);
+	}
+
+	// 연출용 공도 그린다: 착탄은 각 머신에서 제 공으로 일어나므로 이것이 그 화면의 한 번이다.
+	if (Profile && Profile->ImpactFX)
+	{
+		UWorld* const World = GetWorld();
+		if (World && World->GetNetMode() != NM_DedicatedServer)
+		{
+			// MakeFromZ다. FVector::Rotation()은 넘긴 방향을 +X(앞)로 삼으므로 바닥 법선을 주면
+			// 이펙트가 90도 눕는다. 이펙트의 위쪽인 +Z를 법선에 맞춰야 바닥에 선 채로 나온다.
+			const FRotator Upright = FRotationMatrix::MakeFromZ(Hit.ImpactNormal).Rotator();
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+				World, Profile->ImpactFX, Hit.ImpactPoint, Upright,
+				FVector(Profile->ImpactFXScale));
+		}
 	}
 
 	Destroy();

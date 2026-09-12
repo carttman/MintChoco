@@ -147,8 +147,8 @@ public:
 	 */
 	void ApplyTeamToWeapon();
 
-	// UFUNCTION(BlueprintPure, Category = "Camera")
-	// USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
+	UFUNCTION(BlueprintPure, Category = "Camera")
+	USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	/**
 	 * 캐싱하지 않고 매번 GetCharacterMovement()에서 구한다.
 	 *

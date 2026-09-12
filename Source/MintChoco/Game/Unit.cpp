@@ -844,9 +844,10 @@ void AUnit::UpdateDashEffects(bool bDashing)
 			Feedback->FX,
 			GetMesh(),
 			Feedback->FXSocket,
-			FVector::ZeroVector,
+			Feedback->FXOffset,
 			FRotator::ZeroRotator,
-			EAttachLocation::SnapToTarget,
+			// SnapToTarget은 넘긴 오프셋을 버린다. FXOffset을 쓰려면 상대 오프셋을 지켜야 한다.
+			EAttachLocation::KeepRelativeOffset,
 			// Deactivate 후 남은 파티클이 다 사라지면 스스로 정리된다. false로 두면
 			// 대시할 때마다 꺼진 컴포넌트가 메시에 하나씩 쌓인다.
 			true);
@@ -899,7 +900,7 @@ void AUnit::HandleWeaponFired(int32 Seed)
 		{
 			UNiagaraFunctionLibrary::SpawnSystemAttached(
 				Feedback->FX, GetMesh(), Feedback->FXSocket,
-				FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget, true);
+				Feedback->FXOffset, FRotator::ZeroRotator, EAttachLocation::KeepRelativeOffset, true);
 		}
 		else
 		{
