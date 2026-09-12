@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MintChoco - 개선 로드맵 파트 A(프로그래밍) 7건의 착수 순서와 의존 관계를 정리한 개발 계획.">
+  <style>
+    /* standalone reset — the Artifact host normally supplies these */
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    img { max-width: 100%; }
+    [hidden] { display: none !important; }
+  </style>
+<title>조준 모드 개발 계획</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+  :root {
+    --paper:#F6F7F4; --card:#FFFFFF; --ink:#1B211E; --muted:#6B7570;
+    --mint:#0F8A66; --mint-soft:#E2F2EC;
+    --cocoa:#7A5140; --cocoa-soft:#F2E9E4;
+    --amber:#A8730D; --amber-soft:#F7EEDB;
+    --rose:#B04058; --rose-soft:#F8E7EA;
+    --slate:#4A6B86; --slate-soft:#E5EDF3;
+    --line:#E1E5E0; --line-strong:#C9D0CA; --shade:#EDF0EC;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#121110; --card:#1B1917; --ink:#EDE9E3; --muted:#989289;
+      --mint:#4FD3A6; --mint-soft:#14312A; --cocoa:#C99E86; --cocoa-soft:#2C221D;
+      --amber:#E3AC48; --amber-soft:#2E2515; --rose:#E5808F; --rose-soft:#32191E;
+      --slate:#8FB4CE; --slate-soft:#1A242C;
+      --line:#2B2724; --line-strong:#3D3733; --shade:#211E1B;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#121110; --card:#1B1917; --ink:#EDE9E3; --muted:#989289;
+    --mint:#4FD3A6; --mint-soft:#14312A; --cocoa:#C99E86; --cocoa-soft:#2C221D;
+    --amber:#E3AC48; --amber-soft:#2E2515; --rose:#E5808F; --rose-soft:#32191E;
+    --slate:#8FB4CE; --slate-soft:#1A242C;
+    --line:#2B2724; --line-strong:#3D3733; --shade:#211E1B;
+  }
+
+  body { background:var(--paper); color:var(--ink);
+         font-family:"Source Sans 3", system-ui, -apple-system, "Malgun Gothic", sans-serif;
+         font-size:15px; line-height:1.55; }
+  .wrap { max-width:1080px; margin:0 auto; padding:40px 24px 72px; display:flex; flex-direction:column; gap:46px; }
+  h1,h2,h3,.eyebrow { font-family:Archivo, system-ui, "Malgun Gothic", sans-serif; text-wrap:balance; }
+  h1 { font-size:33px; font-weight:700; letter-spacing:-0.02em; margin:0 0 6px; }
+  h2 { font-size:21px; font-weight:600; letter-spacing:-0.01em; margin:0; }
+  h3 { font-size:15px; font-weight:600; margin:0; }
+  .eyebrow { font-size:11px; font-weight:600; letter-spacing:0.13em; text-transform:uppercase; color:var(--mint); }
+  .sub { color:var(--muted); margin:0; max-width:66ch; }
+  code,.mono { font-family:"JetBrains Mono", ui-monospace, monospace; font-size:12.5px; }
+  .num { font-variant-numeric:tabular-nums; }
+
+  header { border-bottom:2px solid var(--ink); padding-bottom:22px; }
+  .meta { display:flex; flex-wrap:wrap; gap:8px 18px; margin-top:14px; font-size:12.5px; color:var(--muted); }
+  .meta b { color:var(--ink); font-weight:600; }
+
+  section { display:flex; flex-direction:column; gap:16px; }
+  .sechead { display:flex; flex-direction:column; gap:5px; border-left:3px solid var(--mint); padding-left:13px; }
+
+  .scroll { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; min-width:780px; font-size:13.5px; }
+  th,td { text-align:left; padding:9px 11px; border-bottom:1px solid var(--line); vertical-align:top; }
+  thead th { font-family:Archivo,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.07em;
+             text-transform:uppercase; color:var(--muted); border-bottom:1px solid var(--line-strong); white-space:nowrap; }
+  tbody tr:last-child td { border-bottom:none; }
+  tbody tr:hover { background:var(--shade); }
+  td.name { font-weight:600; white-space:nowrap; }
+
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:17px 19px;
+           display:flex; flex-direction:column; gap:10px; }
+  .panel.key { border-left:3px solid var(--mint); }
+  .panel.risk { border-left:3px solid var(--rose); }
+  .panel.ask { border-left:3px solid var(--amber); }
+  .cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; }
+  .note { font-size:13px; color:var(--muted); margin:0; }
+  .note b { color:var(--ink); }
+
+  /* 단계 */
+  .steps { display:flex; flex-direction:column; gap:0; }
+  .step { display:grid; grid-template-columns:74px 1fr; gap:20px; padding:20px 0; border-top:1px solid var(--line); }
+  .step:first-child { border-top:none; }
+  .badge { font-family:"JetBrains Mono",monospace; font-size:11px; font-weight:700; padding:3px 8px;
+           border-radius:3px; text-align:center; height:fit-content; white-space:nowrap; }
+  .b-base { background:var(--mint-soft); color:var(--mint); }
+  .b-seq  { background:var(--cocoa-soft); color:var(--cocoa); }
+  .b-par  { background:var(--slate-soft); color:var(--slate); }
+  .step-body { display:flex; flex-direction:column; gap:9px; }
+  .step-body h3 { display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; }
+  .est { font-family:"JetBrains Mono",monospace; font-size:11.5px; color:var(--muted); font-weight:400; }
+  .files { display:flex; flex-wrap:wrap; gap:5px; }
+  .files code { background:var(--shade); padding:2px 6px; border-radius:3px; }
+  ul.todo { margin:0; padding-left:0; list-style:none; display:flex; flex-direction:column; gap:5px; font-size:13.5px; }
+  ul.todo li { display:grid; grid-template-columns:16px 1fr; gap:8px; }
+  ul.todo .b { color:var(--mint); font-weight:700; }
+  .verify { font-size:13px; background:var(--shade); border-radius:4px; padding:9px 12px; }
+  .verify b { font-family:Archivo,sans-serif; font-size:11px; letter-spacing:0.07em; text-transform:uppercase; color:var(--muted); }
+
+  .flow { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:13px; }
+  .flow span.n { background:var(--card); border:1px solid var(--line-strong); border-radius:4px; padding:5px 10px; }
+  .flow span.a { color:var(--muted); font-family:"JetBrains Mono",monospace; }
+  footer { border-top:1px solid var(--line); padding-top:16px; font-size:12.5px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">MintChoco · 개선 로드맵 파트 A 착수 계획</p>
+  <h1>조준 모드 개발 계획</h1>
+  <p class="sub">기획서의 프로그래밍 항목 7건을 실제 코드 구조에 맞춰 착수 순서로 풀었습니다. &ldquo;기존 코드&rdquo; 칸은 추측이 아니라 현재 소스를 읽고 확인한 것입니다.</p>
+  <div class="meta">
+    <span><b>기준</b> 2026-09-12 · 브랜치 QA</span>
+    <span><b>범위</b> 파트 A <span class="num">7</span>건 → <span class="num">7</span>단계</span>
+    <span><b>선행</b> 0단계가 1~3단계를 막음</span>
+  </div>
+</header>
+
+<!-- 핵심 발견 -->
+<section>
+  <div class="sechead">
+    <p class="eyebrow">먼저 읽을 것</p>
+    <h2>필요한 것의 80%는 이미 있습니다</h2>
+  </div>
+  <div class="cols">
+    <div class="panel key">
+      <h3>히어로 랜딩이 곧 조준 모드의 원형입니다</h3>
+      <p class="note"><code>UGA_HeroLanding</code>은 이미 <b>지속형 어빌리티 + 미리보기 액터(<code>Marker</code>) + 매 틱 조준점 추적 + 조기 종료(<code>FinishItem</code>)</b>를 전부 하고 있습니다.</p>
+      <p class="note">조준 모드에 없는 것은 <b>&ldquo;좌클릭으로 확정&rdquo;</b> 한 가지뿐입니다. 새 시스템을 설계할 일이 아니라, 이 클래스에서 공통부를 끌어올리는 일입니다.</p>
+    </div>
+    <div class="panel key">
+      <h3>발사 차단은 이미 태그로 돌아갑니다</h3>
+      <p class="note"><code>UPaintWeaponComponent::TriggerBlockedTags</code>가 ASC의 상태 태그를 보고 발사를 막습니다. 스위트 스피너가 <code>State.Item.SweetSpinner</code>로 이미 쓰고 있습니다.</p>
+      <p class="note">조준 중 무기를 막는 일은 <b>태그 하나를 목록에 넣는 데이터 작업</b>입니다.</p>
+    </div>
+    <div class="panel key">
+      <h3>디저트 폭격의 낙하는 파라미터화돼 있습니다</h3>
+      <p class="note"><code>APaintRain</code>은 <code>FPaintRainParams</code>(Origin · Direction · RowCount · Paintball · Seed)로 스폰되는 복제 스포너입니다.</p>
+      <p class="note">차지샷·꿀벌의 &ldquo;순차 낙하&rdquo;는 <b>이 액터를 다른 파라미터로 부르는 일</b>이지 새 낙하 시스템이 아닙니다.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 공통 흐름 -->
+<section>
+  <div class="sechead">
+    <p class="eyebrow">설계</p>
+    <h2>조준 모드 한 흐름</h2>
+    <p class="sub">세 아이템이 공유할 흐름입니다. 각 아이템은 &ldquo;미리보기를 어떻게 그리는가&rdquo;와 &ldquo;확정하면 무엇을 하는가&rdquo; 둘만 채웁니다.</p>
+  </div>
+  <div class="panel">
+    <div class="flow">
+      <span class="n">아이템 키</span><span class="a">→</span>
+      <span class="n">어빌리티 활성 · <code>State.Item.Aiming</code> 부착</span><span class="a">→</span>
+      <span class="n">미리보기 액터 스폰</span><span class="a">→</span>
+      <span class="n">매 틱 조준 추적</span><span class="a">→</span>
+      <span class="n">좌클릭</span><span class="a">→</span>
+      <span class="n"><code>OnAimConfirmed()</code></span><span class="a">→</span>
+      <span class="n"><code>FinishItem()</code></span>
+    </div>
+    <p class="note" style="margin-top:4px">좌클릭이 무기로 가지 않고 어빌리티로 가는 지점이 유일한 신규 배선입니다. <code>AUnit::StartFire()</code>에서 ASC에 <code>State.Item.Aiming</code>이 붙어 있으면 게임플레이 이벤트를 쏘고 무기 호출을 건너뜁니다. 이 한 분기로 세 아이템이 모두 해결됩니다.</p>
+  </div>
+  <div class="panel risk">
+    <h3>짚어둘 설계 변경 — 즉발 → 지속형</h3>
+    <p class="note">꿀풍선과 디저트 폭격은 지금 <b>즉발(Duration 0)</b>입니다. <code>UItemAbility</code> 주석대로 즉발은 <code>OnItemActivated</code> 직후 끝나고 GE도 상태 태그도 붙지 않습니다. 조준 모드는 확정할 때까지 어빌리티가 살아 있어야 하므로 <b>지속형으로 바꿔야 합니다.</b></p>
+    <p class="note">따라오는 것: 두 프로필에 <code>Duration</code>(조준 제한 시간)과 <code>EffectClass</code>, 상태 태그가 생깁니다. <code>ItemProfileAssetTest</code>가 즉발 아이템에서만 상태 태그 검사를 건너뛰므로, <b>바꾸는 순간 이 테스트가 태그를 요구합니다.</b> 기획의 &ldquo;디저트 폭격은 최대 지속 시간 없음&rdquo;은 넉넉한 상한(예: 15초)으로 두는 편이 안전합니다 — 조준한 채로 방치된 플레이어가 영원히 무기를 못 쏘는 상태가 되지 않습니다.</p>
+  </div>
+</section>
+
+<!-- 단계 -->
+<section>
+  <div class="sechead">
+    <p class="eyebrow">착수 순서</p>
+    <h2>7단계</h2>
+    <p class="sub"><span class="badge b-base" style="display:inline-block">선행</span> 이 끝나야 <span class="badge b-seq" style="display:inline-block">순차</span> 가 시작됩니다. <span class="badge b-par" style="display:inline-block">병렬</span> 은 아무 때나 따로 진행할 수 있습니다.</p>
+  </div>
+
+  <div class="steps">
+
+    <div class="step">
+      <span class="badge b-base">0 · 선행</span>
+      <div class="step-body">
+        <h3>공통 조준 모드 토대 <span class="est">2~3일 · 이후 3건이 여기 의존</span></h3>
+        <ul class="todo">
+          <li><span class="b">1</span><div>태그 2개 추가: <code>State.Item.Aiming</code>, <code>Event.Item.ConfirmAim</code></div></li>
+          <li><span class="b">2</span><div><code>AUnit::StartFire()</code>에 확정 분기 — 조준 중이면 이벤트를 쏘고 <code>PaintWeapon-&gt;PullTrigger()</code>를 건너뛴다</div></li>
+          <li><span class="b">3</span><div><code>UItemAimAbility : UItemAbility</code> 신설 — 미리보기 액터 수명, 틱 조준 추적, 확정 이벤트 대기, 취소·만료 정리. 가상 함수는 <code>SpawnPreview()</code> / <code>UpdatePreview()</code> / <code>OnAimConfirmed()</code> 셋</div></li>
+          <li><span class="b">4</span><div><code>BP_Unit</code>의 <code>TriggerBlockedTags</code>에 <code>State.Item.Aiming</code> 추가 (데이터)</div></li>
+        </ul>
+        <div class="files"><code>ItemGameplayTags.h/.cpp</code> <code>Unit.cpp</code> <code>ItemAimAbility.h/.cpp</code> <code>BP_Unit</code></div>
+        <div class="verify"><b>검증</b> &nbsp; 자동화 테스트: 태그가 붙은 동안 <code>PullTrigger</code>가 탄을 쏘지 않을 것 / 확정 이벤트가 어빌리티에 도달할 것. 헤드리스로 돌아가므로 에디터 없이 확인됩니다.</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="badge b-seq">1 · 순차</span>
+      <div class="step-body">
+        <h3>디저트 폭격 <span class="est">1~2일 · 토대 검증용으로 먼저</span></h3>
+        <p class="note">셋 중 가장 단순합니다. 미리보기가 수평 직선이고, 확정 시 호출할 코드(<code>APaintRain</code> 스폰)가 이미 완성돼 있어 <b>기존 로직을 한 줄도 고치지 않고 호출 시점만 옮기면</b> 됩니다. 토대가 제대로 잡혔는지 가장 싸게 확인할 수 있는 항목이라 1번에 둡니다.</p>
+        <ul class="todo">
+          <li><span class="b">1</span><div>프로필을 지속형으로 전환 (Duration 상한 + 상태 태그)</div></li>
+          <li><span class="b">2</span><div>바라보는 수평 방향으로 폭격 경로 미리보기</div></li>
+          <li><span class="b">3</span><div>확정 시 지금의 <code>OnItemActivated</code> 본문을 그대로 실행</div></li>
+        </ul>
+        <div class="files"><code>DessertBombardmentAbility.cpp</code> <code>DessertBombardmentProfile.h</code> <code>DA_Item_DessertBombardment</code></div>
+        <div class="verify"><b>검증</b> &nbsp; PIE에서 조준 → 좌클릭 → 기존과 같은 폭격이 나올 것. 조준 중 무기가 발사되지 않을 것.</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="badge b-seq">2 · 순차</span>
+      <div class="step-body">
+        <h3>꿀풍선 <span class="est">1~2일</span></h3>
+        <p class="note">디저트 폭격과 같은 구조이고 미리보기만 포물선입니다. 궤적은 <code>ThrowSpeed 3000</code> · 탄의 <code>GravityScale</code>로 엔진의 경로 예측을 그대로 쓸 수 있어, 실제 비행과 어긋날 일이 없습니다.</p>
+        <ul class="todo">
+          <li><span class="b">1</span><div>프로필 지속형 전환</div></li>
+          <li><span class="b">2</span><div>포물선 궤적 미리보기 + 착탄 예상 지점 표시</div></li>
+          <li><span class="b">3</span><div>확정 시 기존 투척 코드 호출</div></li>
+        </ul>
+        <div class="files"><code>HoneyBalloonAbility.cpp</code> <code>HoneyBalloonProfile.h</code> <code>DA_Item_HoneyBalloon</code></div>
+        <div class="verify"><b>검증</b> &nbsp; 미리보기 궤적의 끝과 실제 착탄 지점이 일치할 것.</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="badge b-seq">3 · 순차</span>
+      <div class="step-body">
+        <h3>히어로 랜딩 <span class="est">3~4일 · 가장 위험</span></h3>
+        <p class="note">이미 지속형·마커·틱 추적을 갖고 있어 토대로 이관하는 부분은 오히려 쉽습니다. 어려운 쪽은 <b>부양 2초 + 충전 비례 범위</b>입니다. 이 아이템만 <code>UUnitMovementComponent</code>의 히어로 랜딩 페이즈(압축 플래그 <code>FLAG_Custom_2</code>, <code>FSavedMove_Unit</code> 리플레이)와 맞물려 있어, 네트워크 예측이 걸린 유일한 항목입니다. 그래서 마지막에 둡니다.</p>
+        <ul class="todo">
+          <li><span class="b">1</span><div>기존 마커/틱 로직을 <code>UItemAimAbility</code>로 이관</div></li>
+          <li><span class="b">2</span><div>공중 부양 단계(최대 2초) — 무브먼트 페이즈에 추가</div></li>
+          <li><span class="b">3</span><div>원 2개: 최대 범위(고정) + 부양 시간 비례(확대)</div></li>
+          <li><span class="b">4</span><div>확정 시 충전량으로 <code>Burst</code>의 반경·도포량 스케일</div></li>
+        </ul>
+        <div class="files"><code>HeroLandingAbility.cpp</code> <code>HeroLandingProfile.h</code> <code>UnitMovementComponent.cpp</code> <code>BP_LandingMarker</code></div>
+        <div class="verify"><b>검증</b> &nbsp; 리슨 서버 + 클라이언트 2인 PIE에서 부양·착지가 양쪽에 같게 보일 것. 러버밴딩 없을 것.</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="badge b-par">4 · 병렬</span>
+      <div class="step-body">
+        <h3>무한 탄환 발사 속도 버프 <span class="est">1일 · 토대와 무관</span></h3>
+        <p class="note">무기가 이미 <code>State.Item.InfiniteAmmo</code> 태그를 보고 잉크 비용을 0으로 칩니다. 발사 간격과 충전 시간도 <b>같은 자리에서 같은 태그로</b> 대체하면 됩니다. 조준 모드와 겹치는 코드가 없어 먼저 끝내기 좋습니다.</p>
+        <ul class="todo">
+          <li><span class="b">1</span><div>태그가 있을 때 <code>ShotsPerSecond</code> 대신 버프 값 사용 (샷건 0.1초 간격)</div></li>
+          <li><span class="b">2</span><div>태그가 있을 때 <code>ChargeTime</code> 대신 버프 값 사용 (차지샷 0.5초)</div></li>
+          <li><span class="b">3</span><div>버프 값은 <code>UInfiniteAmmoProfile</code>에 노출해 데이터로 조정</div></li>
+        </ul>
+        <div class="files"><code>PaintWeaponComponent.cpp</code> <code>InfiniteAmmoProfile.h</code> <code>DA_Item_InfiniteAmmo</code></div>
+        <div class="verify"><b>검증</b> &nbsp; 아이템 중 연사 간격과 충전 시간이 실제로 줄 것. 끝나면 원래대로 돌아올 것.</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="badge b-par">5 · 병렬</span>
+      <div class="step-body">
+        <h3>차지샷 순차 낙하 <span class="est">1~2일</span></h3>
+        <p class="note">차지샷은 <b>이미 광선 아래 바닥을 40 cm 간격으로 최대 256번 찍어 칠하고 있습니다</b>(<code>Trail</code>). 없는 것은 순차 타이밍과 낙하 연출뿐이라, <code>APaintRain</code>을 스나이퍼 궤적 위에 재생하면 됩니다.</p>
+        <ul class="todo">
+          <li><span class="b">1</span><div>발사 지점·방향·사거리로 <code>FPaintRainParams</code> 구성</div></li>
+          <li><span class="b">2</span><div><b>이중 도포 방지</b> — 아래 결정 항목 참고</div></li>
+        </ul>
+        <div class="files"><code>PaintSniperProfile.cpp</code> <code>PaintRain.cpp</code></div>
+        <div class="verify"><b>검증</b> &nbsp; 한 발의 도포 면적이 지금과 같을 것(두 배가 되면 이중 도포).</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="badge b-par">6 · 병렬</span>
+      <div class="step-body">
+        <h3>꿀벌 낙하 방식 전환 &amp; 초콜릿 분수 충돌 검증 <span class="est">1일 + 테스트</span></h3>
+        <p class="note">꿀벌은 파열(<code>Burst</code> 20발 @ 100 cm/s)을 5단계와 같은 낙하 방식으로 교체합니다. 5단계에서 만든 코드를 그대로 씁니다.</p>
+          <p class="note">초콜릿 분수는 코드 작업이 아니라 <b>플레이 테스트</b>입니다. 돔이 <code>Paintball</code> 채널만 차단하므로, 상대 기본 탄과 아이템 투사체가 실제로 막히는지 확인하고 결과에 따라 채널 설정을 조정합니다.</p>
+        <div class="files"><code>BeeAbility.cpp</code> <code>DA_Item_Bee</code> <code>ChocolateFountain.cpp</code></div>
+        <div class="verify"><b>검증</b> &nbsp; 꿀벌이 자기 팀 색으로 칠할 것. 돔 안팎에서 탄 차단 여부를 표로 기록.</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- 일정 -->
+<section>
+  <div class="sechead">
+    <p class="eyebrow">묶기</p>
+    <h2>두 갈래로 나누면 대기 시간이 없습니다</h2>
+  </div>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>갈래</th><th>순서</th><th>합계</th><th>성격</th></tr></thead>
+      <tbody>
+        <tr><td class="name">A · 조준 모드</td><td>0 선행 → 1 디저트 폭격 → 2 꿀풍선 → 3 히어로 랜딩</td><td class="num">7~11일</td><td>서로 의존. 한 사람이 이어서 하는 편이 낫습니다</td></tr>
+        <tr><td class="name">B · 독립 항목</td><td>4 무한 탄환 → 5 차지샷 낙하 → 6 꿀벌 · 초콜릿 분수</td><td class="num">3~5일</td><td>0단계를 기다릴 필요 없음. 다른 사람이 동시에 진행 가능</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">한 사람이 전부 한다면 <b>4 → 0 → 1 → 2 → 5 → 6 → 3</b> 순을 권합니다. 4단계로 손을 풀고, 가장 위험한 히어로 랜딩을 토대가 세 번 검증된 뒤 마지막에 손대는 순서입니다.</p>
+</section>
+
+<!-- 결정 -->
+<section>
+  <div class="sechead">
+    <p class="eyebrow">착수 전 결정</p>
+    <h2>정해야 진행되는 것</h2>
+  </div>
+  <div class="cols">
+    <div class="panel ask">
+      <h3>조준 제한 시간</h3>
+      <p class="note">기획에는 &ldquo;디저트 폭격은 최대 지속 시간 없음&rdquo;이라 적혀 있는데, 무제한이면 조준한 채 방치된 플레이어가 <b>무기를 영원히 못 쓰는 상태</b>가 됩니다. 넉넉한 상한(10~15초, 만료 시 자동 취소)을 권합니다. 꿀풍선·히어로 랜딩도 같은 값으로 맞출지 정해야 합니다.</p>
+    </div>
+    <div class="panel ask">
+      <h3>차지샷 이중 도포</h3>
+      <p class="note">차지샷은 이미 <code>Trail</code>로 바닥을 칠합니다. 낙하 연출을 붙일 때 <b>떨어지는 탄도 칠하게 두면 같은 자리를 두 번 칠합니다.</b> 둘 중 하나를 정해야 합니다 — ① 낙하는 연출만(탄이 칠하지 않음), ② 기존 <code>Trail</code>을 끄고 낙하하는 탄이 칠함. ②가 더 자연스럽지만 P0의 커버리지 <span class="num">5 %</span> 목표 계산을 다시 해야 합니다.</p>
+    </div>
+    <div class="panel ask">
+      <h3>조준 취소 수단</h3>
+      <p class="note">기획에 없는 항목입니다. 조준을 시작한 뒤 <b>마음을 바꿀 방법</b>이 있어야 합니다(우클릭 취소, 아이템 키 재입력, 또는 취소 불가). 취소 시 아이템을 돌려줄지도 함께 정해야 합니다.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  &ldquo;기존 코드&rdquo; 관련 서술은 <code>UItemAbility</code> · <code>UGA_HeroLanding</code> · <code>UPaintWeaponComponent</code> · <code>APaintRain</code> · <code>AUnit</code> 소스를 직접 읽고 확인했습니다. 일정 추정은 기존 구현 재사용을 전제로 하며 착수 전 담당자 확인이 필요합니다.
+</footer>
+
+</div>
+</body>
+</html>
