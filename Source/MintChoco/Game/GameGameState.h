@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/GameStateBase.h"
+
+#include "Game/TeamTypes.h"
 #include "Paint/PaintCellGrid.h"
 #include "Paint/PaintSplatLog.h"
 #include "Paint/PaintStar.h"
@@ -19,6 +21,23 @@ enum class EMatchPhase : uint8
 	Countdown			UMETA(DisplayName = "카운트다운"),
 	Playing				UMETA(DisplayName = "경기 중"),
 	Ended				UMETA(DisplayName = "종료"),
+};
+
+/**
+ * KO 판정의 순수 계산. 월드도 액터도 없이 테스트된다.
+ */
+struct MINTCHOCO_API FKnockoutMath
+{
+	/**
+	 * 기준 점유율을 넘어선 팀. 없으면 Teams::None.
+	 *
+	 * 기준이 50 %를 넘으면 둘이 동시에 넘을 수 없지만, 기준을 낮게 잡아도 한 팀만
+	 * 골리도록 가장 많이 칠한 팀을 고른다.
+	 */
+	static int32 LeaderAboveThreshold(const FPaintCoverage& Coverage, float Threshold);
+
+	/** 게이지 채움 0~1. 0이 방금 시작, 1이 KO 직전. */
+	static float Progress(float Remaining, float HoldSeconds);
 };
 
 /**
@@ -134,6 +153,46 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Match")
 	void BP_OnMatchEnded(int32 InWinningTeam);
 
+	//~ KO 판정
+
+	/**
+	 * 한 팀이 기준 점유율을 유지하는 동안 도는 카운트다운. 다 돌면 남은 라운드 시간과
+	 * 무관하게 그 팀이 이긴다. 기준 아래로 내려가면 취소되고, 다시 올라오면 처음부터 센다.
+	 *
+	 * 아래 여섯 개가 UI 가 알아야 할 전부다. HUD 를 통째로 다른 것으로 바꿔도 이 API 만
+	 * 읽으면 되고, 반대로 이 규칙을 고쳐도 UI 는 건드릴 것이 없다. 남은 초가 아니라 서버
+	 * 시각을 복제하므로(경기 타이머와 같은 방식) 모든 머신이 같은 순간에 같은 눈금을 본다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Match|Knockout")
+	bool IsKnockoutPending() const;
+
+	/** KO 를 노리는 팀. 카운트다운 중이 아니면 Teams::None. */
+	UFUNCTION(BlueprintPure, Category = "Match|Knockout")
+	int32 GetKnockoutTeam() const { return KnockoutTeam; }
+
+	/** KO 까지 남은 초. 카운트다운 중이 아니면 0. */
+	UFUNCTION(BlueprintPure, Category = "Match|Knockout")
+	float GetKnockoutRemaining() const;
+
+	/** 게이지 채움 0~1. 카운트다운 중이 아니면 0. */
+	UFUNCTION(BlueprintPure, Category = "Match|Knockout")
+	float GetKnockoutProgress() const;
+
+	/** KO 기준 점유율(0~1). UI 가 "70 %" 를 직접 적어 두지 않아도 되도록 노출한다. */
+	UFUNCTION(BlueprintPure, Category = "Match|Knockout")
+	float GetKnockoutThreshold() const { return KnockoutThreshold; }
+
+	/** 한 번 다 차면 걸리는 시간(초). 게이지의 전체 길이를 뜻한다. */
+	UFUNCTION(BlueprintPure, Category = "Match|Knockout")
+	float GetKnockoutHoldSeconds() const { return KnockoutHoldSeconds; }
+
+	/**
+	 * 카운트다운이 시작되거나 취소될 때 서버와 모든 클라이언트에서 한 번씩.
+	 * 매 프레임 폴링하지 않으려는 UI 는 이것만 받아도 된다.
+	 */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Match|Knockout")
+	void BP_OnKnockoutPendingChanged(bool bPending, int32 Team);
+
 protected:
 	/** 커버리지를 다시 재서 복제하는 간격(초). */
 	UPROPERTY(EditDefaultsOnly, Category = "Paint", meta = (ClampMin = "0.05"))
@@ -169,6 +228,30 @@ protected:
 
 	UPROPERTY(Replicated)
 	float MatchDuration = 0.0f;
+
+	/**
+	 * 한 팀이 이 점유율(0~1) 이상을 KnockoutHoldSeconds 동안 지키면 즉시 이긴다.
+	 * 0 이하로 두면 KO 판정 자체가 꺼진다.
+	 *
+	 * 점유율은 HUD 게이지와 같은 값(칠한 면적 / 도포 가능 전체 면적)이다. 맵에 닿을 수 없는
+	 * 면이 있으면 그만큼 분모에 남아 있으므로, 기준은 맵마다 다시 재서 정해야 한다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Match", meta = (ClampMin = "0", ClampMax = "1"))
+	float KnockoutThreshold = 0.7f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Match", meta = (ClampMin = "0.1", ForceUnits = "s"))
+	float KnockoutHoldSeconds = 5.0f;
+
+	/** KO 가 성립하는 서버 월드 시각. 0 이면 아무도 몰아붙이고 있지 않다. */
+	UPROPERTY(Replicated)
+	double KnockoutEndServerTime = 0.0;
+
+	/** 지금 KO 를 노리는 팀. 시각과 함께 복제되므로 RepNotify 안에서 같이 읽어도 된다. */
+	UPROPERTY(ReplicatedUsing = OnRep_KnockoutTeam)
+	int32 KnockoutTeam = Teams::None;
+
+	UFUNCTION()
+	void OnRep_KnockoutTeam();
 
 	UFUNCTION()
 	void OnRep_MatchPhase();
@@ -207,6 +290,15 @@ private:
 	void PushStarPaint();
 
 	void HandleMatchEnded();
+
+	/**
+	 * 서버 전용. 방금 잰 커버리지로 KO 카운트다운을 시작·유지·취소하고, 다 돌았으면 끝낸다.
+	 * RefreshCoverage 끝에서 불린다 — 커버리지가 갱신되는 바로 그 순간이 판정할 순간이다.
+	 */
+	void UpdateKnockout();
+
+	/** 서버 전용. 노리는 팀을 바꾼다. Teams::None 이면 카운트다운을 지운다. */
+	void SetKnockoutTeam(int32 NewTeam);
 
 	/**
 	 * 팀별 점유 면적을 화면에 띄운다. 콘솔 변수 mc.ShowCoverage 로 켠다.

@@ -36,7 +36,14 @@ public:
 	 * when it initializes. A cosmetic ball is a client's picture of one the server owns: it flies
 	 * and dies identically but leaves no paint.
 	 */
-	void Init(const UPaintballProfile* InProfile, uint8 InPaintId, int32 InSeed, const FVector& Velocity, bool bInCosmetic);
+	/**
+	 * InDropAfterOverride 가 0 이상이면 프로필의 DropAfter 대신 그 시간을 쓴다.
+	 *
+	 * 프로필의 값은 “이 탄은 언제나 이 거리에서 떨어진다” 는 뜻이다. 한 번의 사격이 여러 발을
+	 * 서로 다른 거리에 떨어뜨려야 할 때(차지샷의 연속 발사)만 발마다 다른 값을 받는다.
+	 */
+	void Init(const UPaintballProfile* InProfile, uint8 InPaintId, int32 InSeed, const FVector& Velocity, bool bInCosmetic,
+		float InDropAfterOverride = -1.0f);
 
 	/** 이 공이 칠하는 id(팀). 초콜릿 돔이 상대 탄을 가려낼 때 본다. */
 	uint8 GetPaintId() const { return PaintId; }

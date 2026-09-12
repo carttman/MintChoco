@@ -120,6 +120,25 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Unit|Aim")
 	bool bRecentlyFired = false;
 
+	/**
+	 * 무기 하나라도 지금 조준 자세를 요구하는 중인지. 방아쇠를 당긴 순간부터 놓을 때까지,
+	 * 그리고 차지샷을 충전하는 내내 참이다(UPaintWeaponComponent::IsAiming).
+	 *
+	 * bRecentlyFired 가 쏜 **뒤**의 여운을 맡는다면 이쪽은 쏘기 **전**과 충전 **중**을 맡는다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|Aim")
+	bool bIsAiming = false;
+
+	/**
+	 * **상체 조준 자세를 켜고 끄는 값. 애님 그래프는 이것 하나만 보면 된다.**
+	 *
+	 * bIsAiming(쏘기 전 · 충전 중)과 bRecentlyFired(쏜 뒤 FireHoldTime)를 합친 것이다.
+	 * 그래서 자세는 방아쇠를 당기는 순간 올라가 충전 내내 유지되고, 쏜 뒤에도 잠시 남았다가
+	 * 내려온다 — 총이 사라지는 시점(GunVisibleHoldTime)과도 맞는다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|Aim")
+	bool bWeaponPoseHeld = false;
+
 	//~ 튜닝
 
 	/** 이 속력(cm/s)을 넘어야 "이동 중"이다. */

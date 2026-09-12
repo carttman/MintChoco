@@ -361,6 +361,24 @@ private:
 	/** 연출의 몽타주 부분: 몽타주 에셋이 있으면 그것을, 없으면 Animation을 슬롯에 동적 몽타주로. */
 	void PlayFeedbackMontage(const struct FUnitActionFeedback& Feedback);
 
+	/**
+	 * 충전이 시작되고 끝날 때. 충전 중에는 총을 들고 발사 자세를 잡는다.
+	 *
+	 * 연출만의 문제가 아니다: 총은 캐릭터 메시의 Gun 소켓에 붙어 있고 발사 지점은 쏘는
+	 * 순간의 총구에서 재므로, IDLE 포즈로 충전하면 탄이 쉬는 손 위치에서 나간다.
+	 */
+	UFUNCTION()
+	void HandleChargingChanged(bool bCharging);
+
+	/**
+	 * 충전 자세를 슬롯에 건다. 충전은 놓을 때까지 이어지므로 한 번 재생으로는 모자라,
+	 * 충분히 오래 도는 루프로 얹어 두고 StopChargePose 가 걷어낸다.
+	 */
+	void StartChargePose();
+
+	/** 걸어 둔 충전 자세만 세운다. 슬롯째 세우면 방금 시작한 발사 동작까지 끊긴다. */
+	void StopChargePose();
+
 	/** 한 발 나갈 때마다. 총을 보이게 하고 유지 시간을 처음부터 다시 센다. */
 	void ShowGunForFire();
 
@@ -375,6 +393,9 @@ private:
 
 	/** 총을 숨기는 타이머. 발사마다 다시 걸려 마지막 한 발에서만 만료된다. */
 	FTimerHandle GunHideTimer;
+
+	/** 지금 걸려 있는 충전 자세. 이것만 골라 세우려고 들고 있는다. */
+	TWeakObjectPtr<class UAnimMontage> ChargePose;
 
 	UFUNCTION()
 	void OnRep_IsDashing();

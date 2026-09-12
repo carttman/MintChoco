@@ -202,20 +202,27 @@ void UPaintWeaponComponent::PullTrigger()
 		// so the release path stays symmetric; only the shot is skipped.
 		if (World->GetTimeSeconds() - LastShotTime >= GetEffectiveShotInterval())
 		{
-			FireOnce();
+			FireWhenAimReady();
+		}
+		else
+		{
+			// 연사 간격에 걸려 이 당김은 넘어가지만, 자세는 유지해야 다음 발이 기다리지 않는다.
+			SetAiming(true);
 		}
 		break;
 	case EPaintFireMode::Automatic:
-		FireOnce();
+		FireWhenAimReady();
 		GetWorld()->GetTimerManager().SetTimer(
 			ShotTimer, this, &UPaintWeaponComponent::OnShotTimer, GetEffectiveShotInterval(), /*bLoop=*/true);
 		break;
 	case EPaintFireMode::Continuous:
-		FireOnce();
+		FireWhenAimReady();
 		SetComponentTickEnabled(true);
 		break;
 	case EPaintFireMode::Charged:
 		PressTime = GetWorld()->GetTimeSeconds();
+		// 충전하는 내내 자세를 든다. 누르는 순간 올라가서 놓을 때까지 그대로다.
+		SetAiming(true);
 		SetCharging(true);
 		break;
 	}
@@ -241,14 +248,67 @@ void UPaintWeaponComponent::CancelTrigger()
 		return;
 	}
 
+	// 준비 중인 첫 발이 있으면 그 발이 나간 뒤에 해제를 마저 한다. 짧게 툭 클릭해도
+	// 한 발은 반드시 나가야 하고, 그 발은 자세가 올라온 뒤에 나가야 한다.
+	if (bShotPending)
+	{
+		bCancelAfterPendingShot = true;
+		return;
+	}
+
 	bTriggerHeld = false;
 	Stroke.Reset();
 	// Every way a hold ends - the shot, a cancel, a profile swap - passes through here.
 	SetCharging(false);
+	// 쏜 뒤의 여운은 애님 인스턴스의 FireHoldTime 이 맡는다. 여기서는 “쏘려고 들고 있다” 를 내린다.
+	SetAiming(false);
 	SetComponentTickEnabled(false);
 	if (const UWorld* const World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(ShotTimer);
+	}
+}
+
+void UPaintWeaponComponent::SetAiming(bool bNewAiming)
+{
+	bAiming = bNewAiming;
+}
+
+void UPaintWeaponComponent::FireWhenAimReady()
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 이미 들고 있거나, 방금 쏴서 자세가 아직 내려오지 않았으면 기다릴 것이 없다.
+	const bool bPoseAlreadyUp = bAiming || (World->GetTimeSeconds() - LastShotTime <= AimHoldSeconds);
+	SetAiming(true);
+
+	if (bPoseAlreadyUp)
+	{
+		FireOnce();
+		return;
+	}
+
+	// 자세가 올라오는 동안 기다린다. 0 이면 다음 틱 — 타이머는 0 이하를 “해제” 로 읽으므로
+	// 아주 작은 값을 준다.
+	bShotPending = true;
+	World->GetTimerManager().SetTimer(AimReadyTimer, this, &UPaintWeaponComponent::FireAfterAimReady,
+		FMath::Max(AimReadyDelay, UE_SMALL_NUMBER), /*bLoop=*/false);
+}
+
+void UPaintWeaponComponent::FireAfterAimReady()
+{
+	bShotPending = false;
+	FireOnce();
+
+	// 준비를 기다리는 사이에 방아쇠가 풀렸다면 이제 해제를 처리한다.
+	if (bCancelAfterPendingShot)
+	{
+		bCancelAfterPendingShot = false;
+		CancelTrigger();
 	}
 }
 
@@ -277,14 +337,7 @@ void UPaintWeaponComponent::SetCharging(bool bNewCharging)
 	// The machine that set the value never gets its own OnRep, and a dedicated server draws nothing.
 	if (GetNetMode() != NM_DedicatedServer)
 	{
-		if (bNewCharging)
-		{
-			StartChargeFX();
-		}
-		else
-		{
-			StopChargeFX();
-		}
+		ApplyChargingVisuals(bNewCharging);
 	}
 }
 
@@ -302,20 +355,18 @@ void UPaintWeaponComponent::ServerSetCharging_Implementation(bool bNewCharging)
 	// A listen server renders this pawn too, and OnRep never fires on the machine that assigned.
 	if (GetNetMode() != NM_DedicatedServer)
 	{
-		if (bNewCharging)
-		{
-			StartChargeFX();
-		}
-		else
-		{
-			StopChargeFX();
-		}
+		ApplyChargingVisuals(bNewCharging);
 	}
 }
 
 void UPaintWeaponComponent::OnRep_Charging()
 {
-	if (bCharging)
+	ApplyChargingVisuals(bCharging);
+}
+
+void UPaintWeaponComponent::ApplyChargingVisuals(bool bNewCharging)
+{
+	if (bNewCharging)
 	{
 		StartChargeFX();
 	}
@@ -323,6 +374,10 @@ void UPaintWeaponComponent::OnRep_Charging()
 	{
 		StopChargeFX();
 	}
+
+	// 캐릭터가 총을 들고 자세를 잡는 것은 연출만의 일이 아니다: 발사 지점이 그 순간의
+	// 총구라서, 자세가 잡혀 있어야 탄이 총열에서 나간다.
+	OnChargingChanged.Broadcast(bNewCharging);
 }
 
 void UPaintWeaponComponent::StartChargeFX()
@@ -333,10 +388,11 @@ void UPaintWeaponComponent::StartChargeFX()
 	}
 
 	const FVector Scale(Profile->ChargeFXScale);
-	if (USkeletalMeshComponent* const Mesh = GetMuzzleMesh())
+	FName AttachSocket = NAME_None;
+	if (USceneComponent* const Attachment = GetMuzzleAttachment(AttachSocket))
 	{
 		ChargeFXComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
-			Profile->ChargeFX, Mesh, MuzzleSocketName, FVector::ZeroVector, FRotator::ZeroRotator,
+			Profile->ChargeFX, Attachment, AttachSocket, FVector::ZeroVector, FRotator::ZeroRotator,
 			Scale, EAttachLocation::SnapToTarget,
 			// Deactivate leaves the last particles to finish and then cleans itself up; false would
 			// pile a dead component on the mesh for every charge.
@@ -595,6 +651,29 @@ USkeletalMeshComponent* UPaintWeaponComponent::GetMuzzleMesh() const
 	return (Mesh && !MuzzleSocketName.IsNone() && Mesh->DoesSocketExist(MuzzleSocketName)) ? Mesh : nullptr;
 }
 
+USceneComponent* UPaintWeaponComponent::GetMuzzleAttachment(FName& OutSocket) const
+{
+	// 총 메시가 총구를 갖고 있으면 그쪽이 먼저다. ComputeMuzzleTransform 과 같은 순서라야
+	// 탄이 나가는 곳과 불꽃이 피는 곳이 같다.
+	if (USceneComponent* const Source = MuzzleSource.Get())
+	{
+		if (!MuzzleSourceSocket.IsNone() && Source->DoesSocketExist(MuzzleSourceSocket))
+		{
+			OutSocket = MuzzleSourceSocket;
+			return Source;
+		}
+	}
+
+	if (USkeletalMeshComponent* const Mesh = GetMuzzleMesh())
+	{
+		OutSocket = MuzzleSocketName;
+		return Mesh;
+	}
+
+	OutSocket = NAME_None;
+	return nullptr;
+}
+
 void UPaintWeaponComponent::PlayMuzzleFX(float ChargeFraction)
 {
 	UWorld* const World = GetWorld();
@@ -606,10 +685,11 @@ void UPaintWeaponComponent::PlayMuzzleFX(float ChargeFraction)
 	const FVector Scale(Profile->GetMuzzleFXScale(ChargeFraction));
 
 	// Attached, so a one-shot flash stays on the barrel while the gun moves.
-	if (USkeletalMeshComponent* const Mesh = GetMuzzleMesh())
+	FName AttachSocket = NAME_None;
+	if (USceneComponent* const Attachment = GetMuzzleAttachment(AttachSocket))
 	{
 		UNiagaraFunctionLibrary::SpawnSystemAttached(
-			Profile->MuzzleFX, Mesh, MuzzleSocketName, FVector::ZeroVector, FRotator::ZeroRotator,
+			Profile->MuzzleFX, Attachment, AttachSocket, FVector::ZeroVector, FRotator::ZeroRotator,
 			Scale, EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true, ENCPoolMethod::None);
 		return;
 	}

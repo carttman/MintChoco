@@ -2,6 +2,7 @@
 
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "Game/GameGameMode.h"
 #include "Game/TeamTypes.h"
 #include "MintChoco.h"
 #include "Net/UnrealNetwork.h"
@@ -74,6 +75,8 @@ void AGameGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(AGameGameState, MatchPhase);
 	DOREPLIFETIME(AGameGameState, CountdownEndServerTime);
 	DOREPLIFETIME(AGameGameState, MatchDuration);
+	DOREPLIFETIME(AGameGameState, KnockoutEndServerTime);
+	DOREPLIFETIME(AGameGameState, KnockoutTeam);
 }
 
 bool AGameGameState::AllowsPlayerInput(EMatchPhase Phase)
@@ -388,4 +391,128 @@ void AGameGameState::RefreshCoverage()
 
 	// RepNotify는 값을 쓴 권한자에게 오지 않으므로, 서버 화면은 여기서 직접 갱신한다.
 	DrawCoverageDebug();
+
+	// 커버리지가 막 갱신된 지금이 KO를 판정할 순간이다. 따로 타이머를 두면 두 값이 어긋난다.
+	UpdateKnockout();
+}
+
+// ---------------------------------------------------------------- KO 판정
+
+int32 FKnockoutMath::LeaderAboveThreshold(const FPaintCoverage& Coverage, float Threshold)
+{
+	if (Threshold <= 0.0f)
+	{
+		return Teams::None;
+	}
+
+	int32 Leader = Teams::None;
+	float LeaderFraction = 0.0f;
+	for (int32 Team = 0; Team < Teams::Count; ++Team)
+	{
+		const float Fraction = Coverage.GetFraction(static_cast<uint8>(Team));
+		if (Fraction >= Threshold && Fraction > LeaderFraction)
+		{
+			Leader = Team;
+			LeaderFraction = Fraction;
+		}
+	}
+	return Leader;
+}
+
+float FKnockoutMath::Progress(float Remaining, float HoldSeconds)
+{
+	if (HoldSeconds <= 0.0f)
+	{
+		return 0.0f;
+	}
+	return FMath::Clamp(1.0f - Remaining / HoldSeconds, 0.0f, 1.0f);
+}
+
+bool AGameGameState::IsKnockoutPending() const
+{
+	// 팀과 시각이 같은 프레임에 복제되므로 둘 다 보고 판단한다. 경기가 끝난 뒤에는
+	// 남아 있던 게이지가 결과 화면 위에 겹치지 않도록 꺼진다.
+	return Teams::IsValidId(KnockoutTeam) && KnockoutEndServerTime > 0.0 && !bMatchEnded;
+}
+
+float AGameGameState::GetKnockoutRemaining() const
+{
+	if (!IsKnockoutPending())
+	{
+		return 0.0f;
+	}
+	return static_cast<float>(FMath::Max(0.0, KnockoutEndServerTime - GetServerWorldTimeSeconds()));
+}
+
+float AGameGameState::GetKnockoutProgress() const
+{
+	return IsKnockoutPending() ? FKnockoutMath::Progress(GetKnockoutRemaining(), KnockoutHoldSeconds) : 0.0f;
+}
+
+void AGameGameState::OnRep_KnockoutTeam()
+{
+	BP_OnKnockoutPendingChanged(IsKnockoutPending(), KnockoutTeam);
+}
+
+void AGameGameState::SetKnockoutTeam(int32 NewTeam)
+{
+	if (KnockoutTeam == NewTeam)
+	{
+		return;
+	}
+
+	KnockoutTeam = NewTeam;
+	// 시각을 팀보다 먼저 써 둔다. 한 번치로 함께 복제되므로 RepNotify가 둘 다 본 상태에서 돈다.
+	KnockoutEndServerTime = Teams::IsValidId(NewTeam)
+		? GetServerWorldTimeSeconds() + KnockoutHoldSeconds
+		: 0.0;
+
+	if (Teams::IsValidId(NewTeam))
+	{
+		UE_LOG(LogMintChoco, Log, TEXT("KO 카운트다운 시작: %s (점유율 %.1f%%, %.1f초)"),
+			Teams::GetDisplayName(NewTeam), WorldCoverage.GetFraction(static_cast<uint8>(NewTeam)) * 100.0f, KnockoutHoldSeconds);
+	}
+	else
+	{
+		UE_LOG(LogMintChoco, Log, TEXT("KO 카운트다운 취소: 기준 아래로 내려왔다."));
+	}
+
+	// RepNotify는 값을 쓴 권한자에게 오지 않는다. 리슨 호스트의 UI도 같이 움직이도록 직접 부른다.
+	OnRep_KnockoutTeam();
+}
+
+void AGameGameState::UpdateKnockout()
+{
+	// 경기 중에만 센다. 카운트다운 단계나 종료 뒤의 점유율로 이길 수는 없다.
+	if (MatchPhase != EMatchPhase::Playing || bMatchEnded)
+	{
+		SetKnockoutTeam(Teams::None);
+		return;
+	}
+
+	const int32 Leader = FKnockoutMath::LeaderAboveThreshold(WorldCoverage, KnockoutThreshold);
+
+	// 기준 아래로 내려왔거나 선두가 바뀌었다면 처음부터 다시 센다. SetKnockoutTeam이
+	// 같은 팀이면 아무것도 하지 않으므로, 유지되는 동안 시각은 그대로 남는다.
+	SetKnockoutTeam(Leader);
+	if (!Teams::IsValidId(Leader))
+	{
+		return;
+	}
+
+	if (GetServerWorldTimeSeconds() < KnockoutEndServerTime)
+	{
+		return;
+	}
+
+	// 다 버텼다. 게임 모드가 아이템 스폰까지 정리하고 끝낸다.
+	if (AGameGameMode* const Mode = GetWorld() ? GetWorld()->GetAuthGameMode<AGameGameMode>() : nullptr)
+	{
+		Mode->EndMatchByKnockout(Leader);
+	}
+	else
+	{
+		// 게임 모드가 없는 구성(샘플 맵)에서도 결과는 남긴다.
+		SetMatchResult(Leader);
+	}
 }

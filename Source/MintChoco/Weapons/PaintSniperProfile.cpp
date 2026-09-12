@@ -9,6 +9,7 @@
 #include "Items/ChocolateFountain.h"
 #include "Paint/PaintLog.h"
 #include "Weapons/PaintProjectile.h"
+#include "Weapons/PaintVolley.h"
 
 namespace
 {
@@ -38,6 +39,10 @@ void UPaintSniperProfile::LogUnsetReferences(const UObject* Owner) const
 	UE_CLOG(!Impact.CanPaint(), LogPaint, Warning, TEXT("%s: %s has no Impact BrushProfile, the ray's end will not paint."),
 		*GetNameSafe(Owner), *GetName());
 	UE_CLOG(!Trail.CanPaint(), LogPaint, Warning, TEXT("%s: %s has no Trail BrushProfile, the ground under the ray will not paint."),
+		*GetNameSafe(Owner), *GetName());
+	// 순차 발사도 즉발 도포도 없으면 광선 아래에 아무것도 남지 않는다. 조용히 사라지는 대신 알린다.
+	UE_CLOG(!VolleyPaintball && bSkipTrailWhenVolleying && !Trail.CanPaint(), LogPaint, Warning,
+		TEXT("%s: %s paints nothing under the ray: no VolleyPaintball and no Trail brush."),
 		*GetNameSafe(Owner), *GetName());
 }
 
@@ -126,7 +131,18 @@ bool UPaintSniperProfile::Fire(const FPaintFireContext& Context, FPaintStrokeSta
 		Impact.ApplyHit(Context.World, Hit, Context.ViewDirection * NominalImpactSpeed, Context.PaintId, Context.Seed);
 	}
 
-	PaintTrail(*Context.World, MuzzleLocation, OutShot.Direction, Length, Context.Instigator, Victim, Context.PaintId, Context.Seed);
+	// 순차 발사를 쓰면 줄무늬는 탄이 닿는 순서대로 생긴다. 즉발 도포를 함께 켜 두면 이미
+	// 칠해진 자리에 탄이 도착해 연출이 눈에 보이지 않으므로, 기본은 즉발 쪽을 건너뛴다.
+	const bool bVolleying = VolleyPaintball != nullptr;
+	if (!bVolleying || !bSkipTrailWhenVolleying)
+	{
+		PaintTrail(*Context.World, MuzzleLocation, OutShot.Direction, Length, Context.Instigator, Victim, Context.PaintId, Context.Seed);
+	}
+	if (bVolleying)
+	{
+		SpawnTrailVolley(*Context.World, MuzzleLocation, OutShot.Direction, Length,
+			Context.Instigator, Context.PaintId, Context.Seed);
+	}
 
 	// The shot multicast skips the authority, which shows its own tracer here instead.
 	DrawTracer(*Context.World, MuzzleLocation, End);
@@ -163,6 +179,33 @@ void UPaintSniperProfile::PaintTrail(UWorld& World, const FVector& Muzzle, const
 			: static_cast<int32>(HashCombineFast(static_cast<uint32>(Seed), static_cast<uint32>(Index)));
 		Trail.ApplyHit(&World, Drop, IncidentVelocity, PaintId, SampleSeed);
 	}
+}
+
+void UPaintSniperProfile::SpawnTrailVolley(UWorld& World, const FVector& Muzzle, const FVector& Direction, float Length,
+	APawn* Shooter, uint8 PaintId, int32 Seed) const
+{
+	const float Spacing = FMath::Max(VolleySpacing, 10.0f);
+	// 착탄 지점은 조준선을 따라 잰다. 마지막 한 발은 광선 끝의 Impact 자국과 겹치지 않도록 뺀다.
+	const int32 Shots = FMath::Clamp(FMath::FloorToInt((Length - Spacing * 0.5f) / Spacing), 0, MaxVolleyShots);
+	if (Shots <= 0)
+	{
+		return;
+	}
+
+	FPaintVolleyParams Params;
+	// 하늘이 아니라 총구에서 나간다. 좌클릭 무기와 같은 자리, 같은 높이다.
+	Params.Origin = Muzzle;
+	Params.Direction = Direction;
+	Params.Count = Shots;
+	Params.Spacing = Spacing;
+	Params.Interval = VolleyInterval;
+	Params.Speed = VolleySpeed;
+	Params.DropLead = VolleyDropLead;
+	Params.Paintball = VolleyPaintball;
+	Params.PaintId = PaintId;
+	Params.Seed = Seed;
+
+	APaintVolley::Spawn(World, Params, Shooter, VolleyClass);
 }
 
 void UPaintSniperProfile::PlayCosmetic(UWorld& World, APawn* Instigator, const FPaintShot& Shot) const

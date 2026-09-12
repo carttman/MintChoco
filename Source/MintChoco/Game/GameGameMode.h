@@ -53,6 +53,14 @@ public:
 	/** 모든 플레이어가 준비됐는지. 플레이어가 없으면 false. 순수 함수라 테스트가 액터 없이 검사한다. */
 	static bool AreAllReady(const TArray<bool>& bReady);
 
+	/**
+	 * 서버 전용. KO 로 경기를 끝낸다. 남은 라운드 시간과 무관하게 Team 이 이긴다.
+	 *
+	 * 판정 자체는 AGameGameState 가 커버리지를 갱신할 때 한다. 여기서는 시간 만료와 같은
+	 * 뒷정리(타이머 회수)만 하고 결과를 넘긴다 — 커버리지는 방금 잰 값이라 다시 재지 않는다.
+	 */
+	void EndMatchByKnockout(int32 Team);
+
 protected:
 	/** 아이템이 나오는 주기(초). 0 이하면 아이템이 나오지 않는다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Items", meta = (ClampMin = "0.0", ForceUnits = "s"))

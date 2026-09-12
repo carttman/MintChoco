@@ -70,7 +70,8 @@ APaintProjectile::APaintProjectile()
 	Movement->bInitialVelocityInLocalSpace = false;
 }
 
-void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId, int32 InSeed, const FVector& Velocity, bool bInCosmetic)
+void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId, int32 InSeed, const FVector& Velocity, bool bInCosmetic,
+	float InDropAfterOverride)
 {
 	check(InProfile);
 	Profile = InProfile;
@@ -84,9 +85,15 @@ void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId,
 	Movement->ProjectileGravityScale = Profile->GravityScale;
 
 	// 사거리를 보이지 않는 선에서 지우는 대신, 날던 공이 힘을 잃고 떨어지는 것으로 보여준다.
-	if (Profile->DropAfter > 0.0f)
+	const float DropAfter = InDropAfterOverride >= 0.0f ? InDropAfterOverride : Profile->DropAfter;
+	if (DropAfter > 0.0f)
 	{
-		GetWorldTimerManager().SetTimer(DropTimer, this, &APaintProjectile::ApplyDropGravity, Profile->DropAfter, /*bLoop=*/false);
+		GetWorldTimerManager().SetTimer(DropTimer, this, &APaintProjectile::ApplyDropGravity, DropAfter, /*bLoop=*/false);
+	}
+	else if (InDropAfterOverride == 0.0f)
+	{
+		// 0 은 “처음부터 떨어져라” 다. 타이머로는 표현할 수 없으므로 그 자리에서 무겁게 만든다.
+		ApplyDropGravity();
 	}
 
 	Sphere->SetSphereRadius(Profile->Radius);
