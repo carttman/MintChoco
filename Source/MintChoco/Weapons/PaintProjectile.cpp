@@ -13,6 +13,7 @@
 #include "Paint/PaintSplat.h"
 #include "Weapons/PaintWeaponComponent.h"
 #include "Weapons/PaintballProfile.h"
+#include "Weapons/ProjectilePoolSubsystem.h"
 
 namespace
 {
@@ -106,13 +107,53 @@ UMaterialInterface* APaintProjectile::GetTeamMaterial(uint8 InPaintId) const
 	return TeamMaterials.IsValidIndex(InPaintId) ? TeamMaterials[InPaintId].Get() : nullptr;
 }
 
-void APaintProjectile::EndPlay(const EEndPlayReason::Type Reason)
+void APaintProjectile::RestoreForReuse()
 {
-	// The shooter's ignore list would otherwise grow by one dead entry per shot fired.
+	SetActorHiddenInGame(false);
+	SetActorEnableCollision(true);
+	Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+
+	// 충돌로 멈춘 무브먼트는 UpdatedComponent를 놓아 버린 상태다. 다시 쥐여 주지 않으면
+	// 속도를 넣어도 움직이지 않는다.
+	if (Movement->UpdatedComponent != Sphere)
+	{
+		Movement->SetUpdatedComponent(Sphere);
+	}
+	Movement->Activate(/*bReset=*/true);
+
+	SetLifeSpan(InitialLifeSpan);
+}
+
+void APaintProjectile::Deactivate()
+{
+	// 쏜 사람의 무시 목록에서 이 공을 뺀다. 풀 반납에는 EndPlay가 없으므로 여기가 유일한 기회다.
 	if (UPrimitiveComponent* const Body = GetMovingBody(GetInstigator()))
 	{
 		Body->IgnoreActorWhenMoving(this, false);
 	}
+	Sphere->ClearMoveIgnoreActors();
+
+	Movement->StopMovementImmediately();
+	Movement->Deactivate();
+
+	SetActorEnableCollision(false);
+	SetActorHiddenInGame(true);
+	SetLifeSpan(0.0f);
+}
+
+void APaintProjectile::LifeSpanExpired()
+{
+	if (UProjectilePoolSubsystem* const Pool = UProjectilePoolSubsystem::Get(this))
+	{
+		Pool->Release(this);
+		return;
+	}
+	Super::LifeSpanExpired();
+}
+
+void APaintProjectile::EndPlay(const EEndPlayReason::Type Reason)
+{
+	Deactivate();
 	Super::EndPlay(Reason);
 }
 
@@ -150,7 +191,9 @@ void APaintProjectile::OnPawnOverlap(UPrimitiveComponent*, AActor* OtherActor, U
 
 void APaintProjectile::OnHit(UPrimitiveComponent*, AActor*, UPrimitiveComponent*, FVector, const FHitResult& Hit)
 {
-	if (!IsValid(this) || IsActorBeingDestroyed())
+	// 풀에서 자고 있는 공에는 콜리전이 없지만, 반납 직전에 큐에 들어간 이벤트가 뒤늦게
+	// 도착할 수 있다. 숨어 있으면 이미 반납된 공이다.
+	if (!IsValid(this) || IsActorBeingDestroyed() || IsHidden())
 	{
 		return;
 	}
@@ -166,5 +209,10 @@ void APaintProjectile::OnHit(UPrimitiveComponent*, AActor*, UPrimitiveComponent*
 		Profile->Deposit.ApplyHit(GetWorld(), Hit, Velocity, PaintId, Seed);
 	}
 
+	if (UProjectilePoolSubsystem* const Pool = UProjectilePoolSubsystem::Get(this))
+	{
+		Pool->Release(this);
+		return;
+	}
 	Destroy();
 }
