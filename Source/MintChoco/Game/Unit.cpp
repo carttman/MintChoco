@@ -38,6 +38,12 @@
 #include "TimerManager.h"
 #include "Weapons/PaintWeaponComponent.h"
 
+namespace
+{
+	/** 총 메시에 있는 총구 소켓. 발사 지점과 총구 화염이 같이 쓴다. */
+	const FName GunMuzzleSocketName(TEXT("Muzzle"));
+}
+
 AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UUnitMovementComponent>(
 		ACharacter::CharacterMovementComponentName))
@@ -892,13 +898,28 @@ void AUnit::HandleWeaponFired(int32 Seed)
 		UGameplayStatics::SpawnSoundAttached(Feedback->Sound, GetRootComponent());
 	}
 
-	// 총구 화염 같은 일회성 이펙트. 소켓이 없으면 폰 위치에.
+	// 총구 화염 같은 일회성 이펙트. 총에 Muzzle 소켓이 있으면 총구에서, 없으면 캐릭터 메시의
+	// FXSocket에서 튼다. 둘 다 없으면 폰 위치에. 소켓 회전을 그대로 따르므로 총구 소켓의
+	// 축이 총열 방향을 봐야 화염이 앞으로 뻗는다.
 	if (Feedback->FX)
 	{
-		if (Feedback->FXSocket != NAME_None)
+		USceneComponent* AttachComponent = nullptr;
+		FName AttachSocket = NAME_None;
+		if (GunMesh && GunMesh->DoesSocketExist(GunMuzzleSocketName))
+		{
+			AttachComponent = GunMesh;
+			AttachSocket = GunMuzzleSocketName;
+		}
+		else if (Feedback->FXSocket != NAME_None)
+		{
+			AttachComponent = GetMesh();
+			AttachSocket = Feedback->FXSocket;
+		}
+
+		if (AttachComponent)
 		{
 			UNiagaraFunctionLibrary::SpawnSystemAttached(
-				Feedback->FX, GetMesh(), Feedback->FXSocket,
+				Feedback->FX, AttachComponent, AttachSocket,
 				FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget, true);
 		}
 		else
@@ -1006,5 +1027,15 @@ void AUnit::ApplyUnitData()
 		GunMesh->SetStaticMesh(UnitData->GunMesh);
 		GunMesh->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("Gun"));
 		UpdateGunVisibility();
+
+		// 발사 지점도 총구로 옮긴다. 총 모양이 캐릭터마다 다르므로 소켓은 총 메시에 있고,
+		// 총이나 Muzzle 소켓이 없으면 무기가 알아서 손 소켓으로 되돌아간다.
+		for (UPaintWeaponComponent* const Weapon : { PaintWeapon.Get(), SecondaryWeapon.Get() })
+		{
+			if (Weapon)
+			{
+				Weapon->SetMuzzleSource(GunMesh, GunMuzzleSocketName);
+			}
+		}
 	}
 }

@@ -12,6 +12,7 @@
 
 class APawn;
 class UInkTankComponent;
+class USceneComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPaintWeaponFiredSignature, int32, Seed);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPaintWeaponPaintIdSignature, uint8, PaintId);
@@ -97,6 +98,14 @@ public:
 	FTransform GetMuzzleTransform() const;
 
 	/**
+	 * Where to look for the muzzle socket when the owner carries a weapon mesh of its own. Barrel
+	 * lengths differ per character, so the socket belongs on that mesh rather than on a skeleton
+	 * several characters share. A missing component or socket falls back to MuzzleSocketName on
+	 * the owner's skeletal mesh, so a pawn without a weapon mesh still fires from its hand.
+	 */
+	void SetMuzzleSource(USceneComponent* Component, FName SocketName);
+
+	/**
 	 * Raised once per accepted shot on every machine: on the owner when it predicts the shot, on the
 	 * server when it fires for real, on everyone else when the shot multicast lands. Feedback
 	 * (animation, sound) hangs here.
@@ -179,6 +188,11 @@ private:
 
 	/** The owner's ink reserve, found at BeginPlay. Unset means the owner shoots for free. */
 	TWeakObjectPtr<UInkTankComponent> Tank;
+
+	/** Weapon mesh the muzzle socket sits on. Unset means the owner has no separate weapon mesh. */
+	TWeakObjectPtr<USceneComponent> MuzzleSource;
+
+	FName MuzzleSourceSocket = NAME_None;
 
 	FPaintStrokeState Stroke;
 	FTimerHandle ShotTimer;
