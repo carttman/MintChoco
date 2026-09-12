@@ -12,6 +12,7 @@
 
 class APawn;
 class UInkTankComponent;
+class UNiagaraComponent;
 class USceneComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPaintWeaponFiredSignature, int32, Seed);
@@ -148,11 +149,25 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Weapon")
 	FGameplayTagContainer FreeShotTags;
 
+	/**
+	 * While a free-shot tag is up, the cadence the weapon runs at instead of the profile's.
+	 * The infinite ammo item is meant to feel faster, not only cheaper, so the same tag that
+	 * waives the ink cost also shortens these two.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Weapon", meta = (ClampMin = "0.01", ForceUnits = "s"))
+	float FreeShotInterval = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Weapon", meta = (ClampMin = "0.05", ForceUnits = "s"))
+	float FreeShotChargeTime = 0.5f;
+
 	UFUNCTION()
 	void OnRep_Profile();
 
 	UFUNCTION()
 	void OnRep_PaintId();
+
+	UFUNCTION()
+	void OnRep_Charging();
 
 private:
 	bool FireOnce();
@@ -160,11 +175,28 @@ private:
 	bool HasAuthority() const;
 	bool IsTriggerBlocked() const;
 	bool IsShotFree() const;
+
+	/** The profile's cadence, shortened while a free-shot tag is up. */
+	float GetEffectiveShotInterval() const;
+
+	/** The profile's charge time, shortened while a free-shot tag is up. */
+	float GetEffectiveChargeTime() const;
 	float GetShotCost() const;
 	bool CanAffordShot() const;
 	void SpendShot();
 	void BuildContext(FPaintFireContext& OutContext, const FVector& ViewOrigin, const FVector& ViewDirection, float ChargeFraction) const;
 	FTransform ComputeMuzzleTransform(const FVector& ViewOrigin, const FVector& ViewDirection) const;
+
+	/** The mesh that carries the muzzle socket, or null when the owner has no such socket. */
+	USkeletalMeshComponent* GetMuzzleMesh() const;
+
+	/** Plays the profile's muzzle FX once on this machine. Charge only matters in Charged. */
+	void PlayMuzzleFX(float ChargeFraction);
+
+	/** Records the hold locally, relays it to the machines that only watch, and drives the FX here. */
+	void SetCharging(bool bNewCharging);
+	void StartChargeFX();
+	void StopChargeFX();
 	APawn* GetOwnerPawn() const;
 	void GetOwnerView(FVector& OutOrigin, FVector& OutDirection) const;
 
@@ -175,6 +207,13 @@ private:
 	 */
 	UFUNCTION(Server, Reliable)
 	void ServerFire(int32 Seed, FVector_NetQuantize ViewOrigin, FVector_NetQuantizeNormal ViewDirection, uint8 Charge);
+
+	/**
+	 * The owner's hold, relayed so the other machines can show it. The owner never receives its
+	 * own copy: it drove the FX from its own press, and a late echo would restart the loop.
+	 */
+	UFUNCTION(Server, Reliable)
+	void ServerSetCharging(bool bNewCharging);
 
 	UFUNCTION(Server, Reliable)
 	void ServerSetProfile(UPaintWeaponProfile* NewProfile);
@@ -199,6 +238,21 @@ private:
 
 	/** World time the trigger was pulled; a Charged profile measures its hold from here. */
 	double PressTime = 0.0;
+
+	/**
+	 * World time the last shot left. Single paces itself against this: the trigger fires on the
+	 * pull rather than on a timer, so the cadence has to be a floor between two pulls.
+	 * Starts far in the past so the first shot of a life is never held back.
+	 */
+	double LastShotTime = -UE_BIG_NUMBER;
+
+	/** True while a Charged trigger is held. Replicated for the machines that only watch. */
+	UPROPERTY(ReplicatedUsing = OnRep_Charging)
+	bool bCharging = false;
+
+	/** The hold FX loops, so it has to be switched off by hand rather than expiring. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> ChargeFXComponent;
 
 	/** Charge fraction of the shot FireOnce is about to fire. ReleaseTrigger samples it before the cancel clears the hold. */
 	float PendingChargeFraction = 1.0f;

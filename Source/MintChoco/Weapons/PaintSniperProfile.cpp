@@ -6,6 +6,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 
+#include "Items/ChocolateFountain.h"
 #include "Paint/PaintLog.h"
 #include "Weapons/PaintProjectile.h"
 
@@ -49,12 +50,46 @@ bool UPaintSniperProfile::Fire(const FPaintFireContext& Context, FPaintStrokeSta
 
 	// The paintball channel is what a ball would hit: pawns block it (their capsule and mesh both
 	// ignore Visibility), paintable meshes block it, balls in flight ignore it.
+	//
+	// Multi rather than Single: a chocolate dome's wall only *overlaps* the paintball channel, so a
+	// ball is swallowed by the overlap event while a single-hit trace ignores touches and passes
+	// straight through. Multi reports the touch too, so the ray can stop at the same wall the ball
+	// would have died on. Blocking the wall instead would make balls bounce rather than be eaten.
 	const FVector TraceEnd = Context.ViewOrigin + Context.ViewDirection * Range;
 	const FCollisionQueryParams Params(SCENE_QUERY_STAT(PaintSniper), /*bTraceComplex=*/false, Context.Instigator);
+	TArray<FHitResult> Hits;
+	Context.World->LineTraceMultiByChannel(Hits, Context.ViewOrigin, TraceEnd, PaintballChannel, Params);
+
+	// Hits come back ordered along the ray, so the first thing that stops it wins.
 	FHitResult Hit;
-	const bool bHit = Context.World->LineTraceSingleByChannel(Hit, Context.ViewOrigin, TraceEnd, PaintballChannel, Params);
+	bool bHit = false;
+	bool bStoppedByDome = false;
+	for (const FHitResult& Candidate : Hits)
+	{
+		const AChocolateFountain* const Dome = Cast<AChocolateFountain>(Candidate.GetActor());
+		if (Dome)
+		{
+			// A dome of the shooter's own colour lets its team's paint through, exactly as it does for balls.
+			if (Dome->GetPaintId() == Context.PaintId)
+			{
+				continue;
+			}
+			Hit = Candidate;
+			bHit = true;
+			bStoppedByDome = true;
+			break;
+		}
+		if (Candidate.bBlockingHit)
+		{
+			Hit = Candidate;
+			bHit = true;
+			break;
+		}
+	}
+
 	const FVector End = bHit ? Hit.ImpactPoint : TraceEnd;
-	const APawn* const Victim = bHit ? GetHitPawn(Hit) : nullptr;
+	// A dome swallows the shot: nobody behind it is hit and nothing is painted where it stopped.
+	const APawn* const Victim = (bHit && !bStoppedByDome) ? GetHitPawn(Hit) : nullptr;
 
 	// The player aims with the camera, the ray is drawn and the trail laid from the barrel: converge
 	// the two on the end point. A target closer than the muzzle would point the barrel backwards,
@@ -86,7 +121,7 @@ bool UPaintSniperProfile::Fire(const FPaintFireContext& Context, FPaintStrokeSta
 		UE_LOG(LogPaint, Log, TEXT("%s sniped %s (charge %.2f, %s)."), *GetNameSafe(Context.Instigator), *Victim->GetName(),
 			Context.ChargeFraction, bStunned ? TEXT("stunned") : TEXT("no stun"));
 	}
-	else if (bHit)
+	else if (bHit && !bStoppedByDome)
 	{
 		Impact.ApplyHit(Context.World, Hit, Context.ViewDirection * NominalImpactSpeed, Context.PaintId, Context.Seed);
 	}

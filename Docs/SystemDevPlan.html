@@ -114,8 +114,10 @@
   <p class="sub">기획서의 프로그래밍 항목 7건을 실제 코드 구조에 맞춰 착수 순서로 풀었습니다. &ldquo;기존 코드&rdquo; 칸은 추측이 아니라 현재 소스를 읽고 확인한 것입니다.</p>
   <div class="meta">
     <span><b>기준</b> 2026-09-12 · 브랜치 QA</span>
-    <span><b>범위</b> 파트 A <span class="num">7</span>건 → <span class="num">7</span>단계</span>
+    <span><b>범위</b> 파트 A <span class="num">7</span>건 + 추가 요구 <span class="num">3</span>건 → <span class="num">10</span>단계</span>
     <span><b>선행</b> 0단계가 1~3단계를 막음</span>
+    <span><b>결정</b> 3건 확정 · 09-12</span>
+    <span><b>개정</b> 추가 요구 반영 · 09-12</span>
   </div>
 </header>
 
@@ -166,7 +168,8 @@
   <div class="panel risk">
     <h3>짚어둘 설계 변경 — 즉발 → 지속형</h3>
     <p class="note">꿀풍선과 디저트 폭격은 지금 <b>즉발(Duration 0)</b>입니다. <code>UItemAbility</code> 주석대로 즉발은 <code>OnItemActivated</code> 직후 끝나고 GE도 상태 태그도 붙지 않습니다. 조준 모드는 확정할 때까지 어빌리티가 살아 있어야 하므로 <b>지속형으로 바꿔야 합니다.</b></p>
-    <p class="note">따라오는 것: 두 프로필에 <code>Duration</code>(조준 제한 시간)과 <code>EffectClass</code>, 상태 태그가 생깁니다. <code>ItemProfileAssetTest</code>가 즉발 아이템에서만 상태 태그 검사를 건너뛰므로, <b>바꾸는 순간 이 테스트가 태그를 요구합니다.</b> 기획의 &ldquo;디저트 폭격은 최대 지속 시간 없음&rdquo;은 넉넉한 상한(예: 15초)으로 두는 편이 안전합니다 — 조준한 채로 방치된 플레이어가 영원히 무기를 못 쏘는 상태가 되지 않습니다.</p>
+    <p class="note">따라오는 것: 두 프로필에 <code>Duration</code>(조준 제한 시간)과 <code>EffectClass</code>, 상태 태그가 생깁니다. <code>ItemProfileAssetTest</code>가 즉발 아이템에서만 상태 태그 검사를 건너뛰므로, <b>바꾸는 순간 이 테스트가 태그를 요구합니다.</b> </p>
+      <p class="note"><b>확정</b>: 디저트 폭격의 조준 제한 시간은 <b><span class="num">10</span>초</b>입니다. 꿀풍선도 같은 <span class="num">10</span>초로 맞춥니다(따로 정하지 않으셨기에 같은 값을 기본으로 둡니다). 히어로 랜딩은 이미 <code>Duration 6</code>초를 쓰고 있어 그대로 둡니다.</p>
   </div>
 </section>
 
@@ -187,7 +190,7 @@
         <ul class="todo">
           <li><span class="b">1</span><div>태그 2개 추가: <code>State.Item.Aiming</code>, <code>Event.Item.ConfirmAim</code></div></li>
           <li><span class="b">2</span><div><code>AUnit::StartFire()</code>에 확정 분기 — 조준 중이면 이벤트를 쏘고 <code>PaintWeapon-&gt;PullTrigger()</code>를 건너뛴다</div></li>
-          <li><span class="b">3</span><div><code>UItemAimAbility : UItemAbility</code> 신설 — 미리보기 액터 수명, 틱 조준 추적, 확정 이벤트 대기, 취소·만료 정리. 가상 함수는 <code>SpawnPreview()</code> / <code>UpdatePreview()</code> / <code>OnAimConfirmed()</code> 셋</div></li>
+          <li><span class="b">3</span><div><code>UItemAimAbility : UItemAbility</code> 신설 — 미리보기 액터 수명, 틱 조준 추적, 확정 이벤트 대기, 만료 정리(<b>취소 입력은 만들지 않습니다</b> — 결정됨). 가상 함수는 <code>SpawnPreview()</code> / <code>UpdatePreview()</code> / <code>OnAimConfirmed()</code> 셋</div></li>
           <li><span class="b">4</span><div><code>BP_Unit</code>의 <code>TriggerBlockedTags</code>에 <code>State.Item.Aiming</code> 추가 (데이터)</div></li>
         </ul>
         <div class="files"><code>ItemGameplayTags.h/.cpp</code> <code>Unit.cpp</code> <code>ItemAimAbility.h/.cpp</code> <code>BP_Unit</code></div>
@@ -201,7 +204,7 @@
         <h3>디저트 폭격 <span class="est">1~2일 · 토대 검증용으로 먼저</span></h3>
         <p class="note">셋 중 가장 단순합니다. 미리보기가 수평 직선이고, 확정 시 호출할 코드(<code>APaintRain</code> 스폰)가 이미 완성돼 있어 <b>기존 로직을 한 줄도 고치지 않고 호출 시점만 옮기면</b> 됩니다. 토대가 제대로 잡혔는지 가장 싸게 확인할 수 있는 항목이라 1번에 둡니다.</p>
         <ul class="todo">
-          <li><span class="b">1</span><div>프로필을 지속형으로 전환 (Duration 상한 + 상태 태그)</div></li>
+          <li><span class="b">1</span><div>프로필을 지속형으로 전환 — <code>Duration</code> <b><span class="num">10</span>초</b> + 상태 태그</div></li>
           <li><span class="b">2</span><div>바라보는 수평 방향으로 폭격 경로 미리보기</div></li>
           <li><span class="b">3</span><div>확정 시 지금의 <code>OnItemActivated</code> 본문을 그대로 실행</div></li>
         </ul>
@@ -216,7 +219,7 @@
         <h3>꿀풍선 <span class="est">1~2일</span></h3>
         <p class="note">디저트 폭격과 같은 구조이고 미리보기만 포물선입니다. 궤적은 <code>ThrowSpeed 3000</code> · 탄의 <code>GravityScale</code>로 엔진의 경로 예측을 그대로 쓸 수 있어, 실제 비행과 어긋날 일이 없습니다.</p>
         <ul class="todo">
-          <li><span class="b">1</span><div>프로필 지속형 전환</div></li>
+          <li><span class="b">1</span><div>프로필 지속형 전환 — <code>Duration</code> <span class="num">10</span>초(디저트 폭격과 동일)</div></li>
           <li><span class="b">2</span><div>포물선 궤적 미리보기 + 착탄 예상 지점 표시</div></li>
           <li><span class="b">3</span><div>확정 시 기존 투척 코드 호출</div></li>
         </ul>
@@ -263,21 +266,70 @@
         <p class="note">차지샷은 <b>이미 광선 아래 바닥을 40 cm 간격으로 최대 256번 찍어 칠하고 있습니다</b>(<code>Trail</code>). 없는 것은 순차 타이밍과 낙하 연출뿐이라, <code>APaintRain</code>을 스나이퍼 궤적 위에 재생하면 됩니다.</p>
         <ul class="todo">
           <li><span class="b">1</span><div>발사 지점·방향·사거리로 <code>FPaintRainParams</code> 구성</div></li>
-          <li><span class="b">2</span><div><b>이중 도포 방지</b> — 아래 결정 항목 참고</div></li>
+          <li><span class="b">2</span><div>기존 <code>Trail</code> 도포는 그대로 두고 낙하를 얹는다 — <b>이중 도포는 허용</b>(결정됨)</div></li>
         </ul>
         <div class="files"><code>PaintSniperProfile.cpp</code> <code>PaintRain.cpp</code></div>
-        <div class="verify"><b>검증</b> &nbsp; 한 발의 도포 면적이 지금과 같을 것(두 배가 되면 이중 도포).</div>
+        <div class="verify"><b>검증</b> &nbsp; 낙하가 궤적을 따라 순서대로 떨어질 것. 도포 면적이 늘어나므로 P0의 차지샷 <span class="num">5 %</span> 목표는 이 단계 이후 다시 측정합니다.</div>
       </div>
     </div>
 
     <div class="step">
       <span class="badge b-par">6 · 병렬</span>
       <div class="step-body">
-        <h3>꿀벌 낙하 방식 전환 &amp; 초콜릿 분수 충돌 검증 <span class="est">1일 + 테스트</span></h3>
+        <h3>꿀벌 낙하 방식 전환 <span class="est">1일</span></h3>
         <p class="note">꿀벌은 파열(<code>Burst</code> 20발 @ 100 cm/s)을 5단계와 같은 낙하 방식으로 교체합니다. 5단계에서 만든 코드를 그대로 씁니다.</p>
-          <p class="note">초콜릿 분수는 코드 작업이 아니라 <b>플레이 테스트</b>입니다. 돔이 <code>Paintball</code> 채널만 차단하므로, 상대 기본 탄과 아이템 투사체가 실제로 막히는지 확인하고 결과에 따라 채널 설정을 조정합니다.</p>
-        <div class="files"><code>BeeAbility.cpp</code> <code>DA_Item_Bee</code> <code>ChocolateFountain.cpp</code></div>
-        <div class="verify"><b>검증</b> &nbsp; 꿀벌이 자기 팀 색으로 칠할 것. 돔 안팎에서 탄 차단 여부를 표로 기록.</div>
+          <p class="note">초콜릿 분수 충돌 검증은 <b>이미 플레이 테스트로 끝났고 버그가 나왔습니다</b> — 8단계로 옮겼습니다.</p>
+        <div class="files"><code>BeeAbility.cpp</code> <code>DA_Item_Bee</code></div>
+        <div class="verify"><b>검증</b> &nbsp; 꿀벌이 자기 팀 색으로 칠할 것.</div>
+      </div>
+    </div>
+
+
+    <div class="step">
+      <span class="badge b-par">7 · 병렬</span>
+      <div class="step-body">
+        <h3>샷건 퍼짐 · 최대 사거리 · 점유율 <span class="num">1 %</span> <span class="est">2일 · 로드맵 P0와 통합</span></h3>
+        <p class="note"><b>로드맵 P0의 커버리지 항목과 같은 작업입니다.</b> 목표치(최대 사거리 <span class="num">1</span>발 = <span class="num">1 %</span>)는 이미 있었고, 이번에 <b>퍼짐 증가</b>와 <b>최대 사거리 개념 신설</b>이 더해졌습니다. 셋을 따로 튜닝하면 서로를 무너뜨리므로 한 단계로 묶습니다.</p>
+        <ul class="todo">
+          <li><span class="b">1</span><div>퍼짐 상향 &mdash; <code>DA_Scatter_Spread</code>의 <code>SpreadHalfAngleDeg</code>(현재 <span class="num">8</span>°) 데이터 조정</div></li>
+          <li><span class="b">2</span><div><b>최대 사거리 신설</b> &mdash; 현재 페인트탄에는 사거리·수명 상한이 <b>없습니다</b>. <code>UPaintballProfile</code>에 <code>MaxRange</code>를 추가하고 <code>APaintProjectile</code>이 비행 거리를 재서 넘으면 정리합니다</div></li>
+          <li><span class="b">3</span><div>최대 사거리에서 쏜 한 발이 <span class="num">1 %</span>가 되도록 <code>SplatVolume</code>과 브러시 반경을 튜닝</div></li>
+          <li><span class="b">4</span><div>P0의 궤적 도포도 함께 켠다 &mdash; 도포량에 직접 영향을 주므로 같이 재야 합니다</div></li>
+        </ul>
+        <div class="files"><code>PaintballProfile.h</code> <code>PaintProjectile.cpp</code> <code>DA_Paintball_Light</code> <code>DA_Scatter_Spread</code></div>
+        <div class="verify"><b>검증</b> &nbsp; 최대 사거리에서 한 발 쏘고 <code>GetWorldCoverage</code>의 증가분이 <span class="num">1 %</span> 부근일 것.</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="badge b-par">8 · 병렬</span>
+      <div class="step-body">
+        <h3>초콜릿 분수가 차지샷을 막도록 <span class="est">1일 · 원인 특정 완료</span></h3>
+        <p class="note"><b>원인을 코드에서 찾았습니다.</b> <code>ChocolateFountain.cpp:39</code>에서 돔의 벽이 <code>Wall-&gt;SetCollisionResponseToChannel(PaintballChannel, ECR_Overlap)</code>로 설정돼 있습니다. 샷건 탄은 <b>액터</b>라 이 오버랩에 걸려 사라지지만, 차지샷은 <code>LineTraceSingleByChannel</code>을 쓰는 <b>히트스캔</b>이고 <b>라인 트레이스는 Overlap 응답을 무시하고 Block에서만 멈춥니다.</b> 그래서 그대로 통과합니다.</p>
+        <ul class="todo">
+          <li><span class="b">1</span><div>스나이퍼 트레이스를 <code>LineTraceMultiByChannel</code>로 바꿔 <b>오버랩 접촉도 받는다</b>. 가장 가까운 돔 벽에서 광선을 끊는다</div></li>
+          <li><span class="b">2</span><div>끊긴 지점까지만 <code>Trail</code> 도포가 찍히도록 사거리를 줄여 넘긴다</div></li>
+        </ul>
+        <p class="note">돔의 <code>Wall</code>을 <code>ECR_Block</code>으로 바꾸는 방법도 있지만, 그러면 <b>샷건 탄이 사라지지 않고 튕깁니다</b>. 지금 동작을 지키려면 스나이퍼 쪽을 고치는 편이 맞습니다.</p>
+        <p class="note">&ldquo;돔 안에 들어온 상대는 모든 액션이 가능하되 총알은 나가지 않는다&rdquo;는 <b>이미 그렇게 동작 중</b>이라 이번 작업 범위가 아닙니다.</p>
+        <div class="files"><code>PaintSniperProfile.cpp</code> <code>ChocolateFountain.h</code></div>
+        <div class="verify"><b>검증</b> &nbsp; 돔 밖에서 쏜 차지샷이 돔 표면에서 멈출 것. 돔 안에서 밖으로 쏘는 경우도 함께 확인.</div>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="badge b-par">9 · 독립</span>
+      <div class="step-body">
+        <h3>KO 판정 <span class="est">2~3일 · 신규, 로드맵에 없던 항목</span></h3>
+        <p class="note">아이템이 아니라 <b>경기 흐름</b> 기능이라 0단계 토대와 무관합니다. 필요한 재료는 전부 있습니다 &mdash; <code>AGameGameState::WorldCoverage</code>가 이미 <b>복제되고</b> 서버에서 <span class="num">0.2</span>초마다 갱신되며(<code>CoverageRefreshInterval</code>), <code>EMatchPhase</code>에 <code>Ended</code>가 있고, 중앙 상단 점유율 게이지(<code>UPaintCoverageBarWidget</code>)도 이미 있습니다.</p>
+        <ul class="todo">
+          <li><span class="b">1</span><div>서버: 커버리지 갱신마다 <code>GetFraction(팀)</code>이 <span class="num">70 %</span> 이상인지 본다. 넘으면 KO 카운트다운 시작, <span class="num">70 %</span> 아래로 내려가면 초기화</div></li>
+          <li><span class="b">2</span><div><b>남은 초가 아니라 서버 시각을 복제</b>한다 &mdash; 카운트다운·경기 종료가 이미 쓰는 방식과 동일. 대상 팀 id도 함께 복제</div></li>
+          <li><span class="b">3</span><div><span class="num">5</span>초 유지되면 남은 라운드 시간과 무관하게 <code>SetMatchPhase(Ended)</code> + 해당 진영 승리</div></li>
+          <li><span class="b">4</span><div>HUD: 점유율 게이지 <b>바로 아래 중앙</b>에 KO 게이지. 평소 숨김, 카운트다운 중에만 표시</div></li>
+        </ul>
+        <div class="files"><code>GameGameState.h/.cpp</code> <code>GameGameMode.cpp</code> <code>GameHudWidget.h/.cpp</code> <code>WBP_GameHUD</code></div>
+        <div class="verify"><b>검증</b> &nbsp; 한쪽을 <span class="num">70 %</span>까지 칠하고 ① <span class="num">5</span>초 유지 &rarr; 즉시 승리 ② <span class="num">4</span>초에서 <span class="num">70 %</span> 아래로 내리기 &rarr; 게이지 사라지고 초기화. 클라이언트 화면에서도 같은 시점에 보일 것.</div>
       </div>
     </div>
 
@@ -295,32 +347,42 @@
       <thead><tr><th>갈래</th><th>순서</th><th>합계</th><th>성격</th></tr></thead>
       <tbody>
         <tr><td class="name">A · 조준 모드</td><td>0 선행 → 1 디저트 폭격 → 2 꿀풍선 → 3 히어로 랜딩</td><td class="num">7~11일</td><td>서로 의존. 한 사람이 이어서 하는 편이 낫습니다</td></tr>
-        <tr><td class="name">B · 독립 항목</td><td>4 무한 탄환 → 5 차지샷 낙하 → 6 꿀벌 · 초콜릿 분수</td><td class="num">3~5일</td><td>0단계를 기다릴 필요 없음. 다른 사람이 동시에 진행 가능</td></tr>
+        <tr><td class="name">B · 아이템 독립</td><td>4 무한 탄환 → 5 차지샷 낙하 → 6 꿀벌</td><td class="num">3~4일</td><td>0단계를 기다릴 필요 없음</td></tr>
+        <tr><td class="name">C · 추가 요구</td><td>8 초콜릿 분수 → 7 샷건 밸런스 → 9 KO 판정</td><td class="num">5~6일</td><td>전부 독립. 8번은 원인이 특정돼 있어 가장 빠릅니다</td></tr>
       </tbody>
     </table>
   </div>
-  <p class="note">한 사람이 전부 한다면 <b>4 → 0 → 1 → 2 → 5 → 6 → 3</b> 순을 권합니다. 4단계로 손을 풀고, 가장 위험한 히어로 랜딩을 토대가 세 번 검증된 뒤 마지막에 손대는 순서입니다.</p>
+  <p class="note">한 사람이 전부 한다면 <b>8 → 4 → 0 → 1 → 2 → 7 → 9 → 5 → 6 → 3</b> 순을 권합니다. 원인이 이미 밝혀진 8번으로 손을 풀고, 체감이 가장 크게 바뀌는 7번(샷건)과 9번(KO)을 조준 모드 중간에 끼운 뒤, 가장 위험한 히어로 랜딩을 마지막에 둡니다.</p>
+  <p class="note"><b>기존 계획과 겹치는 부분</b>: 7번은 로드맵 P0의 커버리지 항목과 같은 작업이라 하나로 합쳤습니다. 8번은 원래 6단계의 &ldquo;충돌 검증&rdquo;이었는데 테스트가 이미 끝나 버그가 나왔으므로 수정 작업으로 승격시켰습니다. 9번 KO 판정만 로드맵에 없던 신규 항목입니다.</p>
 </section>
 
 <!-- 결정 -->
 <section>
   <div class="sechead">
-    <p class="eyebrow">착수 전 결정</p>
-    <h2>정해야 진행되는 것</h2>
+    <p class="eyebrow">확정된 결정</p>
+    <h2>정해진 것과 그 대가</h2>
+    <p class="sub">착수를 막던 3건이 모두 정해졌습니다. 지금 바로 0단계에 들어갈 수 있습니다.</p>
   </div>
   <div class="cols">
-    <div class="panel ask">
-      <h3>조준 제한 시간</h3>
-      <p class="note">기획에는 &ldquo;디저트 폭격은 최대 지속 시간 없음&rdquo;이라 적혀 있는데, 무제한이면 조준한 채 방치된 플레이어가 <b>무기를 영원히 못 쓰는 상태</b>가 됩니다. 넉넉한 상한(10~15초, 만료 시 자동 취소)을 권합니다. 꿀풍선·히어로 랜딩도 같은 값으로 맞출지 정해야 합니다.</p>
+    <div class="panel key">
+      <h3>조준 제한 시간 &mdash; <span class="num">10</span>초</h3>
+      <p class="note">디저트 폭격 <span class="num">10</span>초로 확정. 꿀풍선도 같은 값으로 맞추고, 히어로 랜딩은 기존 <code>Duration 6</code>초를 유지합니다.</p>
+      <p class="note">만료되면 조준이 자동으로 풀립니다.</p>
     </div>
-    <div class="panel ask">
-      <h3>차지샷 이중 도포</h3>
-      <p class="note">차지샷은 이미 <code>Trail</code>로 바닥을 칠합니다. 낙하 연출을 붙일 때 <b>떨어지는 탄도 칠하게 두면 같은 자리를 두 번 칠합니다.</b> 둘 중 하나를 정해야 합니다 — ① 낙하는 연출만(탄이 칠하지 않음), ② 기존 <code>Trail</code>을 끄고 낙하하는 탄이 칠함. ②가 더 자연스럽지만 P0의 커버리지 <span class="num">5 %</span> 목표 계산을 다시 해야 합니다.</p>
+    <div class="panel key">
+      <h3>차지샷 이중 도포 &mdash; 허용</h3>
+      <p class="note">기존 <code>Trail</code> 도포를 끄지 않고 낙하 연출을 그대로 얹습니다. 구현이 단순해지고 5단계가 기존 도포 코드를 건드리지 않습니다.</p>
+      <p class="note"><b>대가</b>: 차지샷 한 발의 도포 면적이 지금보다 넓어집니다. 로드맵 P0의 &ldquo;풀충전 <span class="num">5 %</span>&rdquo; 목표치는 <b>5단계를 마친 뒤 다시 재야</b> 합니다 &mdash; 먼저 맞춰 두면 두 번 튜닝하게 됩니다.</p>
     </div>
-    <div class="panel ask">
-      <h3>조준 취소 수단</h3>
-      <p class="note">기획에 없는 항목입니다. 조준을 시작한 뒤 <b>마음을 바꿀 방법</b>이 있어야 합니다(우클릭 취소, 아이템 키 재입력, 또는 취소 불가). 취소 시 아이템을 돌려줄지도 함께 정해야 합니다.</p>
+    <div class="panel key">
+      <h3>조준 취소 &mdash; 만들지 않음</h3>
+      <p class="note">0단계에서 취소 입력과 아이템 반환 처리를 빼므로 그만큼 가벼워집니다.</p>
+      <p class="note"><b>대가</b>: 아이템 키를 누른 순간 <b>쏘거나, <span class="num">10</span>초를 기다리거나</b> 둘뿐이고 그동안 무기도 막혀 있습니다. 잘못 눌렀을 때 <span class="num">10</span>초는 교전 중에 길게 느껴질 수 있으니, 플레이 테스트에서 답답하면 <b>제한 시간을 줄이는 쪽</b>이 취소를 새로 만드는 것보다 쌉니다.</p>
     </div>
+  </div>
+  <div class="panel ask">
+    <h3>아직 열려 있는 것 &mdash; 만료 시 아이템 처리</h3>
+    <p class="note">취소가 없으므로 <b>만료가 유일한 탈출구</b>입니다. 이때 아이템을 잃게 할지 돌려줄지는 정해지지 않았습니다. 0단계에서는 <b>잃는 쪽</b>으로 구현하겠습니다 &mdash; 슬롯을 비우는 기존 흐름을 그대로 쓰므로 추가 코드가 없습니다. 돌려주는 편이 낫다면 말씀해 주세요.</p>
   </div>
 </section>
 

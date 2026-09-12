@@ -59,6 +59,30 @@ bool UPaintWeaponComponent::IsShotFree() const
 	return AbilitySystem && AbilitySystem->HasAnyMatchingGameplayTags(FreeShotTags);
 }
 
+float UPaintWeaponComponent::GetEffectiveShotInterval() const
+{
+	if (!Profile)
+	{
+		return 0.0f;
+	}
+	const float Interval = Profile->GetShotInterval();
+	// Continuous has no interval at all; shortening 0 would turn it into a per-tick floor.
+	if (Interval <= 0.0f || !IsShotFree())
+	{
+		return Interval;
+	}
+	return FMath::Min(Interval, FreeShotInterval);
+}
+
+float UPaintWeaponComponent::GetEffectiveChargeTime() const
+{
+	if (!Profile)
+	{
+		return 0.0f;
+	}
+	return IsShotFree() ? FMath::Min(Profile->ChargeTime, FreeShotChargeTime) : Profile->ChargeTime;
+}
+
 void UPaintWeaponComponent::BeginPlay()
 {
 	Super::BeginPlay();
@@ -162,7 +186,8 @@ void UPaintWeaponComponent::OnRep_Profile()
 
 void UPaintWeaponComponent::PullTrigger()
 {
-	if (bTriggerHeld || !Profile || IsTriggerBlocked())
+	const UWorld* const World = GetWorld();
+	if (bTriggerHeld || !Profile || !World || IsTriggerBlocked())
 	{
 		return;
 	}
@@ -173,12 +198,17 @@ void UPaintWeaponComponent::PullTrigger()
 	switch (Profile->FireMode)
 	{
 	case EPaintFireMode::Single:
-		FireOnce();
+		// One pull, one shot, but never faster than the cadence. The trigger still counts as held
+		// so the release path stays symmetric; only the shot is skipped.
+		if (World->GetTimeSeconds() - LastShotTime >= GetEffectiveShotInterval())
+		{
+			FireOnce();
+		}
 		break;
 	case EPaintFireMode::Automatic:
 		FireOnce();
 		GetWorld()->GetTimerManager().SetTimer(
-			ShotTimer, this, &UPaintWeaponComponent::OnShotTimer, Profile->GetShotInterval(), /*bLoop=*/true);
+			ShotTimer, this, &UPaintWeaponComponent::OnShotTimer, GetEffectiveShotInterval(), /*bLoop=*/true);
 		break;
 	case EPaintFireMode::Continuous:
 		FireOnce();
@@ -230,7 +260,7 @@ float UPaintWeaponComponent::GetChargeFraction() const
 		return 0.0f;
 	}
 	const double Held = World->GetTimeSeconds() - PressTime;
-	return static_cast<float>(FMath::Clamp(Held / FMath::Max(static_cast<double>(Profile->ChargeTime), UE_DOUBLE_KINDA_SMALL_NUMBER), 0.0, 1.0));
+	return static_cast<float>(FMath::Clamp(Held / FMath::Max(static_cast<double>(GetEffectiveChargeTime()), UE_DOUBLE_KINDA_SMALL_NUMBER), 0.0, 1.0));
 }
 
 void UPaintWeaponComponent::SetCharging(bool bNewCharging)
@@ -422,6 +452,7 @@ bool UPaintWeaponComponent::FireOnce()
 	}
 
 	PlayMuzzleFX(ChargeFraction);
+	LastShotTime = GetWorld()->GetTimeSeconds();
 	OnFired.Broadcast(Seed);
 	return true;
 }
