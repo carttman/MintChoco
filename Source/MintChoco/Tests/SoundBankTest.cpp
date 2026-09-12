@@ -66,6 +66,16 @@ bool FSoundBankTest::RunTest(const FString& Parameters)
 		return true;
 	}
 
+	// 아직 아무것도 채우지 않은 뱅크는 "사운드 작업 전"이라는 뜻이지 오류가 아니다.
+	// 한 항목이라도 들어오는 순간부터 아래 검사가 전부 켜진다.
+	TArray<FGameplayTag> AllTags;
+	Bank->GetTags(AllTags);
+	if (AllTags.Num() == 0)
+	{
+		AddWarning(TEXT("사운드 뱅크가 비어 있습니다. 항목을 채우면 이 테스트가 내용을 검사합니다."));
+		return true;
+	}
+
 	const bool bHasDefaultAttenuation = !Settings.DefaultAttenuation.IsNull();
 
 	// 코드가 부르는 태그가 표에 있고, 실제로 소리가 붙어 있는가.
@@ -81,8 +91,6 @@ bool FSoundBankTest::RunTest(const FString& Parameters)
 	}
 
 	// 표에 든 모든 항목의 값이 유효한가.
-	TArray<FGameplayTag> AllTags;
-	Bank->GetTags(AllTags);
 	for (const FGameplayTag& Tag : AllTags)
 	{
 		const FSoundEvent* const Event = Bank->Find(Tag);
