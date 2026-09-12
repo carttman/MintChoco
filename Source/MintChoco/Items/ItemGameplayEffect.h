@@ -53,6 +53,12 @@ class MINTCHOCO_API UGE_DessertBombardment : public UItemGameplayEffect
 };
 
 UCLASS()
+class MINTCHOCO_API UGE_HoneyBalloon : public UItemGameplayEffect
+{
+	GENERATED_BODY()
+};
+
+UCLASS()
 class MINTCHOCO_API UGE_HeroLanding : public UItemGameplayEffect
 {
 	GENERATED_BODY()

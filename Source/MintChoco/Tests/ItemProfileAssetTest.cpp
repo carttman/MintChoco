@@ -96,7 +96,7 @@ bool FItemProfileAssetTest::RunTest(const FString& Parameters)
 		}
 		else if (const UHoneyBalloonProfile* const Honey = Cast<UHoneyBalloonProfile>(Item))
 		{
-			TestTrue(*FString::Printf(TEXT("%s: instant"), *Name), Honey->IsInstant());
+			TestFalse(*FString::Printf(TEXT("%s: has an aim time limit"), *Name), Honey->IsInstant());
 			TestNotNull(*FString::Printf(TEXT("%s: ProjectileClass"), *Name), Honey->ProjectileClass.Get());
 			TestNotNull(*FString::Printf(TEXT("%s: Burst paintball"), *Name), Honey->Burst.Paintball.Get());
 			TestTrue(*FString::Printf(TEXT("%s: Burst count"), *Name), Honey->Burst.Count > 0);
