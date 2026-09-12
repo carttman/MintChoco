@@ -10,6 +10,7 @@
 
 class APaintProjectile;
 class APawn;
+class UNiagaraSystem;
 
 /**
  * What a paintball is: the actor that flies, its size and weight, and what it leaves where it
@@ -48,4 +49,60 @@ public:
 	/** What the ball leaves where it lands. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball")
 	FPaintDeposit Deposit;
+
+	/** Whether this ball paints as it flies. False when the trail deposit has no brush profile. */
+	bool HasTrail() const { return TrailDeposit.CanPaint() && TrailRayCount > 0 && MaxTrailSplats > 0; }
+
+	/**
+	 * What the ball leaves on the surfaces it passes on the way, sampled every TrailSpacing along
+	 * the flight path. Leave the brush profile unset - the default - and the ball paints only
+	 * where it lands, which is what every ball did before this existed.
+	 *
+	 * A trail costs TrailRayCount traces per sample and up to MaxTrailSplats replicated splats per
+	 * ball, and the splat log is replayed in full by a client that joins late. That is why it is
+	 * opt-in per ball rather than a flag on the gun: a 15-pellet volley at 10 Hz must not have one.
+	 * Keep HitPower at 0 here, or a ball flying past a balloon would strike it once per sample.
+	 */
+	/**
+	 * 이 공이 어딘가에 떨어질 때 그 자리에서 한 번 터지는 이펙트. 비어 있으면 아무것도 하지 않는다.
+	 *
+	 * RPC가 없다: 머신마다 자기 공이 있고(서버는 진짜, 나머지는 연출용) 각자 제 OnHit에서
+	 * 그리므로, 한 번의 착탄이 각 화면에 한 번씩 보인다. 무기별로 켜고 끄라고 공 프로필에 둔다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball|FX")
+	TObjectPtr<UNiagaraSystem> ImpactFX;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball|FX", meta = (ClampMin = "0.01"))
+	float ImpactFXScale = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball|Trail")
+	FPaintDeposit TrailDeposit;
+
+	/** Distance flown between two trail samples. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball|Trail", meta = (ClampMin = "10", ForceUnits = "cm"))
+	float TrailSpacing = 200.0f;
+
+	/** How far from the flight path a sample reaches for a surface. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball|Trail", meta = (ClampMin = "1", ForceUnits = "cm"))
+	float TrailRadius = 250.0f;
+
+	/**
+	 * Rays per sample, spread evenly around the plane across the flight direction. Four already
+	 * cover floor, ceiling and both sides whichever way the ball is heading, and every ray is a
+	 * trace, so this is the knob that decides what a trail costs.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball|Trail", meta = (ClampMin = "1", ClampMax = "16"))
+	int32 TrailRayCount = 4;
+
+	/** Hard cap on trail splats one ball may leave, whatever its flight time says. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball|Trail", meta = (ClampMin = "0"))
+	int32 MaxTrailSplats = 8;
+
+	/**
+	 * Skips surfaces that would only show a passing effect - a wall, since paint runs off it -
+	 * so the trail marks the floors and platforms that keep paint. Without this, a ball flying
+	 * along a wall spawns one side-splat actor per sample per ray.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball|Trail")
+	bool bTrailSkipTransient = true;
 };

@@ -31,6 +31,8 @@ enum class EUnitAction : uint8
 	Fire	UMETA(DisplayName = "페인트 발사"),
 	Hit		UMETA(DisplayName = "피격"),
 	Death	UMETA(DisplayName = "사망"),
+	/** 스피드 스타가 켜 둔 속도 부스트. 상태가 지속되는 동안 FX가 계속 붙어 있는다. */
+	SpeedBoost	UMETA(DisplayName = "속도 부스트"),
 };
 
 /**
@@ -71,6 +73,13 @@ struct FUnitActionFeedback
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
 	FName FXSocket = NAME_None;
+
+	/**
+	 * 소켓 기준 오프셋(cm). 소켓과 함께 돌기 때문에 +X가 그 본이 보는 앞쪽이다. 발밑 이펙트를
+	 * 조금 앞으로 빼는 것처럼, 에셋을 건드리지 않고 위치만 미세 조정할 때 쓴다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback", meta = (ForceUnits = "cm"))
+	FVector FXOffset = FVector::ZeroVector;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
 	TObjectPtr<USoundBase> Sound;

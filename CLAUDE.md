@@ -141,6 +141,14 @@ Each of these cost real debugging time once.
   Port 8000 listening (`netstat -an | grep 8000`) is the ready signal.
 - `call_tool` takes `toolset_name` + the bare `tool_name` (`IsPIERunning`, not
   `EditorToolset.EditorAppToolset.IsPIERunning`); the fully qualified name is "not found".
+  The `toolset_name` is the opposite: it must be the full registered name, so
+  `editor_toolset.toolsets.object.ObjectTools`, not `ObjectTools` ("Toolset 'ObjectTools'
+  not found"). `list_toolsets` prints the registered names; the Python-side toolsets are
+  `editor_toolset.toolsets.<module>.<Class>` (object, asset, blueprint, material,
+  material_instance, data_asset, data_table, curve_table, string_table, actor, scene,
+  primitive, static_mesh, skeletal_mesh, texture, programmatic), the C++-side ones are
+  `EditorToolset.EditorAppToolset` / `.LogsToolset`, `ConfigSettingsToolset.ConfigSettingsToolset`,
+  `LiveCodingToolset.LiveCodingToolset`, `UMGToolSet.UMGToolSet`.
 - `ObjectTools.get_properties` cannot read a UPROPERTY without an `Edit*`/`Visible*`
   specifier either (`bCollected`, `HeldItem` were unreadable until `VisibleInstanceOnly`).
 - `ObjectTools.set_properties` takes `values` as a JSON **string** (an object is accepted and silently

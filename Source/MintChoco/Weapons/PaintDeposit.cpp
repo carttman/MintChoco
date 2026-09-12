@@ -34,11 +34,16 @@ FPaintSplat FPaintDeposit::BuildSplat(const FHitResult& Hit, const FVector& Inci
 	return BrushProfile->BuildSplat(Hit, IncidentVelocity, PaintId, SplatVolume, GetHeightAdd(), Seed);
 }
 
-void FPaintDeposit::MarkTransience(FPaintSplat& Splat, const FHitResult& Hit)
+bool FPaintDeposit::KeepsPaint(const FHitResult& Hit)
 {
 	const AActor* const Actor = Hit.GetActor();
 	const UPaintableComponent* const Paintable = Actor ? Actor->FindComponentByClass<UPaintableComponent>() : nullptr;
-	Splat.bTransient = !Paintable || !Paintable->IsWorldNormalPersistent(Hit.ImpactNormal);
+	return Paintable && Paintable->IsWorldNormalPersistent(Hit.ImpactNormal);
+}
+
+void FPaintDeposit::MarkTransience(FPaintSplat& Splat, const FHitResult& Hit)
+{
+	Splat.bTransient = !KeepsPaint(Hit);
 }
 
 bool FPaintDeposit::StrikeReceiver(const FHitResult& Hit, uint8 PaintId) const

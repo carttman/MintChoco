@@ -553,6 +553,7 @@ void AUnit::PostInitializeComponents()
 	if (UUnitMovementComponent* Movement = GetUnitMovement())
 	{
 		Movement->OnDashStateChanged.AddUObject(this, &AUnit::HandleDashStateChanged);
+		Movement->OnSpeedBoostStateChanged.AddUObject(this, &AUnit::HandleSpeedBoostStateChanged);
 	}
 	else
 	{
@@ -892,6 +893,72 @@ void AUnit::UpdateDashEffects(bool bDashing)
 	}
 }
 
+void AUnit::HandleSpeedBoostStateChanged(bool bBoosting)
+{
+	// 대시와 같다. 소유 클라이언트는 자기 예측으로 이미 알고 있어 복제에서 빠져 있으므로,
+	// 다른 클라이언트에게는 서버가 이 값을 복제해 알린다.
+	if (HasAuthority())
+	{
+		bIsSpeedBoosting = bBoosting;
+	}
+
+	UpdateSpeedBoostEffects(bBoosting);
+}
+
+void AUnit::OnRep_IsSpeedBoosting()
+{
+	UpdateSpeedBoostEffects(bIsSpeedBoosting);
+}
+
+void AUnit::UpdateSpeedBoostEffects(bool bBoosting)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	if (!bBoosting)
+	{
+		if (SpeedBoostFXComponent)
+		{
+			// 이미 태어난 파티클은 수명대로 사라지도록 새 스폰만 멈춘다.
+			SpeedBoostFXComponent->Deactivate();
+			SpeedBoostFXComponent = nullptr;
+		}
+		return;
+	}
+
+	if (SpeedBoostFXComponent)
+	{
+		return;
+	}
+
+	const FUnitActionFeedback* const Feedback = UnitData ? UnitData->FindFeedback(EUnitAction::SpeedBoost) : nullptr;
+	if (!Feedback || !Feedback->FX)
+	{
+		return;
+	}
+
+	// 대시와 달리 몽타주는 틀지 않는다. 부스트는 몇 초 동안 달리는 상태라,
+	// 상체 몽타주를 얹으면 그동안의 달리기 애니메이션을 덮어쓴다.
+	if (Feedback->Sound)
+	{
+		UGameplayStatics::SpawnSoundAttached(Feedback->Sound, GetRootComponent());
+	}
+
+	// 붙여서 스폰하므로 발밑을 따라다닌다. 시스템이 무한 루프라면 부스트가 끝날 때까지
+	// 끊김 없이 계속 뿜고, Deactivate 이후 남은 파티클이 사라지면 스스로 정리된다.
+	SpeedBoostFXComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		Feedback->FX,
+		GetMesh(),
+		Feedback->FXSocket,
+		Feedback->FXOffset,
+		FRotator::ZeroRotator,
+		// SnapToTarget은 넘긴 오프셋을 버린다. FXOffset을 쓰려면 상대 오프셋을 지켜야 한다.
+		EAttachLocation::KeepRelativeOffset,
+		true);
+}
+
 void AUnit::PlayFeedbackMontage(const FUnitActionFeedback& Feedback)
 {
 	if (Feedback.Montage)
@@ -1005,6 +1072,7 @@ void AUnit::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 	// 소유자는 예측으로 이미 알고 있다. 보내면 자기가 아는 값을 한 번 더 받을 뿐이고,
 	// 지연 때문에 오히려 예측을 되돌리게 된다.
 	DOREPLIFETIME_CONDITION(AUnit, bIsDashing, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(AUnit, bIsSpeedBoosting, COND_SkipOwner);
 }
 
 void AUnit::SetUnitData(UUnitDataAsset* NewUnitData)

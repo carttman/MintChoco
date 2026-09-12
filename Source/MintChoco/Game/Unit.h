@@ -147,8 +147,8 @@ public:
 	 */
 	void ApplyTeamToWeapon();
 
-	// UFUNCTION(BlueprintPure, Category = "Camera")
-	// USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
+	UFUNCTION(BlueprintPure, Category = "Camera")
+	USpringArmComponent* GetCameraBoom() const { return CameraBoom; }
 	/**
 	 * 캐싱하지 않고 매번 GetCharacterMovement()에서 구한다.
 	 *
@@ -199,6 +199,23 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
+
+	/**
+/**
+	 * 위아래로 볼 수 있는 한계(도). 수평이 0이고 아래가 음수다.
+	 *
+	 * 카메라 매니저가 아니라 폰이 들고 있는 이유는 이 값이 곧 무기를 겨눌 수 있는 각도이기
+	 * 때문이다. 캐릭터가 바뀌면 사격 각도도 같이 바뀌어야 하고, 카메라 매니저는 리스폰마다
+	 * 새로 만들어지므로 값을 둘 자리가 아니다.
+	 *
+	 * 클램프는 소유 클라이언트의 카메라 매니저가 걸고, 서버는 이미 클램프된 회전을
+	 * ServerMove로 받는다. 그래서 서버에 따로 걸 필요가 없다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera", meta = (ClampMin = "-89.9", ClampMax = "0", ForceUnits = "deg"))
+	float ViewPitchMin = -45.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera", meta = (ClampMin = "0", ClampMax = "89.9", ForceUnits = "deg"))
+	float ViewPitchMax = 60.0f;
 
 	/**
 	 * 카메라에 붙은 작은 구. 다른 유닛의 캡슐과 겹치는 동안 그 유닛을 반투명하게 만든다.
@@ -318,11 +335,17 @@ protected:
 private:
 	/** 어빌리티 액터 정보를 이 폰으로 맞춘다. 서버는 빙의 때, 클라이언트는 PlayerState 도착 때. */
 	void InitAbilityActorInfo();
+
+	/** 시야 피치 한계를 소유 클라이언트의 카메라 매니저에 넣는다. 리스폰마다 다시 불러야 한다. */
+	void ApplyViewPitchLimits();
 	/** 대시 의도를 무브먼트 컴포넌트에 전달한다. 컴포넌트 타입이 틀리면 여기서 드러난다. */
 	void SetDashInput(bool bWantsToDash);
 
 	/** 실제로 대시 상태가 바뀔 때 무브먼트 컴포넌트가 알려준다. */
 	void HandleDashStateChanged(bool bDashing);
+
+	/** 실제로 속도 부스트 상태가 바뀔 때 무브먼트 컴포넌트가 알려준다. */
+	void HandleSpeedBoostStateChanged(bool bBoosting);
 
 	/** 무기의 페인트 id가 바뀌면(로컬 세팅이든 복제든) 잉크병을 그 팀 색으로 맞춘다. */
 	UFUNCTION()
@@ -358,6 +381,12 @@ private:
 
 	/** 대시 트레일을 켜고 끈다. 데디케이티드 서버에서는 아무것도 하지 않는다. */
 	void UpdateDashEffects(bool bDashing);
+
+	UFUNCTION()
+	void OnRep_IsSpeedBoosting();
+
+	/** 속도 부스트 FX를 켜고 끈다. 대시와 같은 규칙이며, 데디케이티드 서버에서는 아무것도 하지 않는다. */
+	void UpdateSpeedBoostEffects(bool bBoosting);
 
 	/** 로컬 플레이어 폰에서만 카메라 프로브의 충돌을 켠다. 꺼질 때는 걸어 둔 페이드를 전부 되돌린다. */
 	void UpdateCameraProbe();
@@ -401,6 +430,17 @@ private:
 	/** 지속되는 트레일이라 시작할 때 만들고 끝날 때 직접 꺼야 한다. */
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> DashTrailComponent;
+
+	/**
+	 * 연출용 속도 부스트 상태. 대시와 같은 이유로 서버가 복제한다: 부스트 의도는
+	 * 압축 플래그로 서버까지만 가고 다른 클라이언트에는 닿지 않는다.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_IsSpeedBoosting)
+	bool bIsSpeedBoosting = false;
+
+	/** 부스트가 끝날 때까지 붙어 있는 FX. 끝나면 직접 꺼야 한다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> SpeedBoostFXComponent;
 
 	/**
 	 * 컨텍스트를 넣어준 서브시스템. EndPlay 시점에는 Controller가 이미 떨어져 나갔을

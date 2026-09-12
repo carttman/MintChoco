@@ -108,6 +108,7 @@ void FPaintCellGrid::Build(
 	StarGens.Init(0, CellCount);
 	Areas.Init(0.0f, CellCount);
 	SurfaceCenters.Init(FVector3f::ZeroVector, CellCount);
+	ExcludedCenters.Reset();
 	FMemory::Memzero(Totals);
 	TotalArea = 0.0f;
 	SurfaceCellCount = 0;
@@ -377,6 +378,38 @@ void FPaintCellGrid::ClearPaint()
 		Ids[Cell] = PaintIdNone;
 		StarGens[Cell] = 0;
 		Totals[Cell % PaintFaceDirectionCount][PaintIdNone] += Areas[Cell];
+	}
+}
+
+void FPaintCellGrid::FilterSurfaceCells(TFunctionRef<bool(const FVector&, EPaintFaceDirection)> IsIncluded)
+{
+	for (int32 Cell = 0; Cell < Areas.Num(); ++Cell)
+	{
+		const int32 Direction = Cell % PaintFaceDirectionCount;
+		if (Areas[Cell] > 0.0f && !IsIncluded(FVector(SurfaceCenters[Cell]), static_cast<EPaintFaceDirection>(Direction)))
+		{
+			ExcludedCenters.Add(SurfaceCenters[Cell]);
+			Areas[Cell] = 0.0f;
+			Ids[Cell] = PaintIdNone;
+		}
+	}
+	// Re-sum instead of subtracting thousands of small areas from a large float total.
+	FMemory::Memzero(Totals);
+	TotalArea = 0.0f;
+	SurfaceCellCount = 0;
+	for (int32 Cell = 0; Cell < Areas.Num(); ++Cell)
+	{
+		Totals[Cell % PaintFaceDirectionCount][Ids[Cell]] += Areas[Cell];
+		TotalArea += Areas[Cell];
+		SurfaceCellCount += Areas[Cell] > 0.0f ? 1 : 0;
+	}
+}
+
+void FPaintCellGrid::ForEachExcludedCell(TFunctionRef<void(const FVector&)> Visitor) const
+{
+	for (const FVector3f& Center : ExcludedCenters)
+	{
+		Visitor(FVector(Center));
 	}
 }
 

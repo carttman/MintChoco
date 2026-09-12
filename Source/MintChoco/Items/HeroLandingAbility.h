@@ -33,6 +33,12 @@ private:
 
 	void DestroyMarker();
 
+	/**
+	 * 카메라 붐을 올리거나 되돌린다. 소유 클라이언트에서만 부른다: 카메라는 그 머신의
+	 * 것이라 복제할 것이 없다.
+	 */
+	void SetCameraRaised(AUnit& Unit, bool bRaise);
+
 	UPROPERTY(Transient)
 	TObjectPtr<const UHeroLandingProfile> Landing;
 
@@ -40,4 +46,12 @@ private:
 	TObjectPtr<AActor> Marker;
 
 	FDelegateHandle LandedHandle;
+
+	/** 올리기 전의 붐 오프셋. 되돌릴 때 이 값을 그대로 쓴다. */
+	FVector SavedBoomOffset = FVector::ZeroVector;
+
+	bool bCameraRaised = false;
+
+	/** 호버 이펙트를 이미 뿌렸는지. 서버에서만 본다. 호버는 한 번뿐이라 한 번만 보낸다. */
+	bool bHoverFXSent = false;
 };
