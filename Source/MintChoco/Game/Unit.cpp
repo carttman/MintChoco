@@ -135,6 +135,16 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	GunMesh->SetGenerateOverlapEvents(false);
 	GunMesh->SetCanEverAffectNavigation(false);
 	GunMesh->SetVisibility(false);
+
+	// 테두리 껍데기. 캐릭터 메시와 같은 메시를 쓰고 포즈는 리더 포즈로 따라가므로 애니메이션을
+	// 두 번 돌리지 않는다. 그림자는 원본이 이미 드리우므로 끈다.
+	OutlineMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("OutlineMesh"));
+	OutlineMesh->SetupAttachment(GetMesh());
+	OutlineMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	OutlineMesh->SetGenerateOverlapEvents(false);
+	OutlineMesh->SetCanEverAffectNavigation(false);
+	OutlineMesh->SetCastShadow(false);
+	OutlineMesh->SetVisibility(false);
 }
 
 void AUnit::PossessedBy(AController* NewController)
@@ -182,6 +192,9 @@ void AUnit::BeginPlay()
 	{
 		StunTagHandle = AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_Stunned, EGameplayTagEventType::NewOrRemoved)
 			.AddUObject(this, &AUnit::HandleStunTagChanged);
+
+		SuperArmorTagHandle = AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_SuperArmor, EGameplayTagEventType::NewOrRemoved)
+			.AddUObject(this, &AUnit::HandleSuperArmorTagChanged);
 	}
 
 	// 빙의가 BeginPlay보다 먼저 온 경우(리슨 호스트)를 위해 한 번 더 맞춘다.
@@ -282,6 +295,7 @@ void AUnit::SetCameraFaded(bool bFaded)
 		}
 		bCameraFaded = true;
 		UpdateGunVisibility();
+		UpdateSuperArmorOutline();
 		return;
 	}
 
@@ -292,6 +306,7 @@ void AUnit::SetCameraFaded(bool bFaded)
 	CameraFadeOriginalMaterials.Reset();
 	bCameraFaded = false;
 	UpdateGunVisibility();
+	UpdateSuperArmorOutline();
 }
 
 int32 AUnit::GetTeam() const
@@ -434,6 +449,21 @@ void AUnit::HandleStunTagChanged(const FGameplayTag Tag, int32 NewCount)
 		}
 	}
 	BP_OnStunned(bStunned);
+}
+
+void AUnit::HandleSuperArmorTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+	UpdateSuperArmorOutline();
+}
+
+void AUnit::UpdateSuperArmorOutline()
+{
+	if (OutlineMesh)
+	{
+		// 카메라가 안에 들어와 몸이 반투명해진 동안에는 테두리도 감춘다. 껍데기는 불투명이라
+		// 그대로 두면 페이드된 몸 위에 실루엣만 둥둥 뜬다.
+		OutlineMesh->SetVisibility(HasSuperArmor() && !bCameraFaded);
+	}
 }
 
 void AUnit::Knockback(const FVector& From)
@@ -728,6 +758,12 @@ void AUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	StunTagHandle.Reset();
 
+	if (AbilitySystem && SuperArmorTagHandle.IsValid())
+	{
+		AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_SuperArmor, EGameplayTagEventType::NewOrRemoved).Remove(SuperArmorTagHandle);
+	}
+	SuperArmorTagHandle.Reset();
+
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -1021,6 +1057,20 @@ void AUnit::ApplyUnitData()
 		InkBottle->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("InkBottle"));
 	}
 
+	// 껍데기도 같은 메시로 맞추고 포즈를 넘겨받는다. 리더 포즈는 메시가 바뀔 때마다 다시
+	// 걸어야 본 매핑이 새 메시를 따라간다.
+	if (OutlineMesh && UnitData->Mesh)
+	{
+		OutlineMesh->SetSkeletalMesh(UnitData->Mesh);
+		OutlineMesh->SetLeaderPoseComponent(MeshComponent);
+
+		// 슬롯 수는 메시가 정하므로 메시를 넣은 뒤에 깐다.
+		for (int32 Index = 0; Index < OutlineMesh->GetNumMaterials(); ++Index)
+		{
+			OutlineMesh->SetMaterial(Index, SuperArmorOutlineMaterial);
+		}
+	}
+
 	// 메시가 바뀌면 총도 그 캐릭터의 것으로. Gun 소켓이 없는 메시면 병과 마찬가지로 발밑에 남는다.
 	if (GunMesh)
 	{
@@ -1038,4 +1088,7 @@ void AUnit::ApplyUnitData()
 			}
 		}
 	}
+
+	// 메시가 교체되면 오버레이도 새 메시에 다시 걸어야 한다.
+	UpdateSuperArmorOutline();
 }
