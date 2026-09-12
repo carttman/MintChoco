@@ -12,6 +12,7 @@ class UAnimSequenceBase;
 class UNiagaraSystem;
 class USkeletalMesh;
 class USoundBase;
+class UStaticMesh;
 
 /**
  * 유닛이 수행하는 동작.
@@ -107,6 +108,17 @@ public:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Visual")
 	TSubclassOf<UAnimInstance> AnimClass;
+
+	/** 손에 드는 총. 비어 있으면 이 캐릭터는 총을 들지 않는다. 메시의 Gun 소켓에 붙는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Visual")
+	TObjectPtr<UStaticMesh> GunMesh;
+
+	/**
+	 * 마지막 발사 후 총을 보여 두는 시간(초). 애님 블루프린트의 FireHoldTime과 같은
+	 * 값으로 두어야 상체 조준 자세와 총이 함께 사라진다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Visual", meta = (ClampMin = "0", ForceUnits = "s"))
+	float GunVisibleHoldTime = 0.5f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
 	TMap<EUnitAction, FUnitActionFeedback> ActionFeedback;

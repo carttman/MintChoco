@@ -37,6 +37,15 @@ bool FUnitAnimMathTest::RunTest(const FString& Parameters)
 	// 정지면 0.
 	TestEqual(TEXT("still: direction 0"), FUnitAnimMath::MoveDirectionDegrees(FVector::ZeroVector, Facing), 0.0f);
 
+	// 발사 유지: 마지막 발사 후 0.5초 동안만 참.
+	TestFalse(TEXT("fire hold: never fired"), FUnitAnimMath::IsFireHoldActive(10.0, -1.0, 0.5f));
+	TestTrue(TEXT("fire hold: the shot frame"), FUnitAnimMath::IsFireHoldActive(10.0, 10.0, 0.5f));
+	TestTrue(TEXT("fire hold: inside the hold"), FUnitAnimMath::IsFireHoldActive(10.4, 10.0, 0.5f));
+	TestTrue(TEXT("fire hold: exactly at the end"), FUnitAnimMath::IsFireHoldActive(10.5, 10.0, 0.5f));
+	TestFalse(TEXT("fire hold: after the hold"), FUnitAnimMath::IsFireHoldActive(10.6, 10.0, 0.5f));
+	TestFalse(TEXT("fire hold: zero hold never holds"), FUnitAnimMath::IsFireHoldActive(10.0, 10.0, 0.0f));
+	TestTrue(TEXT("fire hold: a later shot restarts it"), FUnitAnimMath::IsFireHoldActive(11.2, 10.9, 0.5f));
+
 	return true;
 }
 

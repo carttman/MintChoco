@@ -64,9 +64,10 @@ struct MINTCHOCO_API FPaintDeposit
 	 * Builds the splat and hands it to the world. Returns false, painting nothing, when the hit is
 	 * not on a paintable surface, the world has no paint subsystem, or BrushProfile is unset.
 	 * A hit actor that is a paint hit receiver is struck with HitPower first, whether or not it
-	 * is also painted.
+	 * is also painted. StarGen marks the splat as a speed-star trail of that generation; 0 is
+	 * plain paint.
 	 */
-	bool ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed, float Charge = 1.0f) const;
+	bool ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed, float Charge = 1.0f, uint8 StarGen = 0) const;
 
 	/** Strikes the hit actor if it is a paint hit receiver. Returns true when something received the hit. */
 	bool StrikeReceiver(const FHitResult& Hit, uint8 PaintId) const;

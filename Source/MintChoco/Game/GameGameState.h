@@ -4,6 +4,7 @@
 #include "GameFramework/GameStateBase.h"
 #include "Paint/PaintCellGrid.h"
 #include "Paint/PaintSplatLog.h"
+#include "Paint/PaintStar.h"
 
 #include "GameGameState.generated.h"
 
@@ -34,6 +35,10 @@ enum class EMatchPhase : uint8
  *
  * 다른 하나는 커버리지. 점수는 서버의 셀 그리드가 진실이고, 클라이언트 그리드는
  * 디버그 표시용일 뿐이다. 서버가 주기적으로 여기에 써 넣고 HUD는 이 값을 읽는다.
+ *
+ * 스피드 스타의 자국 상태도 여기서 나른다. 어느 팀의 몇 번째 스타가 돌고 있고 언제 끝났는지를
+ * 표면 재질이 읽어 무지개를 그리고 바래게 한다. 잠금 판정은 스플랫에 박혀 오므로
+ * (FPaintSplat::LockGens) 이 상태는 연출용이고, 한 프레임 늦어도 상관없다.
  */
 UCLASS()
 class MINTCHOCO_API AGameGameState : public AGameStateBase
@@ -41,6 +46,8 @@ class MINTCHOCO_API AGameGameState : public AGameStateBase
 	GENERATED_BODY()
 
 public:
+	AGameGameState();
+
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -59,6 +66,14 @@ public:
 	/** 서버 전용. 지금 이 순간의 커버리지를 다시 잰다. 승패 판정 직전처럼 최신값이 필요할 때 쓴다. */
 	void RefreshCoverage();
 
+	/**
+	 * 서버 전용. 한 팀의 스피드 스타가 시작됐다. 자국 스플랫이 실을 세대를 돌려준다.
+	 * Duration은 End가 안 와도 잠금이 풀리는 상한, FadeDuration은 끝난 뒤 팀 색으로 돌아오는 시간.
+	 */
+	uint8 BeginStarPaint(uint8 PaintId, float Duration, float FadeDuration);
+
+	/** 서버 전용. 스피드 스타 하나가 끝났다. 그 팀의 마지막 스타면 자국이 바래기 시작한다. */
+	void EndStarPaint(uint8 PaintId);
 	//~ 경기 단계
 
 	UFUNCTION(BlueprintPure, Category = "Match")
@@ -124,6 +139,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Paint", meta = (ClampMin = "0.05"))
 	float CoverageRefreshInterval = 0.2f;
 
+	/** 페인트 id(팀)별 스피드 스타 자국 상태. 한 번치 안에서는 로그보다 먼저 알림이 오도록 로그 위에 둔다. */
+	UPROPERTY(ReplicatedUsing = OnRep_StarPaint)
+	TArray<FStarPaintState> StarPaint;
+
 	UPROPERTY(ReplicatedUsing = OnRep_SplatLog)
 	FPaintSplatLog SplatLog;
 
@@ -170,6 +189,12 @@ protected:
 	UFUNCTION()
 	void OnRep_MatchEnded();
 
+	UFUNCTION()
+	void OnRep_StarPaint();
+
+	/** 서버 시각 보정이 갱신될 때마다 바래는 시각을 로컬 시계로 다시 옮긴다. 늦게 들어온 클라이언트의 첫 추정이 어긋나기 때문이다. */
+	virtual void OnRep_ReplicatedWorldTimeSecondsDouble() override;
+
 	/** 일시 스플랫 전용. 서버 포함 모든 머신이 받아서 연출만 띄운다. */
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastTransientSplat(const FPaintSplat& Splat);
@@ -177,6 +202,9 @@ protected:
 private:
 	/** 클라이언트 전용. 로그에서 아직 안 그린 항목을 표면에 그린다. 표면이 생긴 뒤에만 부른다. */
 	void ApplyNewSplats();
+
+	/** 스타 상태를 이 머신의 시계로 옮겨 페인트 서브시스템(표면 재질)에 민다. */
+	void PushStarPaint();
 
 	void HandleMatchEnded();
 

@@ -281,6 +281,13 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ink")
 	TObjectPtr<UStaticMeshComponent> InkSurface;
 
+	/**
+	 * 손에 든 총. 평소에는 숨어 있고 발사 연출 동안에만 보인다.
+	 * 어떤 메시인지와 얼마나 보일지는 UnitData가 정한다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<UStaticMeshComponent> GunMesh;
+
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void StartFire();
@@ -333,6 +340,21 @@ private:
 
 	/** 연출의 몽타주 부분: 몽타주 에셋이 있으면 그것을, 없으면 Animation을 슬롯에 동적 몽타주로. */
 	void PlayFeedbackMontage(const struct FUnitActionFeedback& Feedback);
+
+	/** 한 발 나갈 때마다. 총을 보이게 하고 유지 시간을 처음부터 다시 센다. */
+	void ShowGunForFire();
+
+	/** 유지 시간이 다 됐을 때. */
+	void HideGun();
+
+	/** 보임 의도와 카메라 페이드를 합쳐 실제 가시성을 정한다. */
+	void UpdateGunVisibility();
+
+	/** 발사 연출이 요구하는 총의 상태. 실제로 보이는지는 카메라 페이드까지 봐야 안다. */
+	bool bGunVisible = false;
+
+	/** 총을 숨기는 타이머. 발사마다 다시 걸려 마지막 한 발에서만 만료된다. */
+	FTimerHandle GunHideTimer;
 
 	UFUNCTION()
 	void OnRep_IsDashing();

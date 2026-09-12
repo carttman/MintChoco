@@ -1,5 +1,6 @@
 #include "Game/UnitAnimInstance.h"
 
+#include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
@@ -28,6 +29,11 @@ float FUnitAnimMath::MoveDirectionDegrees(const FVector& Velocity, const FRotato
 	return FMath::RadiansToDegrees(FMath::Atan2(Local.Y, Local.X));
 }
 
+bool FUnitAnimMath::IsFireHoldActive(double Now, double LastFiredTime, float HoldSeconds)
+{
+	return LastFiredTime >= 0.0 && HoldSeconds > 0.0f && Now - LastFiredTime <= HoldSeconds;
+}
+
 // ---------------------------------------------------------------- UUnitAnimInstance
 
 void UUnitAnimInstance::NativeInitializeAnimation()
@@ -37,6 +43,13 @@ void UUnitAnimInstance::NativeInitializeAnimation()
 	bAimPitchInitialized = false;
 }
 
+void UUnitAnimInstance::NativeUninitializeAnimation()
+{
+	// 메시가 애님 인스턴스를 바꾸거나 폰이 사라질 때. 무기 델리게이트에 죽은 바인딩을 남기지 않는다.
+	BindWeapons(nullptr);
+	Super::NativeUninitializeAnimation();
+}
+
 void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeUpdateAnimation(DeltaSeconds);
@@ -44,6 +57,13 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	// 블루프린트가 재인스턴스되거나 폰이 늦게 붙는 경우가 있어 매번 다시 본다. 캐스트 하나라 싸다.
 	APawn* const Pawn = TryGetPawnOwner();
 	Unit = Cast<AUnit>(Pawn);
+
+	// 발사 알림은 유닛이 바뀐 순간에만 다시 건다. 같은 유닛이면 아무것도 하지 않는다.
+	if (Unit.Get() != BoundUnit.Get())
+	{
+		BindWeapons(Unit);
+	}
+
 	const ACharacter* const Character = Cast<ACharacter>(Pawn);
 	const UCharacterMovementComponent* const Movement = Character ? Character->GetCharacterMovement() : nullptr;
 	if (!Pawn || !Movement)
@@ -84,6 +104,9 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		const UUnitMovementComponent* const UnitMovement = Unit->GetUnitMovement();
 		HeroLandingPhase = UnitMovement ? UnitMovement->GetHeroLandingPhase() : EHeroLandingPhase::None;
 		bIsFiring = Unit->GetPaintWeapon() && Unit->GetPaintWeapon()->IsTriggerHeld();
+
+		const UWorld* const World = GetWorld();
+		bRecentlyFired = World && FUnitAnimMath::IsFireHoldActive(World->GetTimeSeconds(), LastFiredTime, FireHoldTime);
 	}
 	else
 	{
@@ -91,5 +114,45 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		bIsStunned = false;
 		HeroLandingPhase = EHeroLandingPhase::None;
 		bIsFiring = false;
+		bRecentlyFired = false;
+	}
+}
+
+void UUnitAnimInstance::BindWeapons(AUnit* NewUnit)
+{
+	if (AUnit* const OldUnit = BoundUnit.Get())
+	{
+		for (UPaintWeaponComponent* const Weapon : { OldUnit->GetPaintWeapon(), OldUnit->GetSecondaryWeapon() })
+		{
+			if (Weapon)
+			{
+				Weapon->OnFired.RemoveDynamic(this, &UUnitAnimInstance::HandleWeaponFired);
+			}
+		}
+	}
+
+	BoundUnit = NewUnit;
+	// 다른 유닛의 발사 기록을 이어받지 않는다.
+	LastFiredTime = -1.0;
+
+	if (!NewUnit)
+	{
+		return;
+	}
+	for (UPaintWeaponComponent* const Weapon : { NewUnit->GetPaintWeapon(), NewUnit->GetSecondaryWeapon() })
+	{
+		if (Weapon)
+		{
+			Weapon->OnFired.AddUniqueDynamic(this, &UUnitAnimInstance::HandleWeaponFired);
+		}
+	}
+}
+
+void UUnitAnimInstance::HandleWeaponFired(int32 Seed)
+{
+	// 시각은 이 머신의 월드 시계로 잰다. 알림이 도착한 순간부터 세면 되므로 서버 시각이 필요 없다.
+	if (const UWorld* const World = GetWorld())
+	{
+		LastFiredTime = World->GetTimeSeconds();
 	}
 }

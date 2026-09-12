@@ -2,6 +2,20 @@
 
 #include "Engine/HitResult.h"
 
+float UPaintBrushProfile::ComputeRadius(float Volume, float Speed) const
+{
+	return FMath::Min(BaseRadius * FMath::Sqrt(FMath::Max(Volume, 0.0f)) + RadiusPerSpeed * Speed, MaxRadius);
+}
+
+float UPaintBrushProfile::StretchWithinTail(float Radius, float MaxTail) const
+{
+	// Behind the contact the stamp reaches Radius * (Stretch * (1 + c) - c): half the long axis
+	// plus the center shift, both growing with the stretch. Solve that for the stretch.
+	const float Shift = GetCenterShiftScale();
+	const float Stretch = (MaxTail / FMath::Max(Radius, UE_KINDA_SMALL_NUMBER) + Shift) / (1.0f + Shift);
+	return FMath::Clamp(Stretch, 1.0f, MaxStretch);
+}
+
 FPaintSplat UPaintBrushProfile::BuildSplat(
 	const FHitResult& Hit,
 	FVector IncidentVelocity,
@@ -18,9 +32,7 @@ FPaintSplat UPaintBrushProfile::BuildSplat(
 
 	const float CosTheta = FMath::Abs(FVector::DotProduct(Incident, Normal));
 
-	const float Radius = FMath::Min(
-		BaseRadius * FMath::Sqrt(FMath::Max(Volume, 0.0f)) + RadiusPerSpeed * Speed,
-		MaxRadius);
+	const float Radius = ComputeRadius(Volume, Speed);
 	const float Stretch = FMath::Clamp(1.0f / FMath::Max(CosTheta, UE_KINDA_SMALL_NUMBER), 1.0f, MaxStretch);
 	const FVector Tangent = (Incident - FVector::DotProduct(Incident, Normal) * Normal).GetSafeNormal();
 	// A grazing hit lands "ahead" of the contact along the tangent.

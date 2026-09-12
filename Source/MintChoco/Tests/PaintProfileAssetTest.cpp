@@ -5,6 +5,7 @@
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Modules/ModuleManager.h"
 
+#include "Game/TeamTypes.h"
 #include "Weapons/PaintDeposit.h"
 #include "Weapons/PaintGunProfile.h"
 #include "Weapons/PaintProjectile.h"
@@ -81,6 +82,15 @@ bool FPaintProfileAssetTest::RunTest(const FString& Parameters)
 			continue;
 		}
 		TestNotNull(*FString::Printf(TEXT("%s: ProjectileClass"), *Name), Paintball->ProjectileClass.Get());
+		// A team without a body material flies in the mesh's neutral fallback, which reads as a missing team.
+		if (const APaintProjectile* const Ball = Paintball->ProjectileClass.GetDefaultObject())
+		{
+			for (int32 TeamId = 0; TeamId < Teams::Count; ++TeamId)
+			{
+				TestNotNull(*FString::Printf(TEXT("%s: %s has a body material for team %d"), *Name, *Ball->GetClass()->GetName(), TeamId),
+					Ball->GetTeamMaterial(static_cast<uint8>(TeamId)));
+			}
+		}
 		TestTrue(*FString::Printf(TEXT("%s: Radius is positive"), *Name), Paintball->Radius > 0.0f);
 		CheckDeposit(Name, Paintball->Deposit);
 	}

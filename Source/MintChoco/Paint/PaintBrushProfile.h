@@ -35,6 +35,16 @@ public:
 		float HeightAdd,
 		int32 Seed) const;
 
+	/** Radius BuildSplat gives a splat of this volume and impact speed, before any stretch. */
+	float ComputeRadius(float Volume, float Speed) const;
+
+	/**
+	 * Largest stretch whose stamp still ends within MaxTail behind the contact along the tangent
+	 * (half length plus the center shift). 1 is a round stamp; MaxStretch is the ceiling.
+	 * A trail uses it so a mark laid right after a turn cannot reach past the corner.
+	 */
+	float StretchWithinTail(float Radius, float MaxTail) const;
+
 	/** Opaque brush that stamps the id, height and edge distance into a paint buffer (M_PaintBrush). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
 	TObjectPtr<UMaterialInterface> BrushMaterial;

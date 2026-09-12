@@ -112,8 +112,19 @@ public:
 	 * not face away from the splat. CoreFraction is the part of the stamp radius that counts as
 	 * covered: the brush's main blob spans half the radius, its satellites almost all of it.
 	 * Returns the number of cells that changed id.
+	 *
+	 * StarGen is the speed-star generation the paint carries (0 for plain paint). A cell whose id
+	 * and generation Locks says are locked keeps its owner against any other id; the same id still
+	 * paints it and leaves the locked generation in place. The brush follows the same rule texel by
+	 * texel, which is what keeps the score and the picture agreeing under a star.
 	 */
-	int32 Mark(const FPaintLocalStamp& Stamp, uint8 PaintId, float CoreFraction);
+	int32 Mark(const FPaintLocalStamp& Stamp, uint8 PaintId, uint8 StarGen, const FPaintLockGens& Locks, float CoreFraction);
+
+	/** Plain paint, nothing locked. */
+	int32 Mark(const FPaintLocalStamp& Stamp, uint8 PaintId, float CoreFraction)
+	{
+		return Mark(Stamp, PaintId, 0, FPaintLockGens(), CoreFraction);
+	}
 
 	void ClearPaint();
 
@@ -131,7 +142,7 @@ public:
 
 	/** SurfaceCenter is the area-weighted center of the surface inside the cell, not the voxel center. */
 	void ForEachSurfaceCell(
-		TFunctionRef<void(const FVector& SurfaceCenter, EPaintFaceDirection Direction, uint8 PaintId, float Area)> Visitor) const;
+		TFunctionRef<void(const FVector& SurfaceCenter, EPaintFaceDirection Direction, uint8 PaintId, uint8 StarGen, float Area)> Visitor) const;
 
 private:
 	/** A triangle clipped by up to six voxel planes has at most nine corners. */
@@ -148,6 +159,7 @@ private:
 
 	/** All indexed by voxel * PaintFaceDirectionCount + direction. A zero area means no surface. */
 	TArray<uint8> Ids;
+	TArray<uint8> StarGens;
 	TArray<float> Areas;
 
 	/** Where the surface actually sits inside the voxel; a voxel straddles its surface, so its center does not. */

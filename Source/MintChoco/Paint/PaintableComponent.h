@@ -14,6 +14,7 @@ class UStaticMeshComponent;
 class UTexture2D;
 class UTextureRenderTarget2D;
 struct FPaintAtlas;
+struct FPaintStarShaderState;
 
 /**
  * Gives its owner a paintable surface: one paint buffer per component instance that splats are
@@ -39,11 +40,12 @@ struct FPaintAtlas;
  * mesh's scaled-local frame (rotation and translation removed, scale kept), so the actor's scale,
  * uniform or not, stretches nothing.
  *
- * Per texel, R holds one of the PaintIdCount ids (PaintIdNone meaning "unpainted"), G the
- * accumulated paint height and B the distance to the nearest paint edge. The surface material
- * turns the id into a team look through its material layer stack (MF_PaintOverlay feeds the
- * stack input) and the height into relief. Ids must never be interpolated, so the target samples
- * with nearest filtering and the reads filter the other channels by hand.
+ * Per texel, R holds one of the PaintIdCount ids (PaintIdNone meaning "unpainted") together with
+ * a speed-star generation (EncodePaintTexel), G the accumulated paint height and B the distance
+ * to the nearest paint edge. The surface material turns the id into a team look through its
+ * material layer stack (MF_PaintOverlay feeds the stack input), the generation into the star's
+ * rainbow while it runs, and the height into relief. Ids must never be interpolated, so the
+ * target samples with nearest filtering and the reads filter the other channels by hand.
  *
  * Writing an ID has to replace, never blend, which rules out both of the obvious draw paths:
  * translucent blend modes can never write the target's alpha, and a masked material's clip is
@@ -85,6 +87,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Paint")
 	void ClearPaint();
+
+	/** Hands the surface material the speed-star state it shades from. The paint subsystem calls this on every push. */
+	void ApplyStarPaint(const FPaintStarShaderState& State);
 
 	/** This surface's paint buffer. Null on a dedicated server or a surface that keeps no direction. */
 	UFUNCTION(BlueprintPure, Category = "Paint")
@@ -132,7 +137,7 @@ protected:
 	 * Optional override. Leave it unset to keep whatever material the mesh already has and simply
 	 * feed the paint buffers into it - that material then needs the parameters MF_PaintOverlay
 	 * declares (PaintIdMap, PaintTexelSize, PaintDistRange, PositionMap, BoundsMin, BoundsSize,
-	 * PaintEdgeFade and the six PaintIsland_* rectangles).
+	 * PaintEdgeFade, the six PaintIsland_* rectangles and the PaintStar* vectors).
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
 	TObjectPtr<UMaterialInterface> SurfaceMaterial;

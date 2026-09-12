@@ -14,6 +14,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/StaticMesh.h"
 #include "Game/GameGameState.h"
 #include "Game/GamePlayerState.h"
 #include "Game/TeamTypes.h"
@@ -35,6 +36,7 @@
 #include "Paint/PaintSplat.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
+#include "TimerManager.h"
 #include "Weapons/PaintWeaponComponent.h"
 
 AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
@@ -118,6 +120,16 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	InkSurface->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	InkSurface->SetGenerateOverlapEvents(false);
 	InkBottle->SetSurfaceMesh(InkSurface);
+
+	// 총도 메시의 소켓(Gun)에 붙는다. 소켓은 UnitData가 메시를 정한 뒤에야 존재하므로
+	// 여기서는 메시에만 붙이고 ApplyUnitData가 소켓으로 옮긴다(잉크병과 같은 이유).
+	// 평소에는 숨어 있고 발사 연출이 켜 준다.
+	GunMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("GunMesh"));
+	GunMesh->SetupAttachment(GetMesh());
+	GunMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GunMesh->SetGenerateOverlapEvents(false);
+	GunMesh->SetCanEverAffectNavigation(false);
+	GunMesh->SetVisibility(false);
 }
 
 void AUnit::PossessedBy(AController* NewController)
@@ -276,6 +288,7 @@ void AUnit::SetCameraFaded(bool bFaded)
 			MeshComponent->SetMaterial(Index, CameraFadeMaterial);
 		}
 		bCameraFaded = true;
+		UpdateGunVisibility();
 		return;
 	}
 
@@ -285,6 +298,7 @@ void AUnit::SetCameraFaded(bool bFaded)
 	}
 	CameraFadeOriginalMaterials.Reset();
 	bCameraFaded = false;
+	UpdateGunVisibility();
 }
 
 int32 AUnit::GetTeam() const
@@ -880,6 +894,9 @@ void AUnit::HandleWeaponFired(int32 Seed)
 		return;
 	}
 
+	// 연출 에셋이 없어도 한 발은 나갔으므로, 총은 Feedback 조회보다 먼저 꺼낸다.
+	ShowGunForFire();
+
 	const FUnitActionFeedback* Feedback = UnitData ? UnitData->FindFeedback(EUnitAction::Fire) : nullptr;
 	if (!Feedback)
 	{
@@ -906,6 +923,37 @@ void AUnit::HandleWeaponFired(int32 Seed)
 		{
 			UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), Feedback->FX, GetActorLocation(), GetActorRotation());
 		}
+	}
+}
+
+void AUnit::ShowGunForFire()
+{
+	const float HoldTime = UnitData ? UnitData->GunVisibleHoldTime : 0.0f;
+	if (!GunMesh || HoldTime <= 0.0f)
+	{
+		return;
+	}
+
+	bGunVisible = true;
+	UpdateGunVisibility();
+
+	// 연사 중에는 발사마다 타이머가 새로 걸려 총이 계속 남는다. 마지막 한 발에서만 실제로 만료된다.
+	GetWorldTimerManager().SetTimer(GunHideTimer, this, &AUnit::HideGun, HoldTime, false);
+}
+
+void AUnit::HideGun()
+{
+	bGunVisible = false;
+	UpdateGunVisibility();
+}
+
+void AUnit::UpdateGunVisibility()
+{
+	if (GunMesh)
+	{
+		// 카메라가 안에 들어와 몸이 반투명해진 동안에는 총도 감춘다. 페이드는 스켈레탈 메시의
+		// 재질 슬롯만 바꾸므로(SetCameraFaded) 총만 불투명하게 남아 화면을 가린다.
+		GunMesh->SetVisibility(bGunVisible && !bCameraFaded);
 	}
 }
 
@@ -968,5 +1016,13 @@ void AUnit::ApplyUnitData()
 	if (InkBottle)
 	{
 		InkBottle->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("InkBottle"));
+	}
+
+	// 메시가 바뀌면 총도 그 캐릭터의 것으로. Gun 소켓이 없는 메시면 병과 마찬가지로 발밑에 남는다.
+	if (GunMesh)
+	{
+		GunMesh->SetStaticMesh(UnitData->GunMesh);
+		GunMesh->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("Gun"));
+		UpdateGunVisibility();
 	}
 }

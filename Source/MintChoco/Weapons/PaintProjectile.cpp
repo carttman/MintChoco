@@ -18,6 +18,11 @@
 
 namespace
 {
+	/** Custom Primitive Data slots the body material reads; the contract is documented on APaintProjectile. */
+	constexpr int32 BodySpeedIndex = 0;
+	constexpr int32 BodyPhaseIndex = 1;
+	constexpr int32 BodyBirthTimeIndex = 2;
+
 	UPrimitiveComponent* GetMovingBody(const APawn* Pawn)
 	{
 		return Pawn ? Cast<UPrimitiveComponent>(Pawn->GetRootComponent()) : nullptr;
@@ -55,6 +60,8 @@ APaintProjectile::APaintProjectile()
 	Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
 	Mesh->SetupAttachment(Sphere);
 	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// The body material stretches a tail behind the sphere, past the mesh's own bounds.
+	Mesh->BoundsScale = 2.0f;
 
 	Movement = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("Movement"));
 	Movement->bRotationFollowsVelocity = true;
@@ -78,6 +85,16 @@ void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId,
 	Sphere->SetSphereRadius(Profile->Radius);
 	ScaleMeshToRadius(Mesh, Profile->Radius);
 
+	if (UMaterialInterface* const TeamMaterial = GetTeamMaterial(PaintId))
+	{
+		Mesh->SetMaterial(0, TeamMaterial);
+	}
+	// Per-ball values ride Custom Primitive Data so every ball of a team shares one material. The
+	// phase comes from the seed, so a client's cosmetic ball wobbles in step with the server's.
+	Mesh->SetCustomPrimitiveDataFloat(BodySpeedIndex, Movement->InitialSpeed);
+	Mesh->SetCustomPrimitiveDataFloat(BodyPhaseIndex, FRandomStream(Seed).GetFraction());
+	Mesh->SetCustomPrimitiveDataFloat(BodyBirthTimeIndex, GetWorld()->GetTimeSeconds());
+
 	// A ball leaves the muzzle inside the shooter's reach; neither body may collide with the other.
 	if (APawn* const Shooter = GetInstigator())
 	{
@@ -92,6 +109,11 @@ void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId,
 	// may paint. A cosmetic ball ticking here would draw the same trail a second time.
 	LastTrailLocation = GetActorLocation();
 	SetActorTickEnabled(!bCosmetic && HasAuthority() && Profile->HasTrail());
+}
+
+UMaterialInterface* APaintProjectile::GetTeamMaterial(uint8 InPaintId) const
+{
+	return TeamMaterials.IsValidIndex(InPaintId) ? TeamMaterials[InPaintId].Get() : nullptr;
 }
 
 void APaintProjectile::EndPlay(const EEndPlayReason::Type Reason)

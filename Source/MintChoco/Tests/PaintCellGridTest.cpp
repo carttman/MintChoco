@@ -155,6 +155,83 @@ bool FPaintCellGridMaskAndScaleTest::RunTest(const FString& Parameters)
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPaintCellGridStarLockTest,
+	"MintChoco.Paint.CellGrid.StarLock",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FPaintCellGridStarLockTest::RunTest(const FString& Parameters)
+{
+	FPaintCellGrid Grid;
+	FUnitCube().Build(Grid, 25.0f);
+
+	FPaintLocalStamp Stamp;
+	Stamp.Center = FVector(0.0, 0.0, 50.0);
+	Stamp.Normal = FVector::UpVector;
+	Stamp.AxisU = FVector::ForwardVector;
+	Stamp.AxisV = FVector::RightVector;
+	Stamp.Radius = 60.0f;
+	Stamp.Stretch = 1.0f;
+
+	const auto CountCells = [&Grid](uint8 PaintId, uint8 StarGen)
+	{
+		int32 Count = 0;
+		Grid.ForEachSurfaceCell([&](const FVector&, EPaintFaceDirection, uint8 Id, uint8 Gen, float)
+		{
+			if (Id == PaintId && Gen == StarGen)
+			{
+				++Count;
+			}
+		});
+		return Count;
+	};
+	const auto TopFraction = [&Grid](uint8 PaintId)
+	{
+		return Grid.GetCoverage(EPaintFaceDirection::Up).GetFraction(PaintId);
+	};
+
+	// A speed-star trail: team 0, generation 1, on the four center cells of the top.
+	FPaintLockGens Locks;
+	TestEqual(TEXT("trail painted"), Grid.Mark(Stamp, 0, 1, Locks, 0.5f), 4);
+	TestEqual(TEXT("cells carry the generation"), CountCells(0, 1), 4);
+
+	// While that generation is locked, no other id takes the cells and the score stays put.
+	Locks.Gen[0] = 1;
+	TestEqual(TEXT("the enemy is blocked"), Grid.Mark(Stamp, 1, 0, Locks, 0.5f), 0);
+	TestEqual(TEXT("team 0 keeps the top"), TopFraction(0), 0.25f, 1e-3f);
+	TestEqual(TEXT("the eraser is blocked too"), Grid.Mark(Stamp, PaintIdNone, 0, Locks, 0.5f), 0);
+	TestEqual(TEXT("an enemy star is blocked as well"), Grid.Mark(Stamp, 1, 7, Locks, 0.5f), 0);
+
+	// The team's own plain paint passes over the trail without disturbing the locked generation.
+	TestEqual(TEXT("same team changes no owner"), Grid.Mark(Stamp, 0, 0, Locks, 0.5f), 0);
+	TestEqual(TEXT("the generation survives"), CountCells(0, 1), 4);
+
+	// Once the lock moves on to a later generation, the old trail is plain paint again.
+	Locks.Gen[0] = 2;
+	TestEqual(TEXT("the enemy takes the old trail"), Grid.Mark(Stamp, 1, 0, Locks, 0.5f), 4);
+	TestEqual(TEXT("team 1 owns the top"), TopFraction(1), 0.25f, 1e-3f);
+	TestEqual(TEXT("team 0 lost it"), TopFraction(0), 0.0f, 1e-6f);
+
+	// A star over the team's own plain paint takes no cell but stamps its generation on them.
+	Locks.Gen[0] = 0;
+	TestEqual(TEXT("own star changes no owner"), Grid.Mark(Stamp, 1, 3, Locks, 0.5f), 0);
+	TestEqual(TEXT("but stamps the generation"), CountCells(1, 3), 4);
+
+	// Unlocked, plain paint of the same team clears the generation again.
+	TestEqual(TEXT("plain paint over a faded trail"), Grid.Mark(Stamp, 1, 0, Locks, 0.5f), 0);
+	TestEqual(TEXT("generation cleared"), CountCells(1, 0), 4);
+
+	// The eraser never carries a generation; the plain overload paints nothing but the id.
+	TestEqual(TEXT("erased"), Grid.Mark(Stamp, PaintIdNone, 9, Locks, 0.5f), 4);
+	TestEqual(TEXT("bare cells carry no generation"), CountCells(PaintIdNone, 0), 96);
+	TestEqual(TEXT("plain overload paints"), Grid.Mark(Stamp, 2, 0.5f), 4);
+	TestEqual(TEXT("plain overload carries no generation"), CountCells(2, 0), 4);
+
+	Grid.ClearPaint();
+	TestEqual(TEXT("clear drops every generation"), CountCells(PaintIdNone, 0), 96);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FPaintBrushBuildSplatTest,
 	"MintChoco.Paint.Brush.BuildSplatDeterministic",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)

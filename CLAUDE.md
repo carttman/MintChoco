@@ -52,7 +52,13 @@ Each of these cost real debugging time once.
   returned on each survivor (`PlayerMappableKeySettings: "None"` included); an omitted
   field counts as a change and the removal is rejected as ambiguous. A fresh Custom node already holds one unnamed input.
   Inside a `ProgrammaticToolset` script, one `execute_tool` call per step obeys these
-  rules while still batching the round-trips.
+  rules while still batching the round-trips. Appending a Custom node input triggers an
+  automatic compile that fails with "missing input N" until the pin is wired; only the
+  recompile after wiring counts. Setting a call node's `MaterialFunction` through
+  `ObjectTools` does refresh its pins, and `MaterialTools.create_function` creates a
+  function asset without duplicating a template.
+- `ObjectTools.get_properties` fails as a whole when any requested property is unreadable
+  on that node class; ask per class, or read wiring with `MaterialTools.get_expression_inputs`.
 - `MaterialTools.get_expression_inputs` mislabels a multi-output source: it prints
   the first output's name whatever the wire really uses. The truth is the raw
   `outputIndex` in `ObjectTools.get_properties(..., ["Inputs"])` on a Custom node.
@@ -162,7 +168,9 @@ Each of these cost real debugging time once.
   drive the server over HTTP from PowerShell, not bash: `ConvertTo-Json -Compress` builds the `values`
   string safely, while every bash quoting route mangled the JSON. Pattern: POST `initialize`, keep the
   `Mcp-Session-Id` header, POST `notifications/initialized`, then `tools/call` with `call_tool`
-  (`toolset_name`, bare `tool_name`, `arguments`); responses arrive as SSE `data:` lines.
+  (`toolset_name`, bare `tool_name`, `arguments`); responses arrive as SSE `data:` lines. Over HTTP
+  the `toolset_name` is the full dotted path (`editor_toolset.toolsets.material.MaterialTools`), and
+  `describe_toolset` returns every tool's argument schema.
 - `BlueprintTools.write_graph_dsl` **replaces** the event it names and leaves the other
   events alone, and a failed write rolls back; `read_graph_dsl` mislabels property
   getters (an `ItemProfile.DisplayName` getter prints as
@@ -275,6 +283,7 @@ Each of these cost real debugging time once.
 | UV misaligned on Nanite meshes | Nanite collides against the fallback mesh. Use a separate simple collision mesh, or disable Nanite for the prototype. |
 | Splats overwrite instead of accumulate | Is the brush Blend Mode Translucent? Is Clear Render Target called every draw? |
 | Splats add instead of overwriting | `DrawMaterialToRenderTarget` can never write the RT's alpha: every translucent blend mode uses `BF_Zero` for source alpha (`TranslucentRendering.cpp`). Encode coverage without alpha (paint-id buffer). |
+| A fourth per-texel channel is needed (the speed-star generation) | The A channel is dead either way: the opaque base pass writes `MRT[0].a = 0` (`BasePassPixelShader.usf`) with a full-RGBA blend state. The id only uses 3 bits of R, so the generation rides in R's upper 5 bits (`EncodePaintTexel`, `byte = id + 8·gen`); every reader decodes with `fmod(round(r·255), 8)`. |
 | A Masked brush paints the whole RT | `r.EarlyZPassOnlyMaterialMasking` defaults to 1, so `clip()` is compiled out of the base pass (`BasePassPixelShader.usf`) and the canvas path has no depth prepass to mask instead. Use Opaque and preserve old contents by reading the surface's own buffer while drawing into the shared scratch buffer, then copy the stamp rectangles back. |
 | Frame drop when drawing several splats in one frame | A full-target draw per splat scales with the atlas, not the stamp. Draw only the stamp's rectangles (`BuildStampRects`, one per island it reaches) and copy them; keep one Begin/End per splat because the next splat reads the copy. |
 | Paint appears on the wrong face, or not at all, after a hit | The surface keeps only its enabled directions; the hit's local direction (dominant axis of the unscaled local normal) decides. Check `keeps paint on ...` in LogPaint, the six `bPaint*` flags and `bFloorFollowsWorldUp`. Exactly 45° faces are a coin flip between two islands. |
