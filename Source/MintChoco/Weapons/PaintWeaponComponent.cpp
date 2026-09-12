@@ -522,8 +522,26 @@ FTransform UPaintWeaponComponent::GetMuzzleTransform() const
 	return ComputeMuzzleTransform(ViewOrigin, ViewDirection);
 }
 
+
+void UPaintWeaponComponent::SetMuzzleSource(USceneComponent* Component, FName SocketName)
+{
+	MuzzleSource = Component;
+	MuzzleSourceSocket = SocketName;
+}
+
 FTransform UPaintWeaponComponent::ComputeMuzzleTransform(const FVector& ViewOrigin, const FVector& ViewDirection) const
 {
+	// A weapon mesh carries its own muzzle. It is checked first so the shot leaves the barrel
+	// rather than the hand that holds it; the socket lives on the mesh because barrel lengths
+	// differ between characters that share one skeleton.
+	if (const USceneComponent* const Source = MuzzleSource.Get())
+	{
+		if (!MuzzleSourceSocket.IsNone() && Source->DoesSocketExist(MuzzleSourceSocket))
+		{
+			return Source->GetSocketTransform(MuzzleSourceSocket);
+		}
+	}
+
 	const AActor* const Owner = GetOwner();
 	const ACharacter* const Character = Cast<ACharacter>(Owner);
 	const USkeletalMeshComponent* const Mesh =

@@ -229,6 +229,23 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UMaterialInterface> CameraFadeMaterial;
 
+	/**
+	 * 슈퍼아머 동안 테두리로 그리는 재질. 비어 있으면 하이라이트가 없다.
+	 *
+	 * 껍데기 메시(OutlineMesh)의 모든 슬롯에 깔린다. 정점을 법선 방향으로 밀고 앞면을
+	 * 잘라내는 재질이어야 테두리로 보인다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Status")
+	TObjectPtr<UMaterialInterface> SuperArmorOutlineMaterial;
+
+	/**
+	 * 슈퍼아머 테두리를 그리는 껍데기 메시. 캐릭터 메시와 같은 메시를 리더 포즈로 따라가고,
+	 * 머티리얼이 정점을 법선 방향으로 밀어 살짝 부풀린다. 앞면은 머티리얼에서 잘라내므로
+	 * 원본 캐릭터에 가려지지 않는 실루엣 바깥쪽만 남는다. 평소에는 꺼 둔다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Status")
+	TObjectPtr<USkeletalMeshComponent> OutlineMesh;
+
 	/** 조작에 쓰이는 입력 에셋. 비어 있으면 이 유닛은 플레이어 입력을 받지 못한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UUnitInputConfig> InputConfig;
@@ -432,4 +449,12 @@ private:
 	TWeakObjectPtr<UEnhancedInputLocalPlayerSubsystem> AppliedInputSubsystem;
 
 	FDelegateHandle StunTagHandle;
+
+	/** 슈퍼아머 태그가 서고 내릴 때, 모든 머신에서. 태그는 복제되므로 어디서나 같이 보인다. */
+	void HandleSuperArmorTagChanged(const FGameplayTag Tag, int32 NewCount);
+
+	/** 지금 슈퍼아머인지에 맞춰 테두리 메시를 켜고 끈다. */
+	void UpdateSuperArmorOutline();
+
+	FDelegateHandle SuperArmorTagHandle;
 };

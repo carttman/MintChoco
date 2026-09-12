@@ -12,7 +12,7 @@
 
 class APawn;
 class UInkTankComponent;
-class UNiagaraComponent;
+class USceneComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPaintWeaponFiredSignature, int32, Seed);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FPaintWeaponPaintIdSignature, uint8, PaintId);
@@ -98,6 +98,14 @@ public:
 	FTransform GetMuzzleTransform() const;
 
 	/**
+	 * Where to look for the muzzle socket when the owner carries a weapon mesh of its own. Barrel
+	 * lengths differ per character, so the socket belongs on that mesh rather than on a skeleton
+	 * several characters share. A missing component or socket falls back to MuzzleSocketName on
+	 * the owner's skeletal mesh, so a pawn without a weapon mesh still fires from its hand.
+	 */
+	void SetMuzzleSource(USceneComponent* Component, FName SocketName);
+
+	/**
 	 * Raised once per accepted shot on every machine: on the owner when it predicts the shot, on the
 	 * server when it fires for real, on everyone else when the shot multicast lands. Feedback
 	 * (animation, sound) hangs here.
@@ -146,9 +154,6 @@ protected:
 	UFUNCTION()
 	void OnRep_PaintId();
 
-	UFUNCTION()
-	void OnRep_Charging();
-
 private:
 	bool FireOnce();
 	void OnShotTimer();
@@ -160,17 +165,6 @@ private:
 	void SpendShot();
 	void BuildContext(FPaintFireContext& OutContext, const FVector& ViewOrigin, const FVector& ViewDirection, float ChargeFraction) const;
 	FTransform ComputeMuzzleTransform(const FVector& ViewOrigin, const FVector& ViewDirection) const;
-
-	/** The mesh that carries the muzzle socket, or null when the owner has no such socket. */
-	USkeletalMeshComponent* GetMuzzleMesh() const;
-
-	/** Plays the profile's muzzle FX once on this machine. Charge only matters in Charged. */
-	void PlayMuzzleFX(float ChargeFraction);
-
-	/** Records the hold locally, relays it to the machines that only watch, and drives the FX here. */
-	void SetCharging(bool bNewCharging);
-	void StartChargeFX();
-	void StopChargeFX();
 	APawn* GetOwnerPawn() const;
 	void GetOwnerView(FVector& OutOrigin, FVector& OutDirection) const;
 
@@ -181,13 +175,6 @@ private:
 	 */
 	UFUNCTION(Server, Reliable)
 	void ServerFire(int32 Seed, FVector_NetQuantize ViewOrigin, FVector_NetQuantizeNormal ViewDirection, uint8 Charge);
-
-	/**
-	 * The owner's hold, relayed so the other machines can show it. The owner never receives its
-	 * own copy: it drove the FX from its own press, and a late echo would restart the loop.
-	 */
-	UFUNCTION(Server, Reliable)
-	void ServerSetCharging(bool bNewCharging);
 
 	UFUNCTION(Server, Reliable)
 	void ServerSetProfile(UPaintWeaponProfile* NewProfile);
@@ -202,19 +189,16 @@ private:
 	/** The owner's ink reserve, found at BeginPlay. Unset means the owner shoots for free. */
 	TWeakObjectPtr<UInkTankComponent> Tank;
 
+	/** Weapon mesh the muzzle socket sits on. Unset means the owner has no separate weapon mesh. */
+	TWeakObjectPtr<USceneComponent> MuzzleSource;
+
+	FName MuzzleSourceSocket = NAME_None;
+
 	FPaintStrokeState Stroke;
 	FTimerHandle ShotTimer;
 
 	/** World time the trigger was pulled; a Charged profile measures its hold from here. */
 	double PressTime = 0.0;
-
-	/** True while a Charged trigger is held. Replicated for the machines that only watch. */
-	UPROPERTY(ReplicatedUsing = OnRep_Charging)
-	bool bCharging = false;
-
-	/** The hold FX loops, so it has to be switched off by hand rather than expiring. */
-	UPROPERTY(Transient)
-	TObjectPtr<UNiagaraComponent> ChargeFXComponent;
 
 	/** Charge fraction of the shot FireOnce is about to fire. ReleaseTrigger samples it before the cancel clears the hold. */
 	float PendingChargeFraction = 1.0f;
