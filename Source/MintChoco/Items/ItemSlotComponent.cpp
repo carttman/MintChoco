@@ -10,6 +10,7 @@
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 #include "NiagaraComponent.h"
+#include "NiagaraComponentPool.h"
 #include "NiagaraFunctionLibrary.h"
 
 #include "Game/Unit.h"
@@ -240,7 +241,8 @@ void UItemSlotComponent::StartEffectFeedback(const UItemProfile& Item, const FGa
 	{
 		UNiagaraComponent* const FX = UNiagaraFunctionLibrary::SpawnSystemAttached(
 			Item.ActivateFX, AttachTo, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator,
-			EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true);
+			FVector(Item.ActivateFXScale), EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true,
+			ENCPoolMethod::None);
 		if (FX)
 		{
 			EffectComponents.Add(Tag, FX);
@@ -266,6 +268,55 @@ void UItemSlotComponent::MulticastSpinnerShot_Implementation(const UPaintGunProf
 		return;
 	}
 	Volley->PlayCosmetic(*GetWorld(), Cast<APawn>(GetOwner()), Shot);
+}
+
+void UItemSlotComponent::MulticastPlayFXAt_Implementation(UNiagaraSystem* System, FVector_NetQuantize Location, float Scale)
+{
+	// 리슨 호스트도 그려야 하므로 HasAuthority로 거르지 않는다. 아무도 예측하지 않는 연출이라
+	// 어느 머신에서도 두 번 나올 일이 없다.
+	UWorld* const World = GetWorld();
+	if (!System || !World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+		World, System, Location, FRotator::ZeroRotator, FVector(Scale));
+}
+
+void UItemSlotComponent::MulticastPlayAttachedFX_Implementation(UNiagaraSystem* System, float Scale, float ZOffset, float Duration)
+{
+	UWorld* const World = GetWorld();
+	AActor* const Owner = GetOwner();
+	USceneComponent* const AttachTo = Owner ? Owner->GetRootComponent() : nullptr;
+	if (!System || !World || !AttachTo || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	// 캡슐 루트에 붙인다: 메시는 애니메이션으로 흔들리지만 캡슐은 폰의 위치 그 자체다.
+	UNiagaraComponent* const FX = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		System, AttachTo, NAME_None, FVector(0.0f, 0.0f, ZOffset), FRotator::ZeroRotator,
+		FVector(Scale), EAttachLocation::KeepRelativeOffset, /*bAutoDestroy=*/true, ENCPoolMethod::None);
+	if (!FX || Duration <= 0.0f)
+	{
+		return;
+	}
+
+	// 핸들을 멤버로 들고 있지 않는 이유: 이 연출은 겹쳐 쓸 수 있고, 각자 제 타이머로 꺼지면
+	// 슬롯이 상태를 기억할 필요가 없다. 약참조라 폰이 먼저 죽어도 안전하다.
+	FTimerHandle StopHandle;
+	const TWeakObjectPtr<UNiagaraComponent> WeakFX(FX);
+	World->GetTimerManager().SetTimer(
+		StopHandle,
+		[WeakFX]()
+		{
+			if (UNiagaraComponent* const Live = WeakFX.Get())
+			{
+				// 스폰만 멈춘다. 떠 있던 파티클은 제 수명을 마치고 사라진다.
+				Live->Deactivate();
+			}
+		},
+		Duration, false);
 }
 
 void UItemSlotComponent::RestartInkLook(float Duration)

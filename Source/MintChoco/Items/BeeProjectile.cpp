@@ -10,6 +10,7 @@
 #include "TimerManager.h"
 
 #include "Game/Unit.h"
+#include "Items/ItemSlotComponent.h"
 #include "Items/BeeProfile.h"
 #include "Items/ItemAreaEffect.h"
 #include "Items/ItemSettings.h"
@@ -380,6 +381,8 @@ void ABeeProjectile::HandleUnitOverlap(AUnit& Unit)
 	if (FItemAreaEffect::ShouldAffect(Unit.GetTeam(), GetTeam(), /*bIsInstigator=*/false))
 	{
 		UE_LOG(LogMintChoco, Verbose, TEXT("%s: 꿀벌이 %s에 적중했다."), *GetNameSafe(GetInstigator()), *GetNameSafe(&Unit));
+		// 터지기 전에 기록해야 OnDetonate가 맞은 상대를 안다.
+		StruckUnit = &Unit;
 		Detonate();
 	}
 }
@@ -439,5 +442,19 @@ void ABeeProjectile::OnDetonate()
 	APaintBurst::Spawn(*World, Origin, Burst);
 
 	FItemAreaEffect::Apply(*World, Origin, Profile->StunRadius, GetTeam(), GetInstigatorUnit(), /*bKnockback=*/false);
+
+	// 상대에게 맞은 경우에만, 그 상대의 몸 가운데에서. 발사체는 곧 파괴되므로 자기 멀티캐스트는
+	// 도달을 믿을 수 없다. 살아남는 맞은 쪽의 슬롯을 통해 뿌린다.
+	if (AUnit* const Struck = StruckUnit.Get())
+	{
+		if (Profile->HitFX)
+		{
+			if (UItemSlotComponent* const Slot = Struck->GetItemSlot())
+			{
+				Slot->MulticastPlayFXAt(Profile->HitFX, Struck->GetActorLocation(), Profile->HitFXScale);
+			}
+		}
+	}
+
 	UE_LOG(LogMintChoco, Verbose, TEXT("%s: 꿀벌이 터졌다."), *GetNameSafe(GetInstigator()));
 }

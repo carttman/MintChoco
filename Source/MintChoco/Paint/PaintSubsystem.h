@@ -53,6 +53,7 @@ class MINTCHOCO_API UPaintSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
+	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 	void RegisterPaintable(UPaintableComponent* Paintable);
 	void UnregisterPaintable(UPaintableComponent* Paintable);
 

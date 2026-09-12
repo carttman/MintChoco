@@ -5,6 +5,9 @@
 
 #include "PaintSettings.generated.h"
 
+class UStaticMesh;
+class UMaterialInterface;
+
 /**
  * Project-wide pieces of the paint pipeline that every paintable surface shares: how the score
  * grid is cut, how densely paint is stored, how the atlas fades at edges, and what a splat on a
@@ -21,6 +24,20 @@ public:
 	UPaintSettings();
 
 	static const UPaintSettings& Get() { return *GetDefault<UPaintSettings>(); }
+
+	/** Exact persistent map package; blank leaves the existing scoring rules unchanged everywhere. */
+	UPROPERTY(Config, EditAnywhere, Category = "Playable Platforms")
+	FString PlatformCoverageMap;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Playable Platforms")
+	TSoftObjectPtr<UStaticMesh> PlatformRampSourceMesh;
+
+	/** Dedicated CPU-readable ramp copy. Only instances of this mesh in PlatformCoverageMap are auto-painted. */
+	UPROPERTY(Config, EditAnywhere, Category = "Playable Platforms")
+	TSoftObjectPtr<UStaticMesh> PlatformRampMesh;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Playable Platforms")
+	TSoftObjectPtr<UMaterialInterface> PlatformRampMaterial;
 
 	/**
 	 * World-space edge of one coverage cell. Cells are the gameplay layer's unit of ownership;

@@ -8,6 +8,9 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "NiagaraComponent.h"
+#include "NiagaraComponentPool.h"
+#include "NiagaraFunctionLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
@@ -56,6 +59,30 @@ bool UPaintWeaponComponent::IsShotFree() const
 	return AbilitySystem && AbilitySystem->HasAnyMatchingGameplayTags(FreeShotTags);
 }
 
+float UPaintWeaponComponent::GetEffectiveShotInterval() const
+{
+	if (!Profile)
+	{
+		return 0.0f;
+	}
+	const float Interval = Profile->GetShotInterval();
+	// Continuous has no interval at all; shortening 0 would turn it into a per-tick floor.
+	if (Interval <= 0.0f || !IsShotFree())
+	{
+		return Interval;
+	}
+	return FMath::Min(Interval, FreeShotInterval);
+}
+
+float UPaintWeaponComponent::GetEffectiveChargeTime() const
+{
+	if (!Profile)
+	{
+		return 0.0f;
+	}
+	return IsShotFree() ? FMath::Min(Profile->ChargeTime, FreeShotChargeTime) : Profile->ChargeTime;
+}
+
 void UPaintWeaponComponent::BeginPlay()
 {
 	Super::BeginPlay();
@@ -70,7 +97,10 @@ void UPaintWeaponComponent::BeginPlay()
 
 void UPaintWeaponComponent::EndPlay(const EEndPlayReason::Type Reason)
 {
+	// CancelTrigger returns at once when the trigger was already let go, so the loop is stopped
+	// here as well: a pawn destroyed mid-charge would otherwise leave it running on the mesh.
 	CancelTrigger();
+	StopChargeFX();
 	Super::EndPlay(Reason);
 }
 
@@ -80,6 +110,9 @@ void UPaintWeaponComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 
 	DOREPLIFETIME(UPaintWeaponComponent, Profile);
 	DOREPLIFETIME(UPaintWeaponComponent, PaintId);
+
+	// The owner started its own loop from its own press; sending it back would only restart it late.
+	DOREPLIFETIME_CONDITION(UPaintWeaponComponent, bCharging, COND_SkipOwner);
 }
 
 void UPaintWeaponComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -153,7 +186,8 @@ void UPaintWeaponComponent::OnRep_Profile()
 
 void UPaintWeaponComponent::PullTrigger()
 {
-	if (bTriggerHeld || !Profile || IsTriggerBlocked())
+	const UWorld* const World = GetWorld();
+	if (bTriggerHeld || !Profile || !World || IsTriggerBlocked())
 	{
 		return;
 	}
@@ -164,12 +198,17 @@ void UPaintWeaponComponent::PullTrigger()
 	switch (Profile->FireMode)
 	{
 	case EPaintFireMode::Single:
-		FireOnce();
+		// One pull, one shot, but never faster than the cadence. The trigger still counts as held
+		// so the release path stays symmetric; only the shot is skipped.
+		if (World->GetTimeSeconds() - LastShotTime >= GetEffectiveShotInterval())
+		{
+			FireOnce();
+		}
 		break;
 	case EPaintFireMode::Automatic:
 		FireOnce();
 		GetWorld()->GetTimerManager().SetTimer(
-			ShotTimer, this, &UPaintWeaponComponent::OnShotTimer, Profile->GetShotInterval(), /*bLoop=*/true);
+			ShotTimer, this, &UPaintWeaponComponent::OnShotTimer, GetEffectiveShotInterval(), /*bLoop=*/true);
 		break;
 	case EPaintFireMode::Continuous:
 		FireOnce();
@@ -177,6 +216,7 @@ void UPaintWeaponComponent::PullTrigger()
 		break;
 	case EPaintFireMode::Charged:
 		PressTime = GetWorld()->GetTimeSeconds();
+		SetCharging(true);
 		break;
 	}
 }
@@ -203,6 +243,8 @@ void UPaintWeaponComponent::CancelTrigger()
 
 	bTriggerHeld = false;
 	Stroke.Reset();
+	// Every way a hold ends - the shot, a cancel, a profile swap - passes through here.
+	SetCharging(false);
 	SetComponentTickEnabled(false);
 	if (const UWorld* const World = GetWorld())
 	{
@@ -218,7 +260,102 @@ float UPaintWeaponComponent::GetChargeFraction() const
 		return 0.0f;
 	}
 	const double Held = World->GetTimeSeconds() - PressTime;
-	return static_cast<float>(FMath::Clamp(Held / FMath::Max(static_cast<double>(Profile->ChargeTime), UE_DOUBLE_KINDA_SMALL_NUMBER), 0.0, 1.0));
+	return static_cast<float>(FMath::Clamp(Held / FMath::Max(static_cast<double>(GetEffectiveChargeTime()), UE_DOUBLE_KINDA_SMALL_NUMBER), 0.0, 1.0));
+}
+
+void UPaintWeaponComponent::SetCharging(bool bNewCharging)
+{
+	if (HasAuthority())
+	{
+		bCharging = bNewCharging;
+	}
+	else
+	{
+		ServerSetCharging(bNewCharging);
+	}
+
+	// The machine that set the value never gets its own OnRep, and a dedicated server draws nothing.
+	if (GetNetMode() != NM_DedicatedServer)
+	{
+		if (bNewCharging)
+		{
+			StartChargeFX();
+		}
+		else
+		{
+			StopChargeFX();
+		}
+	}
+}
+
+void UPaintWeaponComponent::ServerSetCharging_Implementation(bool bNewCharging)
+{
+	// The server never saw the press, so it takes the owner's word - but only for a weapon that
+	// charges at all, and only while the trigger is allowed. A shot is refused here the same way.
+	if (bNewCharging && (!Profile || Profile->FireMode != EPaintFireMode::Charged || IsTriggerBlocked()))
+	{
+		return;
+	}
+
+	bCharging = bNewCharging;
+
+	// A listen server renders this pawn too, and OnRep never fires on the machine that assigned.
+	if (GetNetMode() != NM_DedicatedServer)
+	{
+		if (bNewCharging)
+		{
+			StartChargeFX();
+		}
+		else
+		{
+			StopChargeFX();
+		}
+	}
+}
+
+void UPaintWeaponComponent::OnRep_Charging()
+{
+	if (bCharging)
+	{
+		StartChargeFX();
+	}
+	else
+	{
+		StopChargeFX();
+	}
+}
+
+void UPaintWeaponComponent::StartChargeFX()
+{
+	if (ChargeFXComponent || !Profile || !Profile->ChargeFX || !GetWorld())
+	{
+		return;
+	}
+
+	const FVector Scale(Profile->ChargeFXScale);
+	if (USkeletalMeshComponent* const Mesh = GetMuzzleMesh())
+	{
+		ChargeFXComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+			Profile->ChargeFX, Mesh, MuzzleSocketName, FVector::ZeroVector, FRotator::ZeroRotator,
+			Scale, EAttachLocation::SnapToTarget,
+			// Deactivate leaves the last particles to finish and then cleans itself up; false would
+			// pile a dead component on the mesh for every charge.
+			/*bAutoDestroy=*/true, ENCPoolMethod::None);
+		return;
+	}
+
+	const FTransform Muzzle = GetMuzzleTransform();
+	ChargeFXComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+		GetWorld(), Profile->ChargeFX, Muzzle.GetLocation(), Muzzle.Rotator(), Scale);
+}
+
+void UPaintWeaponComponent::StopChargeFX()
+{
+	if (ChargeFXComponent)
+	{
+		ChargeFXComponent->Deactivate();
+		ChargeFXComponent = nullptr;
+	}
 }
 
 void UPaintWeaponComponent::SetSeedOverride(bool bInUseFixedSeed, int32 InFixedSeed)
@@ -296,6 +433,9 @@ bool UPaintWeaponComponent::FireOnce()
 		return false;
 	}
 
+	// The machines that only replay this shot size their flash by it.
+	Shot.Charge = static_cast<uint8>(FMath::RoundToInt(ChargeFraction * 255.0f));
+
 	// With authority this is the real spend; the owner's is a prediction the replicated tank corrects.
 	SpendShot();
 
@@ -308,9 +448,11 @@ bool UPaintWeaponComponent::FireOnce()
 		// The owner sees its ball leave at once and the server's version of the shot never
 		// reaches it (the multicast skips the owner), so the two cannot pile up.
 		Profile->PlayCosmetic(*Context.World, Context.Instigator, Shot);
-		ServerFire(Seed, ViewOrigin, ViewDirection, static_cast<uint8>(FMath::RoundToInt(ChargeFraction * 255.0f)));
+		ServerFire(Seed, ViewOrigin, ViewDirection, Shot.Charge);
 	}
 
+	PlayMuzzleFX(ChargeFraction);
+	LastShotTime = GetWorld()->GetTimeSeconds();
 	OnFired.Broadcast(Seed);
 	return true;
 }
@@ -335,8 +477,10 @@ void UPaintWeaponComponent::ServerFire_Implementation(int32 Seed, FVector_NetQua
 	FPaintShot Shot;
 	if (Profile->Fire(Context, FreshStroke, Shot))
 	{
+		Shot.Charge = Charge;
 		SpendShot();
 		MulticastShotFired(Shot);
+		PlayMuzzleFX(Context.ChargeFraction);
 		OnFired.Broadcast(Seed);
 	}
 }
@@ -354,6 +498,7 @@ void UPaintWeaponComponent::MulticastShotFired_Implementation(const FPaintShot& 
 		Profile->PlayCosmetic(*GetWorld(), GetOwnerPawn(), Shot);
 	}
 	// Feedback on the machines that only watch: the owner and the server raised theirs when they fired.
+	PlayMuzzleFX(Shot.Charge / 255.0f);
 	OnFired.Broadcast(Shot.Seed);
 }
 
@@ -439,4 +584,38 @@ FTransform UPaintWeaponComponent::ComputeMuzzleTransform(const FVector& ViewOrig
 
 	// Socketless, the muzzle hangs off the view - which on the server is the view the owner sent.
 	return FTransform(ViewDirection.Rotation(), ViewOrigin + ViewDirection * MuzzleFallbackOffset);
+}
+
+USkeletalMeshComponent* UPaintWeaponComponent::GetMuzzleMesh() const
+{
+	AActor* const Owner = GetOwner();
+	ACharacter* const Character = Cast<ACharacter>(Owner);
+	USkeletalMeshComponent* const Mesh =
+		Character ? Character->GetMesh() : (Owner ? Owner->FindComponentByClass<USkeletalMeshComponent>() : nullptr);
+	return (Mesh && !MuzzleSocketName.IsNone() && Mesh->DoesSocketExist(MuzzleSocketName)) ? Mesh : nullptr;
+}
+
+void UPaintWeaponComponent::PlayMuzzleFX(float ChargeFraction)
+{
+	UWorld* const World = GetWorld();
+	if (!Profile || !Profile->MuzzleFX || !World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	const FVector Scale(Profile->GetMuzzleFXScale(ChargeFraction));
+
+	// Attached, so a one-shot flash stays on the barrel while the gun moves.
+	if (USkeletalMeshComponent* const Mesh = GetMuzzleMesh())
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAttached(
+			Profile->MuzzleFX, Mesh, MuzzleSocketName, FVector::ZeroVector, FRotator::ZeroRotator,
+			Scale, EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true, ENCPoolMethod::None);
+		return;
+	}
+
+	// Socketless: the muzzle hangs off the view, so the flash is left where the shot left from.
+	const FTransform Muzzle = GetMuzzleTransform();
+	UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+		World, Profile->MuzzleFX, Muzzle.GetLocation(), Muzzle.Rotator(), Scale);
 }

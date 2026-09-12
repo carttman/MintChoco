@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MintChoco - 플레이테스트 피드백을 파트별/시스템별/이펙트별로 분류하고 개발 우선순위를 붙인 로드맵.">
+  <style>
+    /* standalone reset — the Artifact host normally supplies these */
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    img { max-width: 100%; }
+    [hidden] { display: none !important; }
+  </style>
+<title>플레이테스트 개선 로드맵</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+  :root {
+    --paper:#F6F7F4; --card:#FFFFFF; --ink:#1B211E; --muted:#6B7570;
+    --mint:#0F8A66; --mint-soft:#E2F2EC;
+    --cocoa:#7A5140; --cocoa-soft:#F2E9E4;
+    --amber:#A8730D; --amber-soft:#F7EEDB;
+    --rose:#B04058; --rose-soft:#F8E7EA;
+    --slate:#4A6B86; --slate-soft:#E5EDF3;
+    --line:#E1E5E0; --line-strong:#C9D0CA; --shade:#EDF0EC;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#121110; --card:#1B1917; --ink:#EDE9E3; --muted:#989289;
+      --mint:#4FD3A6; --mint-soft:#14312A;
+      --cocoa:#C99E86; --cocoa-soft:#2C221D;
+      --amber:#E3AC48; --amber-soft:#2E2515;
+      --rose:#E5808F; --rose-soft:#32191E;
+      --slate:#8FB4CE; --slate-soft:#1A242C;
+      --line:#2B2724; --line-strong:#3D3733; --shade:#211E1B;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#121110; --card:#1B1917; --ink:#EDE9E3; --muted:#989289;
+    --mint:#4FD3A6; --mint-soft:#14312A;
+    --cocoa:#C99E86; --cocoa-soft:#2C221D;
+    --amber:#E3AC48; --amber-soft:#2E2515;
+    --rose:#E5808F; --rose-soft:#32191E;
+    --slate:#8FB4CE; --slate-soft:#1A242C;
+    --line:#2B2724; --line-strong:#3D3733; --shade:#211E1B;
+  }
+
+  body { background: var(--paper); color: var(--ink);
+         font-family:"Source Sans 3", system-ui, -apple-system, "Malgun Gothic", sans-serif;
+         font-size:15px; line-height:1.55; }
+  .wrap { max-width:1120px; margin:0 auto; padding:40px 24px 72px; display:flex; flex-direction:column; gap:46px; }
+
+  h1,h2,h3,.eyebrow { font-family:Archivo, system-ui, "Malgun Gothic", sans-serif; text-wrap:balance; }
+  h1 { font-size:34px; font-weight:700; letter-spacing:-0.02em; margin:0 0 6px; }
+  h2 { font-size:21px; font-weight:600; letter-spacing:-0.01em; margin:0; }
+  h3 { font-size:15px; font-weight:600; margin:0; }
+  .eyebrow { font-size:11px; font-weight:600; letter-spacing:0.13em; text-transform:uppercase; color:var(--mint); }
+  .sub { color:var(--muted); margin:0; max-width:66ch; }
+  code,.mono { font-family:"JetBrains Mono", ui-monospace, monospace; font-size:12.5px; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  header { border-bottom:2px solid var(--ink); padding-bottom:22px; }
+  .meta { display:flex; flex-wrap:wrap; gap:8px 18px; margin-top:14px; font-size:12.5px; color:var(--muted); }
+  .meta b { color:var(--ink); font-weight:600; }
+
+  section { display:flex; flex-direction:column; gap:16px; }
+  .sechead { display:flex; flex-direction:column; gap:5px; border-left:3px solid var(--mint); padding-left:13px; }
+
+  .scroll { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; min-width:860px; font-size:13.5px; }
+  th,td { text-align:left; padding:9px 11px; border-bottom:1px solid var(--line); vertical-align:top; }
+  thead th { font-family:Archivo,sans-serif; font-size:11px; font-weight:600; letter-spacing:0.07em;
+             text-transform:uppercase; color:var(--muted); border-bottom:1px solid var(--line-strong); white-space:nowrap; }
+  tbody tr:last-child td { border-bottom:none; }
+  tbody tr:hover { background:var(--shade); }
+  td.name { font-weight:600; }
+  td.tight { white-space:nowrap; }
+  .asset { color:var(--muted); }
+
+  .p { display:inline-block; font-family:"JetBrains Mono",monospace; font-size:11px; font-weight:700;
+       padding:1px 7px; border-radius:3px; white-space:nowrap; }
+  .p0 { background:var(--rose-soft); color:var(--rose); }
+  .p1 { background:var(--amber-soft); color:var(--amber); }
+  .p2 { background:var(--mint-soft); color:var(--mint); }
+  .p3 { background:var(--slate-soft); color:var(--slate); }
+  .eff { font-family:"JetBrains Mono",monospace; font-size:12px; color:var(--muted); letter-spacing:1px; white-space:nowrap; }
+  .eff b { color:var(--ink); }
+
+  .legend { display:flex; flex-wrap:wrap; gap:10px 22px; font-size:12.5px; color:var(--muted); }
+  .legend span b { color:var(--ink); }
+
+  .road { display:flex; flex-direction:column; gap:0; }
+  .lane { display:grid; grid-template-columns:104px 1fr; gap:18px; padding:16px 0; border-top:1px solid var(--line); }
+  .lane:first-child { border-top:none; }
+  .lane-h { display:flex; flex-direction:column; gap:6px; }
+  .lane-h .why { font-size:12px; color:var(--muted); line-height:1.4; }
+  .lane ul { margin:0; padding-left:0; list-style:none; display:flex; flex-direction:column; gap:7px; font-size:13.5px; }
+  .lane li { display:grid; grid-template-columns:1fr auto; gap:14px; align-items:baseline; }
+  .lane li .who { font-size:11.5px; color:var(--muted); font-family:"JetBrains Mono",monospace; white-space:nowrap; }
+
+  .cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:6px; padding:16px 18px;
+           display:flex; flex-direction:column; gap:9px; }
+  .panel.key { border-left:3px solid var(--mint); }
+  .panel.ask { border-left:3px solid var(--amber); }
+  .panel h3 { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .note { font-size:13px; color:var(--muted); margin:0; }
+  .note b { color:var(--ink); }
+  .saving { font-family:"JetBrains Mono",monospace; font-size:11.5px; font-weight:700; color:var(--mint); }
+
+  .tally { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:1px; background:var(--line);
+           border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  .tally div { background:var(--card); padding:13px 15px; display:flex; flex-direction:column; gap:3px; }
+  .tally .n { font-family:Archivo,sans-serif; font-size:23px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .tally .l { font-size:12px; color:var(--muted); }
+  footer { border-top:1px solid var(--line); padding-top:16px; font-size:12.5px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">MintChoco · 플레이테스트 피드백 정리</p>
+  <h1>플레이테스트 개선 로드맵</h1>
+  <p class="sub">피드백 항목을 담당 파트별로 나누고, 각 파트 안에서 시스템·이펙트 단위로 다시 분류했습니다. &ldquo;현재&rdquo; 칸은 추측이 아니라 에디터에서 데이터 에셋을 직접 읽은 실측값입니다.</p>
+  <div class="meta">
+    <span><b>기준</b> 2026-09-12 · 브랜치 QA</span>
+    <span><b>항목</b> 전체 <span class="num">34</span>건</span>
+    <span><b>같이 보기</b> 탄환 &amp; 이펙트 대조표</span>
+  </div>
+</header>
+
+<section>
+  <div class="tally">
+    <div><span class="n">7</span><span class="l">프로그래밍 · 시스템</span></div>
+    <div><span class="n">6</span><span class="l">밸런스 · 데이터</span></div>
+    <div><span class="n">9</span><span class="l">이펙트 (VFX)</span></div>
+    <div><span class="n">6</span><span class="l">아트 · 모델링/텍스처</span></div>
+    <div><span class="n">3</span><span class="l">UI</span></div>
+    <div><span class="n">3</span><span class="l">결정 대기</span></div>
+  </div>
+  <div class="legend">
+    <span><b>규모</b></span>
+    <span><span class="eff"><b>▪</b>▪▪▪</span> 데이터만 · 코드 0줄</span>
+    <span><span class="eff"><b>▪▪</b>▪▪</span> 소 · 반나절~1일</span>
+    <span><span class="eff"><b>▪▪▪</b>▪</span> 중 · 2~4일</span>
+    <span><span class="eff"><b>▪▪▪▪</b></span> 대 · 1주 이상</span>
+  </div>
+</section>
+
+<!-- ===== 우선순위 ===== -->
+<section>
+  <div class="sechead">
+    <p class="eyebrow">우선순위</p>
+    <h2>먼저 할 것부터</h2>
+    <p class="sub">판단 기준은 <b>①게임이 성립하는가 → ②핵심 루프가 완성되는가 → ③체감이 나아지는가 → ④보기 좋아지는가</b> 순입니다. 같은 층위에서는 비용이 낮은 것을 앞에 두었습니다.</p>
+  </div>
+
+  <div class="road">
+    <div class="lane">
+      <div class="lane-h"><span class="p p0">P0</span><span class="why">지금 게임이 성립하지 않는 지점</span></div>
+      <ul>
+        <li><span><b>기본 공격 커버리지 상향</b> — 샷건 1 % / 차지샷 5 % 목표. 지금은 아이템 없이는 채울 수 없어, 사실상 아이템 획득 경쟁 게임이 됩니다.</span><span class="who">밸런스 ▪</span></li>
+        <li><span><b>샷건 비행 궤적 도포 켜기</b> — 커버리지 상향의 절반은 이것으로 해결됩니다. 코드 변경 없음.</span><span class="who">밸런스 ▪</span></li>
+      </ul>
+    </div>
+    <div class="lane">
+      <div class="lane-h"><span class="p p1">P1</span><span class="why">핵심 루프를 완성하는 작업</span></div>
+      <ul>
+        <li><span><b>공통 조준 모드 시스템</b> — 꿀풍선·히어로 랜딩·디저트 폭격 3개가 같은 구조를 요구합니다. 하나로 만드십시오.</span><span class="who">프로그래밍 ▪▪▪</span></li>
+        <li><span><b>샷건 발사 속도 조정</b> — 0.25초 간격. 단, 현재값 확인 필요(아래 결정 항목).</span><span class="who">밸런스 ▪</span></li>
+        <li><span><b>무한 탄환 발사 속도 버프</b> — 현재는 잉크 비용만 0입니다.</span><span class="who">프로그래밍 ▪▪</span></li>
+        <li><span><b>히어로 랜딩 2단 원 + 부양</b> — 조준 모드 위에 올리면 절반은 재사용됩니다.</span><span class="who">프로그래밍 ▪▪▪</span></li>
+      </ul>
+    </div>
+    <div class="lane">
+      <div class="lane-h"><span class="p p2">P2</span><span class="why">체감을 크게 바꾸는 저비용 작업</span></div>
+      <ul>
+        <li><span><b>스피드 스타 캐릭터 이펙트</b> — <code>NS_DashTrail</code>이 이미 있고 연결만 안 돼 있습니다. 가장 싼 개선입니다.</span><span class="who">이펙트 ▪</span></li>
+        <li><span><b>UI 3종</b> — ESC 메뉴(계속/항복), 잉크 부족 표시, 아이템 이름 정리.</span><span class="who">UI ▪▪</span></li>
+        <li><span><b>차지샷 낙하 연출 + 궤적</b> — 도포는 이미 되고 있습니다. 연출만 붙이면 됩니다.</span><span class="who">이펙트 ▪▪</span></li>
+        <li><span><b>초콜릿 분수 원형 도포</b> — 현재 피치 0°로 3발이 수평으로만 나갑니다.</span><span class="who">밸런스 ▪</span></li>
+      </ul>
+    </div>
+    <div class="lane">
+      <div class="lane-h"><span class="p p3">P3</span><span class="why">보기 좋게 만드는 마감</span></div>
+      <ul>
+        <li><span><b>진영별 색 틴트 규약 통일</b> — 4곳에서 같은 요구가 나옵니다. 파라미터 이름부터 맞추십시오.</span><span class="who">이펙트 ▪▪</span></li>
+        <li><span><b>꿀벌 모델링 교체</b>, <b>초콜릿 분수 텍스처</b>, <b>히어로 랜딩 진영 텍스처</b></span><span class="who">아트 ▪▪▪</span></li>
+        <li><span><b>화면 연출</b> — 히어로 랜딩, 무한 탄환 사용자 시점.</span><span class="who">이펙트 ▪▪▪</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 교차 기회 ===== -->
+<section>
+  <div class="sechead">
+    <p class="eyebrow">먼저 읽을 것</p>
+    <h2>따로 적혀 있지만 사실 같은 작업</h2>
+    <p class="sub">피드백을 파트별로 갈라보니 항목 4개가 실은 하나의 작업이었습니다. 이걸 먼저 묶으면 전체 일정이 눈에 띄게 줄어듭니다.</p>
+  </div>
+  <div class="cols">
+    <div class="panel key">
+      <h3>① 조준 모드는 하나면 된다 <span class="saving">3건 → 1건</span></h3>
+      <p class="note"><b>꿀풍선</b>(포물선 궤적 → 좌클릭), <b>디저트 폭격</b>(방향 궤적 → 좌클릭), <b>히어로 랜딩</b>(착지 원 → 좌클릭)이 전부 &ldquo;아이템 사용 → 조준 표시 → 좌클릭 확정&rdquo; 구조입니다.</p>
+      <p class="note">공통 <code>UItemAimMode</code> 하나에 <b>미리보기 액터</b>와 <b>확정 콜백</b>만 아이템별로 꽂는 형태를 권합니다. 히어로 랜딩의 <code>AimMarkerClass</code>(<code>BP_LandingMarker</code>)가 이미 있어 출발점이 됩니다.</p>
+    </div>
+    <div class="panel key">
+      <h3>② 차지샷 낙하는 이미 절반 구현돼 있다 <span class="saving">신규 → 연출</span></h3>
+      <p class="note">차지샷은 지금도 <b>광선 아래 바닥을 40 cm 간격으로 최대 256번 찍어</b> 한 줄로 칠합니다(<code>Trail</code>, <code>TrailDropHeight 2000</code>). 즉 &ldquo;아래로 떨어지는&rdquo; <b>도포는 이미 존재</b>합니다.</p>
+      <p class="note">없는 것은 <b>순차 타이밍과 낙하 연출</b>뿐입니다. 디저트 폭격의 <code>APaintRain</code>이 <code>RowInterval 0.05초</code>로 행을 차례로 떨구므로, 같은 액터를 스나이퍼 샘플 위에 재생시키면 됩니다.</p>
+    </div>
+    <div class="panel key">
+      <h3>③ 샷건 궤적 도포는 데이터만 채우면 된다 <span class="saving">코드 0줄</span></h3>
+      <p class="note">&ldquo;탄환이 날아가는 자리가 칠해져야 한다&rdquo;는 기능은 <code>UPaintballProfile::TrailDeposit</code>으로 이미 구현돼 있고, <code>DA_Paintball_Heavy_Trail</code>이 실제로 쓰고 있습니다.</p>
+      <p class="note"><code>DA_Paintball_Light</code>는 <code>TrailDeposit.BrushProfile</code>이 비어 있어 꺼져 있을 뿐입니다. 브러시를 채우면 바로 켜집니다.</p>
+    </div>
+    <div class="panel key">
+      <h3>④ 진영 색은 파라미터 규약 문제 <span class="saving">4건 → 1건</span></h3>
+      <p class="note">꿀벌·디저트 폭격·히어로 랜딩·초콜릿 분수가 모두 &ldquo;진영별 색&rdquo;을 요구합니다. 이펙트마다 따로 만들면 4배 일이 됩니다.</p>
+      <p class="note"><code>NS_PaintSplat</code>이 쓰는 <code>User.TintColor</code> 방식을 <b>모든 진영색 이펙트의 규약</b>으로 정하고, 스폰하는 쪽에서 팀 색을 넣어주는 코드 한 곳만 만들면 됩니다.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== A. 프로그래밍 ===== -->
+<section>
+  <div class="sechead">
+    <p class="eyebrow">파트 A</p>
+    <h2>프로그래밍 — 시스템별</h2>
+  </div>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>시스템</th><th>대상</th><th>현재 구현</th><th>필요 작업</th><th>규모</th><th>우선</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="name">조준 모드</td><td class="tight">꿀풍선</td>
+          <td>사용 즉시 발사 · <code>ThrowSpeed 3000</code></td>
+          <td>사용 시 포물선 궤적 표시 → 좌클릭으로 궤적 따라 발사</td>
+          <td class="eff"><b>▪▪▪</b>▪</td><td><span class="p p1">P1</span></td>
+        </tr>
+        <tr>
+          <td class="name">조준 모드</td><td class="tight">디저트 폭격</td>
+          <td>사용 즉시 <code>APaintRain</code> 시작</td>
+          <td>바라보는 방향 궤적 표시 → 좌클릭으로 발사. 지속 시간 제한 없음</td>
+          <td class="eff"><b>▪▪</b>▪▪</td><td><span class="p p1">P1</span></td>
+        </tr>
+        <tr>
+          <td class="name">조준 모드</td><td class="tight">히어로 랜딩</td>
+          <td><code>BP_LandingMarker</code> 존재 · <code>Duration 6</code>초</td>
+          <td>공중 부양 최대 2초 · 착지점/최대범위 원 + 충전 비례 원 2종 · 좌클릭 시 원 크기에 비례해 충돌 범위와 도포 영역 변경</td>
+          <td class="eff"><b>▪▪▪</b>▪</td><td><span class="p p1">P1</span></td>
+        </tr>
+        <tr>
+          <td class="name">발사 속도 버프</td><td class="tight">무한 탄환</td>
+          <td>잉크 비용만 0 · <code>Duration 5</code>초</td>
+          <td>샷건 발사 간격 <span class="num">0.1</span>초, 차지샷 충전 <span class="num">0.5</span>초로 단축하는 효과 추가</td>
+          <td class="eff"><b>▪▪</b>▪▪</td><td><span class="p p1">P1</span></td>
+        </tr>
+        <tr>
+          <td class="name">낙하 연출 재사용</td><td class="tight">차지샷</td>
+          <td>바닥 도포는 구현됨 (<code>Trail</code> 40 cm × 최대 256)</td>
+          <td><code>APaintRain</code>의 순차 낙하를 스나이퍼 궤적 위에 재생. <b>새 도포 시스템 불필요</b></td>
+          <td class="eff"><b>▪▪</b>▪▪</td><td><span class="p p2">P2</span></td>
+        </tr>
+        <tr>
+          <td class="name">낙하 연출 재사용</td><td class="tight">꿀벌</td>
+          <td>파열 <span class="num">20</span>발 @ <span class="num">100</span> cm/s</td>
+          <td>파열 대신 차지샷과 같은 &ldquo;탄환이 떨어지는&rdquo; 방식으로 교체</td>
+          <td class="eff"><b>▪▪</b>▪▪</td><td><span class="p p2">P2</span></td>
+        </tr>
+        <tr>
+          <td class="name">충돌 검증</td><td class="tight">초콜릿 분수</td>
+          <td>돔이 <code>Paintball</code> 채널만 차단</td>
+          <td>상대 기본 탄·아이템 투사체를 실제로 막는지 플레이 테스트로 확인</td>
+          <td class="eff"><b>▪</b>▪▪▪</td><td><span class="p p2">P2</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ===== B. 밸런스 ===== -->
+<section>
+  <div class="sechead">
+    <p class="eyebrow">파트 B</p>
+    <h2>밸런스 — 데이터 에셋만 수정</h2>
+    <p class="sub">코드를 건드리지 않고 데이터 에셋 값만 바꾸면 되는 항목입니다. 가장 먼저 처리할 수 있고, 되돌리기도 쉽습니다.</p>
+  </div>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>항목</th><th>현재 값 (실측)</th><th>목표</th><th>조정할 곳</th><th>규모</th><th>우선</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="name">샷건 도포량</td>
+          <td><code>Light</code> SplatVolume <span class="num">0.4</span> × 9발</td>
+          <td>최대 사거리 1발 = <span class="num">1 %</span></td>
+          <td><code>DA_Paintball_Light.Deposit.SplatVolume</code> 또는 <code>DA_Brush_Paintball.BaseRadius</code>(<span class="num">12</span> cm)</td>
+          <td class="eff"><b>▪</b>▪▪▪</td><td><span class="p p0">P0</span></td>
+        </tr>
+        <tr>
+          <td class="name">샷건 궤적 도포</td>
+          <td><code>TrailDeposit.BrushProfile</code> 비어 있음 → <b>꺼짐</b></td>
+          <td>탄이 지나간 자리도 칠해짐</td>
+          <td>브러시 지정 + <code>TrailSpacing 200</code> / <code>MaxTrailSplats 8</code> 조정. <code>Heavy_Trail</code>이 선례</td>
+          <td class="eff"><b>▪</b>▪▪▪</td><td><span class="p p0">P0</span></td>
+        </tr>
+        <tr>
+          <td class="name">차지샷 도포량</td>
+          <td>Impact <span class="num">2.0</span> · Trail <span class="num">0.5</span> × 최대 <span class="num">256</span>샘플</td>
+          <td>풀충전 = <span class="num">5 %</span></td>
+          <td><code>Trail.SplatVolume</code> 상향이 가장 직접적. <code>TrailSpacing 40</code>을 줄이면 비용이 함께 오름</td>
+          <td class="eff"><b>▪</b>▪▪▪</td><td><span class="p p0">P0</span></td>
+        </tr>
+        <tr>
+          <td class="name">샷건 발사 속도</td>
+          <td><code>ShotsPerSecond 8</code> = <span class="num">0.125</span>초 간격</td>
+          <td><span class="num">0.25</span>초 간격 = <span class="num">4</span>발/초</td>
+          <td><code>DA_Weapon_Shotgun.ShotsPerSecond</code> → <span class="num">4</span>. <b>현재보다 느려집니다</b> — 아래 결정 항목 참고</td>
+          <td class="eff"><b>▪</b>▪▪▪</td><td><span class="p p1">P1</span></td>
+        </tr>
+        <tr>
+          <td class="name">초콜릿 분수 도포</td>
+          <td>파열 <span class="num">3</span>발 · 피치 <span class="num">0–0</span>° 수평</td>
+          <td>이펙트 원형에 맞는 원형 도포</td>
+          <td><code>Burst.Count</code> 상향 + <code>MinPitch/MaxPitch</code> 범위 부여. 반경은 <code>Speed</code>(현재 900)가 결정</td>
+          <td class="eff"><b>▪</b>▪▪▪</td><td><span class="p p2">P2</span></td>
+        </tr>
+        <tr>
+          <td class="name">꿀풍선 밸런스</td>
+          <td>48발 @ 400 → 반경 약 <span class="num">163</span> cm · 스턴 반경 <span class="num">300</span> cm</td>
+          <td>간단한 수치 조정</td>
+          <td><code>Burst.Speed</code>(반경) · <code>StunRadius</code> · <code>Count</code></td>
+          <td class="eff"><b>▪</b>▪▪▪</td><td><span class="p p2">P2</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ===== C. 이펙트 ===== -->
+<section>
+  <div class="sechead">
+    <p class="eyebrow">파트 C</p>
+    <h2>이펙트 — 이펙트별</h2>
+  </div>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>이펙트</th><th>대상</th><th>현재</th><th>필요 작업</th><th>규모</th><th>우선</th></tr></thead>
+      <tbody>
+        <tr><td class="name">가속 트레일</td><td class="tight">스피드 스타</td>
+          <td><code>NS_DashTrail</code> 존재하나 <b>참조 없음</b></td>
+          <td>캐릭터에 무지개 이펙트 부착. <b>에셋이 이미 있어 연결만 하면 됨</b></td>
+          <td class="eff"><b>▪</b>▪▪▪</td><td><span class="p p2">P2</span></td></tr>
+        <tr><td class="name">탄도 궤적</td><td class="tight">차지샷</td>
+          <td>비행 궤적 연출 없음 (히트스캔)</td>
+          <td>총알이 날아가는 궤적 표시</td>
+          <td class="eff"><b>▪▪</b>▪▪</td><td><span class="p p2">P2</span></td></tr>
+        <tr><td class="name">순차 낙하</td><td class="tight">차지샷</td>
+          <td>도포만 있고 연출 없음</td>
+          <td>디저트 폭격과 동일한 낙하 연출</td>
+          <td class="eff"><b>▪▪</b>▪▪</td><td><span class="p p2">P2</span></td></tr>
+        <tr><td class="name">조준 궤적</td><td class="tight">꿀풍선 · 디저트 폭격</td>
+          <td>없음</td>
+          <td>포물선 / 직선 조준 미리보기. 조준 모드 시스템과 함께</td>
+          <td class="eff"><b>▪▪</b>▪▪</td><td><span class="p p1">P1</span></td></tr>
+        <tr><td class="name">조준 원 2종</td><td class="tight">히어로 랜딩</td>
+          <td><code>BP_LandingMarker</code> 1종</td>
+          <td>착지점/최대범위 원 + 부양 시간 비례 확대 원</td>
+          <td class="eff"><b>▪▪</b>▪▪</td><td><span class="p p1">P1</span></td></tr>
+        <tr><td class="name">무기·잉크통 발화</td><td class="tight">무한 탄환</td>
+          <td>잉크통 재질 오버라이드만</td>
+          <td>무기와 아이스크림통에 직접 불타는 이펙트</td>
+          <td class="eff"><b>▪▪</b>▪▪</td><td><span class="p p3">P3</span></td></tr>
+        <tr><td class="name">사용자 화면 연출</td><td class="tight">무한 탄환 · 히어로 랜딩</td>
+          <td>없음</td>
+          <td>사용 중인 본인에게만 보이는 화면 연출</td>
+          <td class="eff"><b>▪▪▪</b>▪</td><td><span class="p p3">P3</span></td></tr>
+        <tr><td class="name">진영색 틴트</td><td class="tight">꿀벌 · 디저트 폭격</td>
+          <td>고정 색</td>
+          <td>발사한 진영 색으로 변경. <code>User.TintColor</code> 규약 통일 권장</td>
+          <td class="eff"><b>▪▪</b>▪▪</td><td><span class="p p3">P3</span></td></tr>
+        <tr><td class="name">탄 착탄 이펙트</td><td class="tight">디저트 폭격</td>
+          <td><code>NS_DessertImpact</code> · 탄마다 재생</td>
+          <td>크기 조정 및 진영별 색 반영</td>
+          <td class="eff"><b>▪</b>▪▪▪</td><td><span class="p p3">P3</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ===== D. 아트 / E. UI ===== -->
+<section>
+  <div class="sechead">
+    <p class="eyebrow">파트 D · E</p>
+    <h2>아트와 UI</h2>
+  </div>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>파트</th><th>대상</th><th>필요 작업</th><th>규모</th><th>우선</th></tr></thead>
+      <tbody>
+        <tr><td class="name">아트</td><td class="tight">꿀벌</td><td>모델링 교체 (<code>BP_Bee</code>)</td><td class="eff"><b>▪▪▪</b>▪</td><td><span class="p p3">P3</span></td></tr>
+        <tr><td class="name">아트</td><td class="tight">초콜릿 분수</td><td>현재 이펙트가 게임 톤에 맞지 않음 — 텍스처 변경 가능 여부 확인</td><td class="eff"><b>▪▪</b>▪▪</td><td><span class="p p3">P3</span></td></tr>
+        <tr><td class="name">아트</td><td class="tight">히어로 랜딩</td><td>진영별 텍스처 교체 및 디테일 보완 (연출은 어느 정도 완료)</td><td class="eff"><b>▪▪</b>▪▪</td><td><span class="p p3">P3</span></td></tr>
+        <tr><td class="name">UI</td><td class="tight">ESC 메뉴</td><td>계속하기 / 항복하기 2개 버튼</td><td class="eff"><b>▪▪</b>▪▪</td><td><span class="p p2">P2</span></td></tr>
+        <tr><td class="name">UI</td><td class="tight">잉크 부족</td><td>잉크가 모자랄 때 표시되는 경고 UI</td><td class="eff"><b>▪▪</b>▪▪</td><td><span class="p p2">P2</span></td></tr>
+        <tr><td class="name">UI</td><td class="tight">아이템 이름</td><td>현재 표시 중인 아이템 이름 라벨 삭제 — <b>플밍 측 의도 확인 후 결정</b> (<code>UItemLabelWidget</code>)</td><td class="eff"><b>▪</b>▪▪▪</td><td><span class="p p2">P2</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ===== 결정 대기 ===== -->
+<section>
+  <div class="sechead">
+    <p class="eyebrow">결정 대기</p>
+    <h2>진행 전에 정해야 할 것</h2>
+  </div>
+  <div class="cols">
+    <div class="panel ask">
+      <h3>스위트 스피너 — 기존 샷건 재사용 <span class="p p2">의견 요청됨</span></h3>
+      <p class="note"><b>이미 그렇게 돼 있습니다.</b> <code>DA_Weapon_SpinnerVolley</code>는 샷건과 똑같은 <code>PaintGunProfile</code> 클래스이고, 탄환과 산탄 패턴만 다릅니다.</p>
+      <p class="note">따라서 <b>기존 방식 유지를 권합니다.</b> 새 메커니즘을 만들면 이펙트·애니메이션이 새로 필요하지만, 지금 구조를 유지하면 <b>발사 속도·탄환·산탄 값만 바꿔</b> 원하는 손맛을 낼 수 있습니다. 현재 <span class="num">0.1</span>발/초 · <span class="num">600</span> cm/s · 잉크 <span class="num">0 %</span>입니다.</p>
+    </div>
+    <div class="panel ask">
+      <h3>샷건 발사 속도 — 방향 확인 필요</h3>
+      <p class="note">&ldquo;0.25초 정도 필요&rdquo;라고 하셨는데, <b>현재 값이 이미 0.125초(초당 8발)</b>입니다. 0.25초로 바꾸면 지금의 <b>절반 속도</b>가 됩니다.</p>
+      <p class="note">체감이 더 느리게 느껴지셨다면 발사 속도가 아니라 <b>애니메이션·반동 연출</b>이 원인일 수 있습니다. 의도가 &ldquo;더 빠르게&rdquo;인지 &ldquo;더 느리고 묵직하게&rdquo;인지 확인이 필요합니다.</p>
+    </div>
+    <div class="panel ask">
+      <h3>무한 탄환 — 차지샷 기준 시간</h3>
+      <p class="note">&ldquo;차지샷이 2초일 경우 0.5초로&rdquo;라고 적어주셨는데, <b>현재 <code>ChargeTime</code>은 3초</b>입니다.</p>
+      <p class="note">기준을 3초로 보고 버프 후 목표치를 정할지, 아니면 기본 충전 시간 자체를 2초로 낮출지 먼저 정해야 합니다.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  &ldquo;현재&rdquo; 칸의 모든 수치는 에디터에서 <code>DA_Weapon_*</code> · <code>DA_Item_*</code> · <code>DA_Paintball_*</code> 를 직접 읽은 값입니다. 규모 표기는 기존 구현 재사용을 전제로 한 추정이며, 실제 착수 전에 담당자 확인이 필요합니다.
+</footer>
+
+</div>
+</body>
+</html>

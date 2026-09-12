@@ -167,4 +167,134 @@ bool FPaintProfileAssetTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+/**
+ * 충전량이 총구 연출의 크기를 정하는 방식. 최소 충전에서 아래끝, 풀충전에서 위끝이고,
+ * 풀충전만 발사하는 프로필(MinChargeToFire 1)은 위끝 하나만 쓴다. 차지가 아닌 무기는 배율이 고정이다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPaintMuzzleFXScaleTest,
+	"MintChoco.Paint.Weapons.MuzzleFXScale",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FPaintMuzzleFXScaleTest::RunTest(const FString& Parameters)
+{
+	UPaintSniperProfile* const Charged = NewObject<UPaintSniperProfile>();
+	Charged->FireMode = EPaintFireMode::Charged;
+	Charged->MinChargeToFire = 0.3f;
+	Charged->MuzzleFXScale = 1.0f;
+	Charged->MuzzleFXChargeScale = FVector2D(0.5, 1.5);
+
+	TestEqual(TEXT("minimum charge is the low end"), Charged->GetMuzzleFXScale(0.3f), 0.5f, 1e-4f);
+	TestEqual(TEXT("full charge is the high end"), Charged->GetMuzzleFXScale(1.0f), 1.5f, 1e-4f);
+	TestEqual(TEXT("halfway between is halfway"), Charged->GetMuzzleFXScale(0.65f), 1.0f, 1e-4f);
+	TestEqual(TEXT("below the minimum clamps to the low end"), Charged->GetMuzzleFXScale(0.0f), 0.5f, 1e-4f);
+
+	// 기본 배율은 곱해진다: 에셋이 두 배로 크면 두 끝도 두 배다.
+	Charged->MuzzleFXScale = 2.0f;
+	TestEqual(TEXT("MuzzleFXScale multiplies the charge scale"), Charged->GetMuzzleFXScale(1.0f), 3.0f, 1e-4f);
+
+	// 풀충전만 발사하면 도달 가능한 크기는 위끝 하나다.
+	Charged->MuzzleFXScale = 1.0f;
+	Charged->MinChargeToFire = 1.0f;
+	TestEqual(TEXT("a full-charge-only weapon always uses the high end"), Charged->GetMuzzleFXScale(1.0f), 1.5f, 1e-4f);
+
+	// 산탄 패턴(UPaintScatterProfile)은 무기 프로필이 아니다. 샷건이 드는 것은 건 프로필이다.
+	UPaintGunProfile* const Single = NewObject<UPaintGunProfile>();
+	Single->FireMode = EPaintFireMode::Single;
+	Single->MuzzleFXScale = 1.25f;
+	Single->MuzzleFXChargeScale = FVector2D(0.5, 1.5);
+	TestEqual(TEXT("a non-charged weapon ignores the charge range"), Single->GetMuzzleFXScale(1.0f), 1.25f, 1e-4f);
+	TestEqual(TEXT("a non-charged weapon ignores the charge value"), Single->GetMuzzleFXScale(0.0f), 1.25f, 1e-4f);
+
+	return true;
+}
+
+/**
+ * 충전 연출은 차지 무기에서만 의미가 있다. 차지가 아닌 프로필에 ChargeFX가 들어 있으면
+ * 영원히 재생되지 않는 에셋 참조이므로, 값을 넣은 쪽의 FireMode가 Charged인지 본다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPaintChargeFXProfileTest,
+	"MintChoco.Paint.Weapons.ChargeFXProfiles",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPaintChargeFXProfileTest::RunTest(const FString& Parameters)
+{
+	IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+	Registry.ScanPathsSynchronous({ProfileFolder}, /*bForceRescan=*/true);
+
+	TArray<FAssetData> Profiles;
+	FindProfileAssets(Registry, UPaintWeaponProfile::StaticClass(), Profiles);
+	TestTrue(TEXT("profile templates were found"), Profiles.Num() > 0);
+
+	for (const FAssetData& Asset : Profiles)
+	{
+		const UPaintWeaponProfile* const Profile = Cast<UPaintWeaponProfile>(Asset.GetAsset());
+		if (!Profile || !Profile->ChargeFX)
+		{
+			continue;
+		}
+		TestEqual(
+			*FString::Printf(TEXT("%s: ChargeFX is only reachable in Charged"), *Asset.AssetName.ToString()),
+			Profile->FireMode, EPaintFireMode::Charged);
+		TestTrue(
+			*FString::Printf(TEXT("%s: ChargeFXScale is positive"), *Asset.AssetName.ToString()),
+			Profile->ChargeFXScale > 0.0f);
+	}
+	return true;
+}
+
+/**
+ * 총구 연출을 넣은 프로필의 크기 범위가 뒤집혀 있거나 0이면, 발사는 되는데 아무것도 보이지 않는다.
+ * 그 조합만 막는다: 연출을 넣지 않은 프로필은 그대로 통과한다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPaintMuzzleFXProfileTest,
+	"MintChoco.Paint.Weapons.MuzzleFXProfiles",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPaintMuzzleFXProfileTest::RunTest(const FString& Parameters)
+{
+	IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+	Registry.ScanPathsSynchronous({ProfileFolder}, /*bForceRescan=*/true);
+
+	TArray<FAssetData> Profiles;
+	FindProfileAssets(Registry, UPaintWeaponProfile::StaticClass(), Profiles);
+
+	for (const FAssetData& Asset : Profiles)
+	{
+		const UPaintWeaponProfile* const Profile = Cast<UPaintWeaponProfile>(Asset.GetAsset());
+		if (!Profile || !Profile->MuzzleFX)
+		{
+			continue;
+		}
+		const FString Name = Asset.AssetName.ToString();
+		TestTrue(*FString::Printf(TEXT("%s: MuzzleFXScale is positive"), *Name), Profile->MuzzleFXScale > 0.0f);
+		TestTrue(
+			*FString::Printf(TEXT("%s: MuzzleFXChargeScale ends are positive"), *Name),
+			Profile->MuzzleFXChargeScale.X > 0.0 && Profile->MuzzleFXChargeScale.Y > 0.0);
+		TestTrue(
+			*FString::Printf(TEXT("%s: MuzzleFXChargeScale runs from small to large"), *Name),
+			Profile->MuzzleFXChargeScale.X <= Profile->MuzzleFXChargeScale.Y);
+	}
+
+	// 스나이퍼는 부분 충전으로도 발사돼야 크기 범위가 실제로 보인다.
+	const UPaintWeaponProfile* const Sniper = LoadObject<UPaintWeaponProfile>(
+		nullptr, TEXT("/Game/Blueprints/Weapons/Profiles/DA_Weapon_Sniper.DA_Weapon_Sniper"));
+	if (TestNotNull(TEXT("DA_Weapon_Sniper loads"), Sniper))
+	{
+		TestNotNull(TEXT("DA_Weapon_Sniper: MuzzleFX"), Sniper->MuzzleFX.Get());
+		TestNotNull(TEXT("DA_Weapon_Sniper: ChargeFX"), Sniper->ChargeFX.Get());
+		TestTrue(TEXT("DA_Weapon_Sniper: a partial charge can fire"), Sniper->MinChargeToFire < 1.0f);
+	}
+
+	const UPaintWeaponProfile* const Shotgun = LoadObject<UPaintWeaponProfile>(
+		nullptr, TEXT("/Game/Blueprints/Weapons/Profiles/DA_Weapon_Shotgun.DA_Weapon_Shotgun"));
+	if (TestNotNull(TEXT("DA_Weapon_Shotgun loads"), Shotgun))
+	{
+		TestNotNull(TEXT("DA_Weapon_Shotgun: MuzzleFX"), Shotgun->MuzzleFX.Get());
+	}
+	return true;
+}
+
 #endif

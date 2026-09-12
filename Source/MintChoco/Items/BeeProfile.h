@@ -55,6 +55,16 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bee|Trail")
 	FPaintDeposit TrailDeposit;
 
+	/**
+	 * 상대에게 맞았을 때 그 상대의 몸 가운데에서 한 번 터지는 이펙트. 벽이나 수명으로 터질 때는
+	 * 맞은 상대가 없으므로 나오지 않는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bee|FX")
+	TObjectPtr<UNiagaraSystem> HitFX;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bee|FX", meta = (ClampMin = "0.01"))
+	float HitFXScale = 1.0f;
+
 	/** 적중 지점에서 이 반경 안의 상대가 스턴된다(cm). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bee|Burst", meta = (ClampMin = "0", ForceUnits = "cm"))
 	float StunRadius = 250.0f;

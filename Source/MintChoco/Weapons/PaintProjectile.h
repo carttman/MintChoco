@@ -47,6 +47,9 @@ public:
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 
+	/** Only ticks when this ball paints a trail; a plain ball is driven by its movement component alone. */
+	virtual void Tick(float DeltaSeconds) override;
+
 	UFUNCTION()
 	void OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent,
 		FVector NormalImpulse, const FHitResult& Hit);
@@ -70,10 +73,23 @@ protected:
 	TArray<TObjectPtr<UMaterialInterface>> TeamMaterials;
 
 private:
+	/**
+	 * Paints the surfaces around one point of the flight path: rays spread around the plane across
+	 * the direction of travel, so the same code covers floor, ceiling and walls whichever way the
+	 * ball is heading. Returns how many splats it left.
+	 */
+	int32 PaintTrailSample(const FVector& Location, int32 SampleIndex);
+
 	UPROPERTY(Transient)
 	TObjectPtr<const UPaintballProfile> Profile;
 
 	uint8 PaintId = 0;
 	int32 Seed = 0;
 	bool bCosmetic = false;
+
+	/** Trail bookkeeping. Distance is measured along the real path, so a lobbed arc samples evenly. */
+	FVector LastTrailLocation = FVector::ZeroVector;
+	float TrailDistance = 0.0f;
+	int32 TrailSampleCount = 0;
+	int32 TrailSplatCount = 0;
 };

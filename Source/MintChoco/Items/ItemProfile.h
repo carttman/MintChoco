@@ -51,6 +51,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect")
 	TObjectPtr<UNiagaraSystem> ActivateFX;
 
+	/** ActivateFX가 붙을 때의 균일 배율. 1이 에셋 원래 크기다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect", meta = (ClampMin = "0.01"))
+	float ActivateFXScale = 1.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect")
 	TObjectPtr<USoundBase> ActivateSound;
 
