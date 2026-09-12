@@ -2,6 +2,7 @@
 
 #include "Blueprint/UserWidget.h"
 #include "CoreMinimal.h"
+#include "Game/PaintBar.h"
 #include "GameFramework/PlayerController.h"
 #include "InputActionValue.h"
 
@@ -9,6 +10,7 @@
 
 class UInputAction;
 class UInputMappingContext;
+class UPaintBarWidget;
 class UPaintBrushProfile;
 class UPaintChargeWidget;
 class UPaintSubsystem;
@@ -64,11 +66,20 @@ public:
 	UFUNCTION(Exec)
 	void PaintCoverage();
 
+	/** Console: feeds the paint bar fixed coverage percentages (0-100) instead of the world's; a negative value hands it back to the world. */
+	UFUNCTION(Exec)
+	void PaintBarCoverage(float LeftPercent, float RightPercent);
+
+	/** Console: toggles the paint bar's scripted loop through gap, clash, danger, KO and recovery. */
+	UFUNCTION(Exec)
+	void PaintBarDemo();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
 	/** SetPawn rather than OnPossess: it also runs on the owning client, where the number keys and the wheel are pressed. */
 	virtual void SetPawn(APawn* InPawn) override;
+	virtual void PlayerTick(float DeltaTime) override;
 
 	void OnPaintTriggered();
 	void OnSelectWeaponKey(FKey Key);
@@ -117,6 +128,21 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI")
 	TSubclassOf<UUserWidget> HUDWidgetClass;
+
+	/** The team paint ratio bar (WBP_PaintBar), shown at the top center. Optional. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI")
+	TSubclassOf<UPaintBarWidget> PaintBarWidgetClass;
+
+	/** Distance from the top of the screen to the bar; the KO labels sit in this space. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI", meta = (ForceUnits = "px"))
+	float PaintBarTopOffset = 56.0f;
+
+	/**
+	 * Coverage the paint bar shows instead of the world's, pushed every tick so it can be changed in PIE
+	 * (the details panel or ObjectTools) without painting half the map.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Sample|UI")
+	FPaintBarPreview PaintBarPreview;
 
 	/** The brush this source stamps with: its material and how a hit becomes a splat shape. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|Paint")
@@ -215,6 +241,9 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UUserWidget> HUDWidget;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UPaintBarWidget> PaintBarWidget;
 
 	/** The possessed pawn's weapon; re-resolved on every possess, null for a pawn without one. */
 	UPROPERTY(Transient)
