@@ -47,32 +47,23 @@ bool FPaintBarTest::RunTest(const FString& Parameters)
 		TestFalse(TEXT("alone has nobody to clash with"), Alone.IsClashing());
 	}
 
-	// KO 판정선: 점유율 기준(GameState 와 같은 비교)이고, 게이지 위의 자리는 ComputeFill 과 같은 분모로 정해진다.
+	// KO 판정선: 양 끝에서 KoLine 만큼 들어온 고정 자리. 상대 게이지가 선에 닿으면 넘긴 것이고, 격돌 전이라도 똑같다.
 	{
-		const float KoCoverage = 0.7f;
-		TestTrue(TEXT("0.70 reaches the line"), FPaintBarMath::IsPastKoLine(0.70f, KoCoverage));
-		TestFalse(TEXT("0.69 does not"), FPaintBarMath::IsPastKoLine(0.69f, KoCoverage));
+		TestTrue(TEXT("0.70 reaches the line"), FPaintBarMath::IsPastKoLine(0.70f, Rules.KoLine));
+		TestFalse(TEXT("0.69 does not"), FPaintBarMath::IsPastKoLine(0.69f, Rules.KoLine));
+		TestTrue(TEXT("danger from 0.65"), FPaintBarMath::IsInDanger(0.65f, Rules.KoLine, Rules.DangerMargin));
+		TestFalse(TEXT("no danger at 0.64"), FPaintBarMath::IsInDanger(0.64f, Rules.KoLine, Rules.DangerMargin));
 
-		// 합이 0.7 아래면 선이 바 밖에 있다: 아직 아무도 KO 를 노릴 수 없다.
-		const float Early = FPaintBarMath::KoLineFill(0.10f, 0.45f, Rules.ClashCoverage, KoCoverage);
-		TestFalse(TEXT("line is off the bar before the sum reaches the KO coverage"), FPaintBarMath::IsLineOnBar(Early));
-		TestFalse(TEXT("no danger while the line is off the bar"), FPaintBarMath::IsInDanger(1.0f, Early, Rules.DangerMargin));
+		// 격돌 전: 0.45 / 0.6 = 0.75 로 선(0.7)을 넘긴다. 합이 아직 60 % 에 못 미쳐도 몰아붙일 수 있다.
+		const FPaintBarFill Dominant = FPaintBarMath::ComputeFill(0.10f, 0.45f, Rules.ClashCoverage);
+		TestFalse(TEXT("dominant before the clash still has a gap"), Dominant.IsClashing());
+		TestTrue(TEXT("dominant before the clash is past the line"), FPaintBarMath::IsPastKoLine(Dominant.Right, Rules.KoLine));
 
-		// 합이 1이면 선은 0.7 자리다. 상대 게이지 0.7 = 상대 점유율 0.7.
-		const float Full = FPaintBarMath::KoLineFill(0.30f, 0.70f, Rules.ClashCoverage, KoCoverage);
-		TestEqual(TEXT("line sits at 0.7 when the bar is full"), Full, 0.7f, Tolerance);
-		const FPaintBarFill FullFill = FPaintBarMath::ComputeFill(0.30f, 0.70f, Rules.ClashCoverage);
-		TestTrue(TEXT("the gauge touches the line exactly when the coverage does"), FullFill.Right + 1.0e-4f >= Full);
-		TestTrue(TEXT("danger inside the margin"), FPaintBarMath::IsInDanger(Full - Rules.DangerMargin, Full, Rules.DangerMargin));
-		TestFalse(TEXT("no danger outside the margin"), FPaintBarMath::IsInDanger(Full - Rules.DangerMargin - 0.01f, Full, Rules.DangerMargin));
-
-		// 합이 0.8이면 선은 0.875 자리다: 상대가 0.7 을 칠해야 닿는다.
-		const float Partial = FPaintBarMath::KoLineFill(0.10f, 0.70f, Rules.ClashCoverage, KoCoverage);
-		TestEqual(TEXT("line moves with the sum"), Partial, 0.875f, Tolerance);
-		const FPaintBarFill PartialFill = FPaintBarMath::ComputeFill(0.10f, 0.70f, Rules.ClashCoverage);
-		TestTrue(TEXT("0.7 of the world reaches the moved line"), PartialFill.Right + 1.0e-4f >= Partial);
-		const FPaintBarFill Short = FPaintBarMath::ComputeFill(0.10f, 0.69f, Rules.ClashCoverage);
-		TestTrue(TEXT("0.69 of the world does not"), Short.Right < FPaintBarMath::KoLineFill(0.10f, 0.69f, Rules.ClashCoverage, KoCoverage));
+		// 격돌 뒤: 몫이 기준이라 절대 점유율은 상관없다. 0.24 : 0.56 은 0.7 이고, 0.25 : 0.55 는 아니다.
+		const FPaintBarFill Share = FPaintBarMath::ComputeFill(0.24f, 0.56f, Rules.ClashCoverage);
+		TestTrue(TEXT("70 % of the bar reaches the line"), FPaintBarMath::IsPastKoLine(Share.Right, Rules.KoLine));
+		const FPaintBarFill Short = FPaintBarMath::ComputeFill(0.25f, 0.55f, Rules.ClashCoverage);
+		TestFalse(TEXT("69 % of the bar does not"), FPaintBarMath::IsPastKoLine(Short.Right, Rules.KoLine));
 	}
 
 	// 로컬 KO 시계(GameState 가 없을 때): 버틴 시간이 유지 시간에 닿으면 KO, 선에서 빠지면 처음부터.
@@ -116,7 +107,8 @@ bool FPaintBarTest::RunTest(const FString& Parameters)
 		{
 			const FVector2f Coverage = FPaintBarMath::DemoCoverage(Sample * Step, Period);
 			TestTrue(TEXT("demo never paints more than the world"), Coverage.X + Coverage.Y <= 1.0f + Tolerance);
-			Current = FPaintBarMath::IsPastKoLine(Coverage.Y, Rules.PreviewKoCoverage) ? Current + Step : 0.0f;
+			const FPaintBarFill Fill = FPaintBarMath::ComputeFill(Coverage.X, Coverage.Y, Rules.ClashCoverage);
+			Current = FPaintBarMath::IsPastKoLine(Fill.Right, Rules.KoLine) ? Current + Step : 0.0f;
 			Longest = FMath::Max(Longest, Current);
 		}
 		TestTrue(TEXT("demo stays past the line longer than the KO hold"), Longest > Rules.PreviewKoHoldSeconds);

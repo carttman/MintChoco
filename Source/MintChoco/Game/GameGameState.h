@@ -29,12 +29,14 @@ enum class EMatchPhase : uint8
 struct MINTCHOCO_API FKnockoutMath
 {
 	/**
-	 * 기준 점유율을 넘어선 팀. 없으면 Teams::None.
+	 * 상대 쪽 판정선을 넘긴 팀. 없으면 Teams::None. KoLine 이 0 이하면 항상 None(KO 꺼짐).
 	 *
-	 * 기준이 50 %를 넘으면 둘이 동시에 넘을 수 없지만, 기준을 낮게 잡아도 한 팀만
-	 * 골리도록 가장 많이 칠한 팀을 고른다.
+	 * HUD 의 칠한 비율 바와 같은 자(FPaintBarMath::ComputeFill)로 잰다: 두 팀의 합이 ClashCoverage 에
+	 * 못 미치면 각자 ClashCoverage 로, 넘으면 합으로 나눈 몫이 게이지 길이이고, 그 길이가 1 - KoLine 에
+	 * 닿으면 넘긴 것이다. 그래서 바에서 상대 게이지가 선에 닿는 순간이 곧 서버가 세기 시작하는 순간이다.
+	 * 선을 낮게 잡아 둘이 함께 넘어도 앞선 쪽 하나만 고른다.
 	 */
-	static int32 LeaderAboveThreshold(const FPaintCoverage& Coverage, float Threshold);
+	static int32 LeaderPastLine(const FPaintCoverage& Coverage, float ClashCoverage, float KoLine);
 
 	/** 게이지 채움 0~1. 0이 방금 시작, 1이 KO 직전. */
 	static float Progress(float Remaining, float HoldSeconds);
@@ -178,9 +180,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Match|Knockout")
 	float GetKnockoutProgress() const;
 
-	/** KO 기준 점유율(0~1). UI 가 "70 %" 를 직접 적어 두지 않아도 되도록 노출한다. */
+	/** 두 팀의 게이지가 만나는 점유율 합(0~1). HUD 바가 같은 값으로 게이지 길이를 잰다. */
 	UFUNCTION(BlueprintPure, Category = "Match|Knockout")
-	float GetKnockoutThreshold() const { return KnockoutThreshold; }
+	float GetClashCoverage() const { return ClashCoverage; }
+
+	/** 양 끝에서 KO 판정선까지의 거리(게이지 길이 비율). UI 가 "30 %" 를 직접 적어 두지 않아도 되도록 노출한다. */
+	UFUNCTION(BlueprintPure, Category = "Match|Knockout")
+	float GetKnockoutLine() const { return KnockoutLine; }
 
 	/** 한 번 다 차면 걸리는 시간(초). 게이지의 전체 길이를 뜻한다. */
 	UFUNCTION(BlueprintPure, Category = "Match|Knockout")
@@ -234,14 +240,21 @@ protected:
 	float MatchDuration = 0.0f;
 
 	/**
-	 * 한 팀이 이 점유율(0~1) 이상을 KnockoutHoldSeconds 동안 지키면 즉시 이긴다.
+	 * 두 팀이 칠한 합(칠한 면적 / 도포 가능 전체 면적)이 이 값에 닿으면 HUD 의 두 게이지가 가운데에서
+	 * 만난다. 그 전에는 각자 이 값으로 나눈 만큼 양 끝에서 차오르고, 넘으면 합으로 나눈 몫이 게이지 길이다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Match", meta = (ClampMin = "0.01", ClampMax = "1"))
+	float ClashCoverage = 0.6f;
+
+	/**
+	 * 양 끝에서 KO 판정선까지의 거리(게이지 길이 비율). 상대 게이지가 내 쪽 선을 KnockoutHoldSeconds
+	 * 동안 넘긴 채 버티면 즉시 이긴다. 0.3 이면 상대가 게이지의 70 % 를 차지해야 한다.
 	 * 0 이하로 두면 KO 판정 자체가 꺼진다.
 	 *
-	 * 점유율은 HUD 게이지와 같은 값(칠한 면적 / 도포 가능 전체 면적)이다. 맵에 닿을 수 없는
-	 * 면이 있으면 그만큼 분모에 남아 있으므로, 기준은 맵마다 다시 재서 정해야 한다.
+	 * 게이지 길이는 몫이라 맵의 도포 가능 면적과 무관하다. 맵마다 다시 잴 필요가 없다.
 	 */
-	UPROPERTY(EditDefaultsOnly, Category = "Match", meta = (ClampMin = "0", ClampMax = "1"))
-	float KnockoutThreshold = 0.7f;
+	UPROPERTY(EditDefaultsOnly, Category = "Match", meta = (ClampMin = "0", ClampMax = "0.45"))
+	float KnockoutLine = 0.3f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Match", meta = (ClampMin = "0.1", ForceUnits = "s"))
 	float KnockoutHoldSeconds = 5.0f;

@@ -3,6 +3,7 @@
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "Game/GameGameMode.h"
+#include "Game/PaintBar.h"
 #include "Game/TeamTypes.h"
 #include "MintChoco.h"
 #include "Net/UnrealNetwork.h"
@@ -399,22 +400,27 @@ void AGameGameState::RefreshCoverage()
 
 // ---------------------------------------------------------------- KO 판정
 
-int32 FKnockoutMath::LeaderAboveThreshold(const FPaintCoverage& Coverage, float Threshold)
+int32 FKnockoutMath::LeaderPastLine(const FPaintCoverage& Coverage, float ClashCoverage, float KoLine)
 {
-	if (Threshold <= 0.0f)
+	if (KoLine <= 0.0f)
 	{
 		return Teams::None;
 	}
 
+	// 바의 왼쪽이 Mint, 오른쪽이 Choco. ComputeFill 은 두 팀에 같은 분모를 쓰므로 어느 쪽이 왼쪽이든 몫은 같다.
+	const FPaintBarFill Fill = FPaintBarMath::ComputeFill(
+		Coverage.GetFraction(static_cast<uint8>(Teams::Mint)), Coverage.GetFraction(static_cast<uint8>(Teams::Choco)), ClashCoverage);
+	static_assert(Teams::Mint == 0 && Teams::Choco == 1 && Teams::Count == 2, "Fills[] is indexed by team id");
+	const float Fills[Teams::Count] = {Fill.Left, Fill.Right};
+
 	int32 Leader = Teams::None;
-	float LeaderFraction = 0.0f;
+	float LeaderFill = 0.0f;
 	for (int32 Team = 0; Team < Teams::Count; ++Team)
 	{
-		const float Fraction = Coverage.GetFraction(static_cast<uint8>(Team));
-		if (Fraction >= Threshold && Fraction > LeaderFraction)
+		if (FPaintBarMath::IsPastKoLine(Fills[Team], KoLine) && Fills[Team] > LeaderFill)
 		{
 			Leader = Team;
-			LeaderFraction = Fraction;
+			LeaderFill = Fills[Team];
 		}
 	}
 	return Leader;
@@ -475,7 +481,7 @@ void AGameGameState::SetKnockoutTeam(int32 NewTeam)
 	}
 	else
 	{
-		UE_LOG(LogMintChoco, Log, TEXT("KO 카운트다운 취소: 기준 아래로 내려왔다."));
+		UE_LOG(LogMintChoco, Log, TEXT("KO 카운트다운 취소: 판정선 밖으로 나왔다."));
 	}
 
 	// RepNotify는 값을 쓴 권한자에게 오지 않는다. 리슨 호스트의 UI도 같이 움직이도록 직접 부른다.
@@ -491,7 +497,7 @@ void AGameGameState::UpdateKnockout()
 		return;
 	}
 
-	const int32 Leader = FKnockoutMath::LeaderAboveThreshold(WorldCoverage, KnockoutThreshold);
+	const int32 Leader = FKnockoutMath::LeaderPastLine(WorldCoverage, ClashCoverage, KnockoutLine);
 
 	// 기준 아래로 내려왔거나 선두가 바뀌었다면 처음부터 다시 센다. SetKnockoutTeam이
 	// 같은 팀이면 아무것도 하지 않으므로, 유지되는 동안 시각은 그대로 남는다.

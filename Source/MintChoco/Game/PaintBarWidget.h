@@ -44,13 +44,14 @@ struct MINTCHOCO_API FPaintBarWave
 
 /**
  * 두 팀이 칠한 비율을 흰 통 안의 액체로 보여주는 바. 왼쪽 팀은 왼쪽 끝, 오른쪽 팀은 오른쪽 끝에서 차오르고,
- * 둘이 만나면 ClashEffects가 돈다. 판정선은 AGameGameState 의 KO 점유율(KnockoutThreshold)이 게이지 길이로
- * 오는 자리에 그려지므로(FPaintBarMath::KoLineFill) 상대 게이지가 선에 닿는 순간이 곧 서버가 세기 시작하는
- * 순간이다. 상대가 선에 다가오면 빨갛게 점멸하고, 링은 GameState 가 복제한 카운트다운을 그대로 보여 준다.
+ * 둘이 만나면 ClashEffects가 돈다. 판정선은 양 끝에서 KoLine 만큼 들어온 고정 자리다. 게이지 길이와 선을
+ * AGameGameState 와 같은 값(ClashCoverage, KnockoutLine)으로 재므로 상대 게이지가 선에 닿는 순간이 곧
+ * 서버가 세기 시작하는 순간이다. 상대가 선에 다가오면 빨갛게 점멸하고, 링은 GameState 가 복제한 카운트다운을
+ * 그대로 보여 준다.
  *
  * 액체는 BarMaterial(M_UI_PaintBar) 한 장으로 그리고, 판정선·글자·링·격돌 연출은 NativePaint에서 그린다.
  * 트리가 비어 있으면 BarSize 크기의 SizeBox를 루트로 만들어 그대로 배치할 수 있다. GameState 가 없는 곳
- * (샘플 맵, 디자이너 미리보기)에서만 Rules 의 Preview 값으로 로컬 시계를 돌린다.
+ * (샘플 맵, 디자이너 미리보기)에서만 Rules 의 값으로 로컬 시계를 돌린다.
  */
 UCLASS()
 class MINTCHOCO_API UPaintBarWidget : public UUserWidget
@@ -265,8 +266,8 @@ private:
 	FVector2f CoverageOf(const FPaintCoverage& Coverage) const;
 	/** 미리보기 중이면 nullptr. 판정은 GameState 가 있을 때만 그쪽을 믿는다. */
 	const AGameGameState* FindRuleSource() const;
-	FKoStatus MakeKoStatus(FSideState& Side, const AGameGameState* GameState, int32 OpponentPaintId, float OpponentCoverage,
-		float KoCoverage, float KoHoldSeconds, float DeltaTime) const;
+	FKoStatus MakeKoStatus(FSideState& Side, const AGameGameState* GameState, int32 OpponentPaintId, float OpponentFill,
+		float KoHoldSeconds, float DeltaTime) const;
 	void UpdateSide(FSideState& Side, float OpponentFill, const FKoStatus& Ko, float DeltaTime) const;
 	void UpdateClash(float DeltaTime);
 	void UpdateMaterial();
@@ -297,8 +298,8 @@ private:
 	/** 과장까지 적용해 화면에 그리는 게이지. */
 	FPaintBarFill DisplayedFill;
 
-	/** KO 판정선이 게이지 길이로 오는 자리. 1을 넘으면 바 밖이라 그리지 않는다. 양쪽이 같은 값이다. */
-	float LineFill = 2.0f;
+	/** 이번 틱의 판정선 거리(양 끝에서, 게이지 길이 비율). GameState 가 있으면 그 값, 없으면 Rules.KoLine. 0 이면 KO 가 꺼진 것이라 선·글자·링을 그리지 않는다. */
+	float KoLine = 0.0f;
 
 	FVector2f LocalSize = FVector2f::ZeroVector;
 	float WaveTime = 0.0f;

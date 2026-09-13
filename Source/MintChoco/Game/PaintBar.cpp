@@ -2,7 +2,7 @@
 
 namespace PaintBar
 {
-	/** 게이지 길이·점유율 비교의 여유. 0.7이 부동소수로 조금 모자라도 선에 닿은 것으로 본다. */
+	/** 게이지 길이 비교의 여유. 0.7과 1 - 0.3이 부동소수로 어긋나도 선에 닿은 것으로 본다. */
 	constexpr float LineTolerance = 1.0e-5f;
 }
 
@@ -61,29 +61,14 @@ FPaintBarFill FPaintBarMath::ComputeFill(float LeftCoverage, float RightCoverage
 	return Fill;
 }
 
-float FPaintBarMath::KoLineFill(float LeftCoverage, float RightCoverage, float ClashCoverage, float KoCoverage)
+bool FPaintBarMath::IsPastKoLine(float OpponentFill, float KoLine)
 {
-	const float Denominator = FMath::Max(FMath::Max(LeftCoverage, 0.0f) + FMath::Max(RightCoverage, 0.0f), ClashCoverage);
-	if (Denominator <= UE_SMALL_NUMBER)
-	{
-		return 2.0f;
-	}
-	return FMath::Max(KoCoverage, 0.0f) / Denominator;
+	return OpponentFill + PaintBar::LineTolerance >= 1.0f - KoLine;
 }
 
-bool FPaintBarMath::IsLineOnBar(float LineFill)
+bool FPaintBarMath::IsInDanger(float OpponentFill, float KoLine, float DangerMargin)
 {
-	return LineFill <= 1.0f + PaintBar::LineTolerance;
-}
-
-bool FPaintBarMath::IsPastKoLine(float OpponentCoverage, float KoCoverage)
-{
-	return OpponentCoverage + PaintBar::LineTolerance >= KoCoverage;
-}
-
-bool FPaintBarMath::IsInDanger(float OpponentFill, float LineFill, float DangerMargin)
-{
-	return IsLineOnBar(LineFill) && OpponentFill + PaintBar::LineTolerance >= LineFill - DangerMargin;
+	return OpponentFill + PaintBar::LineTolerance >= 1.0f - KoLine - DangerMargin;
 }
 
 FPaintBarFill FPaintBarMath::Exaggerate(const FPaintBarFill& Fill, float IntoLeft, float IntoRight)
@@ -112,14 +97,14 @@ FVector2f FPaintBarMath::DemoCoverage(float Time, float Period)
 		float Right;
 	};
 
-	// 0.55~0.80 구간에서 오른쪽 점유율이 0.78로 KO 점유율(0.7)을 넘긴 채 머문다.
+	// 0.55~0.80 구간에서 오른쪽 게이지가 0.78(=0.50/0.64)로 판정선(0.7)을 넘긴 채 머문다.
 	static constexpr FKey Keys[] = {
 		{0.00f, 0.00f, 0.00f},
 		{0.20f, 0.22f, 0.26f},
 		{0.32f, 0.28f, 0.34f},
-		{0.45f, 0.20f, 0.52f},
-		{0.55f, 0.14f, 0.78f},
-		{0.80f, 0.14f, 0.78f},
+		{0.45f, 0.20f, 0.42f},
+		{0.55f, 0.14f, 0.50f},
+		{0.80f, 0.14f, 0.50f},
 		{0.90f, 0.30f, 0.34f},
 		{1.00f, 0.00f, 0.00f},
 	};

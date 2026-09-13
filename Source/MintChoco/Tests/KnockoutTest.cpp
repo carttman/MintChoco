@@ -28,20 +28,26 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FKnockoutTest::RunTest(const FString& Parameters)
 {
-	constexpr float Threshold = 0.7f;
+	// HUD 바와 같은 자: 합이 60 % 전이면 60 % 로, 넘으면 합으로 나눈 몫이 게이지이고, 선은 양 끝에서 30 % 자리다.
+	constexpr float Clash = 0.6f;
+	constexpr float Line = 0.3f;
 
-	// 아무도 기준에 못 미치면 아무도 안 몰린다.
-	TestEqual(TEXT("both below"), FKnockoutMath::LeaderAboveThreshold(MakeCoverage(0.5f, 0.4f), Threshold), Teams::None);
+	// 몫이 둘 다 70 % 에 못 미치면 아무도 안 몰린다. 0.5 : 0.4 는 0.56 : 0.44 다.
+	TestEqual(TEXT("both below"), FKnockoutMath::LeaderPastLine(MakeCoverage(0.5f, 0.4f), Clash, Line), Teams::None);
 
-	// 정확히 기준이면 포함한다 - 70 %에서 시작한다고 했으므로 70 %가 경계 안이다.
-	TestEqual(TEXT("exactly at threshold counts"), FKnockoutMath::LeaderAboveThreshold(MakeCoverage(0.7f, 0.2f), Threshold), Teams::Mint);
-	TestEqual(TEXT("above threshold"), FKnockoutMath::LeaderAboveThreshold(MakeCoverage(0.1f, 0.85f), Threshold), Teams::Choco);
+	// 정확히 선이면 포함한다. 0.56 : 0.24 는 몫 0.7 이다.
+	TestEqual(TEXT("exactly at the line counts"), FKnockoutMath::LeaderPastLine(MakeCoverage(0.56f, 0.24f), Clash, Line), Teams::Mint);
+	TestEqual(TEXT("past the line"), FKnockoutMath::LeaderPastLine(MakeCoverage(0.1f, 0.85f), Clash, Line), Teams::Choco);
 
-	// 기준을 낮게 잡아 둘이 함께 넘어도 앞선 쪽 하나만 고른다.
-	TestEqual(TEXT("two over a low threshold: the leader"), FKnockoutMath::LeaderAboveThreshold(MakeCoverage(0.3f, 0.45f), 0.25f), Teams::Choco);
+	// 격돌 전에도 몰아붙일 수 있다. 0.45 / 0.6 = 0.75.
+	TestEqual(TEXT("dominant before the clash"), FKnockoutMath::LeaderPastLine(MakeCoverage(0.1f, 0.45f), Clash, Line), Teams::Choco);
+	TestEqual(TEXT("66 % of the map is not enough while the other side holds 34 %"), FKnockoutMath::LeaderPastLine(MakeCoverage(0.66f, 0.34f), Clash, Line), Teams::None);
 
-	// 기준이 0 이하면 KO 자체가 꺼진다. 다 칠해도 안 걸린다.
-	TestEqual(TEXT("threshold 0 disables"), FKnockoutMath::LeaderAboveThreshold(MakeCoverage(1.0f, 0.0f), 0.0f), Teams::None);
+	// 선을 낮게 잡아 둘이 함께 넘어도 앞선 쪽 하나만 고른다. 0.45 : 0.5 는 0.47 : 0.53 이고 선은 0.4 다.
+	TestEqual(TEXT("two over a low line: the leader"), FKnockoutMath::LeaderPastLine(MakeCoverage(0.45f, 0.5f), Clash, 0.6f), Teams::Choco);
+
+	// 선이 0 이하면 KO 자체가 꺼진다. 다 칠해도 안 걸린다.
+	TestEqual(TEXT("line 0 disables"), FKnockoutMath::LeaderPastLine(MakeCoverage(1.0f, 0.0f), Clash, 0.0f), Teams::None);
 
 	// 게이지: 남은 시간이 줄수록 찬다.
 	constexpr float Hold = 5.0f;
