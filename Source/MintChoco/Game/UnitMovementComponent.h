@@ -130,6 +130,25 @@ public:
 	UFUNCTION(BlueprintPure, Category = "HeroLanding")
 	EHeroLandingPhase GetHeroLandingPhase() const { return HeroPhase; }
 
+	/**
+	 * 조기 낙하 의도(FLAG_Custom_3). 호버 중에 좌클릭하면 선다.
+	 *
+	 * RPC가 아니라 압축 플래그인 이유: 낙하 판단이 저장 무브로 리플레이되는 단계 기계 안에
+	 * 있다. RPC로 보내면 클라이언트가 이미 내리꽂는 동안 서버는 아직 호버를 재생하므로
+	 * 위치가 벌어지고 보정이 들어온다 — 스피드 스타가 GAS 속성을 못 쓰는 것과 같은 이유다.
+	 */
+	void SetWantsHeroDive(bool bNewWantsHeroDive);
+	bool WantsHeroDive() const { return bWantsHeroDive != 0; }
+
+	/**
+	 * 호버를 얼마나 버텼는지(0~1). 내리꽂기가 시작되는 순간 굳는다.
+	 *
+	 * 여기 있는 이유는 서버가 착지할 때 같은 값을 알아야 하기 때문이다. 단계 기계가 양쪽에서
+	 * 같은 입력으로 도니 복제할 것이 없다. 그 전에는 지금까지 버틴 양이라 미리보기가 그대로 쓴다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "HeroLanding")
+	float GetHeroCharge() const;
+
 	/** 내리꽂기 단계에서 고정된 착지점. 그 전에는 ComputeAimTarget()이 지금 조준하는 곳이다. */
 	FVector GetHeroDiveTarget() const { return HeroDiveTarget; }
 
@@ -180,6 +199,9 @@ private:
 	/** 히어로 랜딩 의도. 같은 규칙. */
 	uint8 bWantsHeroLanding : 1;
 
+	/** 조기 낙하 의도. 같은 규칙. 호버 단계에서만 뜻이 있다. */
+	uint8 bWantsHeroDive : 1;
+
 	/**
 	 * 플래그가 0인 무브를 본 뒤에만 다음 1이 상승을 시작한다. 착지 직후 아직 1인 무브가
 	 * 몇 개 더 오는데(클라이언트가 서버보다 늦게 착지한 경우), 그것으로 다시 뜨면 안 된다.
@@ -190,6 +212,10 @@ private:
 	float HeroPhaseTime = 0.0f;
 	FVector HeroTakeoff = FVector::ZeroVector;
 	FVector HeroDiveTarget = FVector::ZeroVector;
+
+	/** 내리꽂기가 시작될 때 굳은 충전량(0~1). 그 전에는 GetHeroCharge()가 시간으로 센다. */
+	float HeroCharge = 0.0f;
+
 	FHeroLandingParams HeroParams;
 
 	/** 서버가 클라이언트의 부스트 플래그를 인정해도 되는지 유닛에게 묻는다. 유닛이 아니면 항상 참. */
@@ -227,11 +253,13 @@ private:
 	uint8 bSavedWantsToDash : 1;
 	uint8 bSavedWantsSpeedBoost : 1;
 	uint8 bSavedWantsHeroLanding : 1;
+	uint8 bSavedWantsHeroDive : 1;
 	uint8 bSavedHeroLandingArmed : 1;
 	EHeroLandingPhase SavedHeroPhase = EHeroLandingPhase::None;
 	float SavedHeroPhaseTime = 0.0f;
 	FVector SavedHeroTakeoff = FVector::ZeroVector;
 	FVector SavedHeroDiveTarget = FVector::ZeroVector;
+	float SavedHeroCharge = 0.0f;
 };
 
 class FNetworkPredictionData_Client_Unit : public FNetworkPredictionData_Client_Character

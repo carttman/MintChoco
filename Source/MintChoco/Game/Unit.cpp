@@ -697,6 +697,19 @@ void AUnit::StartFire()
 		return;
 	}
 
+	// 히어로 랜딩으로 공중에 멈춰 있으면 좌클릭이 조기 낙하다. 다른 조준 아이템과 달리
+	// ConfirmAim을 타지 않는다: 낙하 판단은 저장 무브로 리플레이되는 무브먼트 단계 기계
+	// 안에 있어서, RPC로 알리면 서버가 그 사이를 호버로 재생해 위치가 어긋난다. 그래서
+	// 의도만 압축 플래그에 실어 보낸다.
+	if (UUnitMovementComponent* const Movement = GetUnitMovement())
+	{
+		if (Movement->GetHeroLandingPhase() == EHeroLandingPhase::Hover)
+		{
+			Movement->SetWantsHeroDive(true);
+			return;
+		}
+	}
+
 	if (PaintWeapon && !(SecondaryWeapon && SecondaryWeapon->IsTriggerHeld()))
 	{
 		PaintWeapon->PullTrigger();

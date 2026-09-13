@@ -32,7 +32,12 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HeroLanding")
 	FPaintBurstParams Burst;
 
-	/** 소유 클라이언트에만 보이는 착지점 표시. 매 틱 조준점으로 옮겨지고 내리꽂기부터 고정된다. */
+	/**
+	 * 소유 클라이언트에만 보이는 착지점 표시. 매 틱 조준점으로 옮겨지고 내리꽂기부터 고정된다.
+	 *
+	 * ALandingMarker를 넣으면 충전량에 따라 자라는 안쪽 원까지 그린다. 그냥 AActor여도
+	 * 자리 표시로는 동작한다 — 그래서 타입을 좁히지 않았다.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HeroLanding")
 	TSubclassOf<AActor> AimMarkerClass;
 
@@ -79,5 +84,24 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HeroLanding|Camera", meta = (ClampMin = "0", ForceUnits = "cm"))
 	float CameraRiseOffset = 400.0f;
 
+	/**
+	 * 충전 0에서의 효과 배율. 1이면 언제 눌러도 같고, 0.5면 바로 누른 착지가 절반이다.
+	 *
+	 * 충전량은 공중에 멈춰 버틴 시간이다(HoverTime이 가득 찬 값). 끝까지 기다리면 1이고,
+	 * 이 배율이 StunRadius와 Burst의 반경·탄 수에 함께 걸린다. 일찍 누를수록 빨리 내려오는
+	 * 대신 약해진다 — 그 교환이 이 아이템의 선택지다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HeroLanding", meta = (ClampMin = "0.05", ClampMax = "1"))
+	float MinChargeScale = 0.5f;
+
 	virtual void LogUnsetReferences(const UObject* Owner) const override;
+
+	/**
+	 * 충전량(0~1)을 효과 배율로 바꾼다. 어빌리티와 미리보기가 같은 식을 써야 보이는 원이
+	 * 곧 실제 반경이 된다.
+	 */
+	float ChargeScaleFor(float Charge) const
+	{
+		return FMath::Lerp(MinChargeScale, 1.0f, FMath::Clamp(Charge, 0.0f, 1.0f));
+	}
 };

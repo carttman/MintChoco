@@ -19,6 +19,7 @@ UUnitMovementComponent::UUnitMovementComponent()
 	bWantsToDash = 0;
 	bWantsSpeedBoost = 0;
 	bWantsHeroLanding = 0;
+	bWantsHeroDive = 0;
 	bHeroLandingArmed = 1;
 }
 
@@ -82,6 +83,22 @@ void UUnitMovementComponent::SetWantsHeroLanding(bool bNewWantsHeroLanding)
 	bWantsHeroLanding = bNewWantsHeroLanding ? 1 : 0;
 }
 
+void UUnitMovementComponent::SetWantsHeroDive(bool bNewWantsHeroDive)
+{
+	bWantsHeroDive = bNewWantsHeroDive ? 1 : 0;
+}
+
+float UUnitMovementComponent::GetHeroCharge() const
+{
+	// 호버 중이면 지금까지 버틴 양이다. 미리보기가 매 프레임 이 값으로 원을 키운다.
+	if (HeroPhase == EHeroLandingPhase::Hover)
+	{
+		return FMath::Clamp(HeroPhaseTime / FMath::Max(HeroParams.HoverTime, UE_KINDA_SMALL_NUMBER), 0.0f, 1.0f);
+	}
+	// 내리꽂기에 들어섰으면 그때 굳은 값. 착지한 뒤에도 남아 있어 서버가 효과를 낼 때 읽는다.
+	return HeroCharge;
+}
+
 bool UUnitMovementComponent::IsSpeedBoostAllowed() const
 {
 	const AUnit* const Unit = Cast<AUnit>(CharacterOwner);
@@ -131,6 +148,10 @@ void UUnitMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 
 	const bool bWantsLanding = (Flags & FSavedMove_Character::FLAG_Custom_2) != 0;
 	SetWantsHeroLanding(bWantsLanding && IsHeroLandingAllowed());
+
+	// 조기 낙하는 호버 단계에서만 읽히므로 따로 인정 검사를 하지 않는다. 단계가 없으면
+	// 이 플래그는 아무 일도 하지 않는다.
+	SetWantsHeroDive((Flags & FSavedMove_Character::FLAG_Custom_3) != 0);
 }
 
 void UUnitMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
@@ -165,6 +186,7 @@ void UUnitMovementComponent::StartHeroLanding()
 	HeroPhaseTime = 0.0f;
 	HeroTakeoff = UpdatedComponent->GetComponentLocation();
 	HeroDiveTarget = HeroTakeoff;
+	HeroCharge = 0.0f;
 	Velocity = FVector::ZeroVector;
 	SetMovementMode(MOVE_Custom, CustomMode_HeroLanding);
 }
@@ -174,6 +196,7 @@ void UUnitMovementComponent::AbortHeroLanding()
 	HeroPhase = EHeroLandingPhase::None;
 	HeroPhaseTime = 0.0f;
 	bWantsHeroLanding = 0;
+	bWantsHeroDive = 0;
 	if (MovementMode == MOVE_Custom && CustomMovementMode == CustomMode_HeroLanding)
 	{
 		SetMovementMode(MOVE_Falling);
@@ -189,6 +212,7 @@ bool UUnitMovementComponent::FinishHeroLandingDive()
 	HeroPhase = EHeroLandingPhase::None;
 	HeroPhaseTime = 0.0f;
 	bWantsHeroLanding = 0;
+	bWantsHeroDive = 0;
 	return true;
 }
 
@@ -251,13 +275,21 @@ void UUnitMovementComponent::PhysHeroLanding(float DeltaTime, int32 Iterations)
 
 	// Hover
 	Velocity = FVector::ZeroVector;
-	if (HeroPhaseTime < HeroParams.HoverTime)
+
+	// 버틸수록 세진다. 끝까지 기다리면 최대, 일찍 누르면 그만큼 약하다. 시간으로만 정해지므로
+	// 서버와 클라이언트가 같은 무브에서 같은 값을 낸다.
+	const float Charge = FMath::Clamp(
+		HeroPhaseTime / FMath::Max(HeroParams.HoverTime, UE_KINDA_SMALL_NUMBER), 0.0f, 1.0f);
+
+	// 시간이 다 찼거나 좌클릭이 들어왔다. 둘 다 같은 자리로 떨어진다.
+	if (HeroPhaseTime < HeroParams.HoverTime && !bWantsHeroDive)
 	{
 		return;
 	}
 
 	// 착지점을 고정하고 내리꽂는다. 낙하 모드라 착지가 ProcessLanded → ACharacter::Landed로 온다.
 	HeroDiveTarget = ComputeAimTarget();
+	HeroCharge = Charge;
 	HeroPhase = EHeroLandingPhase::Dive;
 	HeroPhaseTime = 0.0f;
 
@@ -338,11 +370,13 @@ void FSavedMove_Unit::Clear()
 	bSavedWantsToDash = 0;
 	bSavedWantsSpeedBoost = 0;
 	bSavedWantsHeroLanding = 0;
+	bSavedWantsHeroDive = 0;
 	bSavedHeroLandingArmed = 1;
 	SavedHeroPhase = EHeroLandingPhase::None;
 	SavedHeroPhaseTime = 0.0f;
 	SavedHeroTakeoff = FVector::ZeroVector;
 	SavedHeroDiveTarget = FVector::ZeroVector;
+	SavedHeroCharge = 0.0f;
 }
 
 uint8 FSavedMove_Unit::GetCompressedFlags() const
@@ -364,6 +398,11 @@ uint8 FSavedMove_Unit::GetCompressedFlags() const
 		Result |= FLAG_Custom_2;
 	}
 
+	if (bSavedWantsHeroDive)
+	{
+		Result |= FLAG_Custom_3;
+	}
+
 	return Result;
 }
 
@@ -376,6 +415,7 @@ bool FSavedMove_Unit::CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* I
 	if (Other && (bSavedWantsToDash != Other->bSavedWantsToDash
 		|| bSavedWantsSpeedBoost != Other->bSavedWantsSpeedBoost
 		|| bSavedWantsHeroLanding != Other->bSavedWantsHeroLanding
+		|| bSavedWantsHeroDive != Other->bSavedWantsHeroDive
 		|| SavedHeroPhase != EHeroLandingPhase::None
 		|| Other->SavedHeroPhase != EHeroLandingPhase::None))
 	{
@@ -394,11 +434,13 @@ void FSavedMove_Unit::SetMoveFor(ACharacter* C, float InDeltaTime, FVector const
 		bSavedWantsToDash = Movement->bWantsToDash;
 		bSavedWantsSpeedBoost = Movement->bWantsSpeedBoost;
 		bSavedWantsHeroLanding = Movement->bWantsHeroLanding;
+		bSavedWantsHeroDive = Movement->bWantsHeroDive;
 		bSavedHeroLandingArmed = Movement->bHeroLandingArmed;
 		SavedHeroPhase = Movement->HeroPhase;
 		SavedHeroPhaseTime = Movement->HeroPhaseTime;
 		SavedHeroTakeoff = Movement->HeroTakeoff;
 		SavedHeroDiveTarget = Movement->HeroDiveTarget;
+		SavedHeroCharge = Movement->HeroCharge;
 	}
 }
 
@@ -414,11 +456,13 @@ void FSavedMove_Unit::PrepMoveFor(ACharacter* C)
 		Movement->bWantsToDash = bSavedWantsToDash;
 		Movement->bWantsSpeedBoost = bSavedWantsSpeedBoost;
 		Movement->bWantsHeroLanding = bSavedWantsHeroLanding;
+		Movement->bWantsHeroDive = bSavedWantsHeroDive;
 		Movement->bHeroLandingArmed = bSavedHeroLandingArmed;
 		Movement->HeroPhase = SavedHeroPhase;
 		Movement->HeroPhaseTime = SavedHeroPhaseTime;
 		Movement->HeroTakeoff = SavedHeroTakeoff;
 		Movement->HeroDiveTarget = SavedHeroDiveTarget;
+		Movement->HeroCharge = SavedHeroCharge;
 	}
 }
 
