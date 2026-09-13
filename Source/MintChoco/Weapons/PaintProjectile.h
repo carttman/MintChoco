@@ -44,11 +44,28 @@ public:
 	/** The body material a ball of this paint id wears, or null when the id has none and keeps the mesh's own. */
 	UMaterialInterface* GetTeamMaterial(uint8 InPaintId) const;
 
+	/**
+	 * 풀에서 꺼낸 공을 날 수 있는 상태로 되돌린다. Init 직전에 불린다.
+	 *
+	 * 충돌한 무브먼트 컴포넌트는 StopSimulating으로 UpdatedComponent를 null로 만든다.
+	 * 속도만 다시 넣으면 공이 제자리에 서 있으므로, 붙잡을 컴포넌트를 다시 알려 줘야 한다.
+	 */
+	void RestoreForReuse();
+
+	/**
+	 * 날기를 멈추고 재운다. 풀 반납과 EndPlay 양쪽에서 불린다.
+	 *
+	 * 쏜 사람의 콜리전에 박아 둔 상호 무시 항목을 여기서 지운다. 풀로 반납할 때는 EndPlay가
+	 * 불리지 않으므로, 이 정리가 여기 있지 않으면 슈터의 무시 목록이 쏠 때마다 하나씩
+	 * 영원히 자란다.
+	 */
+	void Deactivate();
+
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 
-	/** Only ticks when this ball paints a trail; a plain ball is driven by its movement component alone. */
-	virtual void Tick(float DeltaSeconds) override;
+	/** 수명이 다했을 때. 파괴 대신 풀로 돌아간다. */
+	virtual void LifeSpanExpired() override;
 
 	UFUNCTION()
 	void OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent,
@@ -73,23 +90,10 @@ protected:
 	TArray<TObjectPtr<UMaterialInterface>> TeamMaterials;
 
 private:
-	/**
-	 * Paints the surfaces around one point of the flight path: rays spread around the plane across
-	 * the direction of travel, so the same code covers floor, ceiling and walls whichever way the
-	 * ball is heading. Returns how many splats it left.
-	 */
-	int32 PaintTrailSample(const FVector& Location, int32 SampleIndex);
-
 	UPROPERTY(Transient)
 	TObjectPtr<const UPaintballProfile> Profile;
 
 	uint8 PaintId = 0;
 	int32 Seed = 0;
 	bool bCosmetic = false;
-
-	/** Trail bookkeeping. Distance is measured along the real path, so a lobbed arc samples evenly. */
-	FVector LastTrailLocation = FVector::ZeroVector;
-	float TrailDistance = 0.0f;
-	int32 TrailSampleCount = 0;
-	int32 TrailSplatCount = 0;
 };

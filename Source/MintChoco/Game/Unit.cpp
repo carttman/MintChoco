@@ -7,7 +7,6 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Camera/CameraComponent.h"
-#include "Camera/PlayerCameraManager.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/SphereComponent.h"
@@ -38,6 +37,12 @@
 #include "NiagaraFunctionLibrary.h"
 #include "TimerManager.h"
 #include "Weapons/PaintWeaponComponent.h"
+
+namespace
+{
+	/** 총 메시에 있는 총구 소켓. 발사 지점과 총구 화염이 같이 쓴다. */
+	const FName GunMuzzleSocketName(TEXT("Muzzle"));
+}
 
 AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UUnitMovementComponent>(
@@ -130,6 +135,16 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	GunMesh->SetGenerateOverlapEvents(false);
 	GunMesh->SetCanEverAffectNavigation(false);
 	GunMesh->SetVisibility(false);
+
+	// 테두리 껍데기. 캐릭터 메시와 같은 메시를 쓰고 포즈는 리더 포즈로 따라가므로 애니메이션을
+	// 두 번 돌리지 않는다. 그림자는 원본이 이미 드리우므로 끈다.
+	OutlineMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("OutlineMesh"));
+	OutlineMesh->SetupAttachment(GetMesh());
+	OutlineMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	OutlineMesh->SetGenerateOverlapEvents(false);
+	OutlineMesh->SetCanEverAffectNavigation(false);
+	OutlineMesh->SetCastShadow(false);
+	OutlineMesh->SetVisibility(false);
 }
 
 void AUnit::PossessedBy(AController* NewController)
@@ -151,18 +166,6 @@ void AUnit::OnRep_PlayerState()
 UAbilitySystemComponent* AUnit::GetAbilitySystemComponent() const
 {
 	return AbilitySystem;
-}
-
-void AUnit::ApplyViewPitchLimits()
-{
-	// 카메라 매니저는 로컬 플레이어 컨트롤러에만 있다. 데디케이티드 서버와 원격 폰에서는
-	// 걸 대상이 없고, 걸 필요도 없다: 회전은 소유 클라이언트가 만들어 보낸다.
-	const APlayerController* const PlayerController = Cast<APlayerController>(GetController());
-	if (APlayerCameraManager* const CameraManager = PlayerController ? PlayerController->PlayerCameraManager.Get() : nullptr)
-	{
-		CameraManager->ViewPitchMin = ViewPitchMin;
-		CameraManager->ViewPitchMax = ViewPitchMax;
-	}
 }
 
 void AUnit::InitAbilityActorInfo()
@@ -189,6 +192,9 @@ void AUnit::BeginPlay()
 	{
 		StunTagHandle = AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_Stunned, EGameplayTagEventType::NewOrRemoved)
 			.AddUObject(this, &AUnit::HandleStunTagChanged);
+
+		SuperArmorTagHandle = AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_SuperArmor, EGameplayTagEventType::NewOrRemoved)
+			.AddUObject(this, &AUnit::HandleSuperArmorTagChanged);
 	}
 
 	// 빙의가 BeginPlay보다 먼저 온 경우(리슨 호스트)를 위해 한 번 더 맞춘다.
@@ -289,6 +295,7 @@ void AUnit::SetCameraFaded(bool bFaded)
 		}
 		bCameraFaded = true;
 		UpdateGunVisibility();
+		UpdateSuperArmorOutline();
 		return;
 	}
 
@@ -299,6 +306,7 @@ void AUnit::SetCameraFaded(bool bFaded)
 	CameraFadeOriginalMaterials.Reset();
 	bCameraFaded = false;
 	UpdateGunVisibility();
+	UpdateSuperArmorOutline();
 }
 
 int32 AUnit::GetTeam() const
@@ -443,6 +451,21 @@ void AUnit::HandleStunTagChanged(const FGameplayTag Tag, int32 NewCount)
 	BP_OnStunned(bStunned);
 }
 
+void AUnit::HandleSuperArmorTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+	UpdateSuperArmorOutline();
+}
+
+void AUnit::UpdateSuperArmorOutline()
+{
+	if (OutlineMesh)
+	{
+		// 카메라가 안에 들어와 몸이 반투명해진 동안에는 테두리도 감춘다. 껍데기는 불투명이라
+		// 그대로 두면 페이드된 몸 위에 실루엣만 둥둥 뜬다.
+		OutlineMesh->SetVisibility(HasSuperArmor() && !bCameraFaded);
+	}
+}
+
 void AUnit::Knockback(const FVector& From)
 {
 	if (!HasAuthority() || HasSuperArmor())
@@ -570,10 +593,6 @@ void AUnit::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 			AppliedInputSubsystem = Subsystem;
 		}
 	}
-
-	// 여기가 로컬 조종 폰이 확정되는 유일한 지점이라 시야 한계도 같이 넣는다. 리스폰하면
-	// 이 함수가 다시 불리므로 새 카메라 매니저에도 자동으로 다시 걸린다.
-	ApplyViewPitchLimits();
 
 	UEnhancedInputComponent* EnhancedInput = Cast<UEnhancedInputComponent>(PlayerInputComponent);
 	if (!EnhancedInput)
@@ -739,6 +758,12 @@ void AUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	StunTagHandle.Reset();
 
+	if (AbilitySystem && SuperArmorTagHandle.IsValid())
+	{
+		AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_SuperArmor, EGameplayTagEventType::NewOrRemoved).Remove(SuperArmorTagHandle);
+	}
+	SuperArmorTagHandle.Reset();
+
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -858,10 +883,9 @@ void AUnit::UpdateDashEffects(bool bDashing)
 			Feedback->FX,
 			GetMesh(),
 			Feedback->FXSocket,
-			Feedback->FXOffset,
+			FVector::ZeroVector,
 			FRotator::ZeroRotator,
-			// SnapToTarget은 넘긴 오프셋을 버린다. FXOffset을 쓰려면 상대 오프셋을 지켜야 한다.
-			EAttachLocation::KeepRelativeOffset,
+			EAttachLocation::SnapToTarget,
 			// Deactivate 후 남은 파티클이 다 사라지면 스스로 정리된다. false로 두면
 			// 대시할 때마다 꺼진 컴포넌트가 메시에 하나씩 쌓인다.
 			true);
@@ -910,14 +934,29 @@ void AUnit::HandleWeaponFired(int32 Seed)
 		UGameplayStatics::SpawnSoundAttached(Feedback->Sound, GetRootComponent());
 	}
 
-	// 총구 화염 같은 일회성 이펙트. 소켓이 없으면 폰 위치에.
+	// 총구 화염 같은 일회성 이펙트. 총에 Muzzle 소켓이 있으면 총구에서, 없으면 캐릭터 메시의
+	// FXSocket에서 튼다. 둘 다 없으면 폰 위치에. 소켓 회전을 그대로 따르므로 총구 소켓의
+	// 축이 총열 방향을 봐야 화염이 앞으로 뻗는다.
 	if (Feedback->FX)
 	{
-		if (Feedback->FXSocket != NAME_None)
+		USceneComponent* AttachComponent = nullptr;
+		FName AttachSocket = NAME_None;
+		if (GunMesh && GunMesh->DoesSocketExist(GunMuzzleSocketName))
+		{
+			AttachComponent = GunMesh;
+			AttachSocket = GunMuzzleSocketName;
+		}
+		else if (Feedback->FXSocket != NAME_None)
+		{
+			AttachComponent = GetMesh();
+			AttachSocket = Feedback->FXSocket;
+		}
+
+		if (AttachComponent)
 		{
 			UNiagaraFunctionLibrary::SpawnSystemAttached(
-				Feedback->FX, GetMesh(), Feedback->FXSocket,
-				Feedback->FXOffset, FRotator::ZeroRotator, EAttachLocation::KeepRelativeOffset, true);
+				Feedback->FX, AttachComponent, AttachSocket,
+				FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget, true);
 		}
 		else
 		{
@@ -1018,11 +1057,38 @@ void AUnit::ApplyUnitData()
 		InkBottle->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("InkBottle"));
 	}
 
+	// 껍데기도 같은 메시로 맞추고 포즈를 넘겨받는다. 리더 포즈는 메시가 바뀔 때마다 다시
+	// 걸어야 본 매핑이 새 메시를 따라간다.
+	if (OutlineMesh && UnitData->Mesh)
+	{
+		OutlineMesh->SetSkeletalMesh(UnitData->Mesh);
+		OutlineMesh->SetLeaderPoseComponent(MeshComponent);
+
+		// 슬롯 수는 메시가 정하므로 메시를 넣은 뒤에 깐다.
+		for (int32 Index = 0; Index < OutlineMesh->GetNumMaterials(); ++Index)
+		{
+			OutlineMesh->SetMaterial(Index, SuperArmorOutlineMaterial);
+		}
+	}
+
 	// 메시가 바뀌면 총도 그 캐릭터의 것으로. Gun 소켓이 없는 메시면 병과 마찬가지로 발밑에 남는다.
 	if (GunMesh)
 	{
 		GunMesh->SetStaticMesh(UnitData->GunMesh);
 		GunMesh->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("Gun"));
 		UpdateGunVisibility();
+
+		// 발사 지점도 총구로 옮긴다. 총 모양이 캐릭터마다 다르므로 소켓은 총 메시에 있고,
+		// 총이나 Muzzle 소켓이 없으면 무기가 알아서 손 소켓으로 되돌아간다.
+		for (UPaintWeaponComponent* const Weapon : { PaintWeapon.Get(), SecondaryWeapon.Get() })
+		{
+			if (Weapon)
+			{
+				Weapon->SetMuzzleSource(GunMesh, GunMuzzleSocketName);
+			}
+		}
 	}
+
+	// 메시가 교체되면 오버레이도 새 메시에 다시 걸어야 한다.
+	UpdateSuperArmorOutline();
 }
