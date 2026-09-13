@@ -14,11 +14,11 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPlatformCoverageScopeTest, "MintChoco.Paint.Pl
 
 bool FPlatformCoverageScopeTest::RunTest(const FString& Parameters)
 {
-	const FString Map = TEXT("/Game/Maps/Lvl_Stage1_Test");
+	const FString Map = TEXT("/Game/Sample/Tests/Lvl_Stage1_Test");
 	TestTrue(TEXT("exact test map"), PaintPlatformCoverage::MatchesMap(Map, Map));
-	TestTrue(TEXT("PIE client"), PaintPlatformCoverage::MatchesMap(TEXT("/Game/Maps/UEDPIE_2_Lvl_Stage1_Test"), Map));
+	TestTrue(TEXT("PIE client"), PaintPlatformCoverage::MatchesMap(TEXT("/Game/Sample/Tests/UEDPIE_2_Lvl_Stage1_Test"), Map));
 	TestFalse(TEXT("original stage unaffected"), PaintPlatformCoverage::MatchesMap(TEXT("/Game/Maps/Lvl_Stage"), Map));
-	TestFalse(TEXT("same short name elsewhere unaffected"), PaintPlatformCoverage::MatchesMap(TEXT("/Game/Sample/Lvl_Stage1_Test"), Map));
+	TestFalse(TEXT("same short name elsewhere unaffected"), PaintPlatformCoverage::MatchesMap(TEXT("/Game/Maps/Lvl_Stage1_Test"), Map));
 	TestFalse(TEXT("similarly named copy unaffected"), PaintPlatformCoverage::MatchesMap(Map + TEXT("_Copy"), Map));
 	TestFalse(TEXT("empty setting disables"), PaintPlatformCoverage::MatchesMap(Map, TEXT("")));
 	return true;
@@ -107,7 +107,7 @@ bool FPlatformCoverageCollisionTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("vertical face not walkable"), PaintPlatformCoverage::IsWalkableNormal(*Floor, FVector::ForwardVector));
 	TestEqual(TEXT("capsule on flat surface"), PaintPlatformCoverage::CapsuleCenterHeight(34, 88, 1), 90.0f);
 	TestTrue(TEXT("slope clearance accounts for capsule radius"), PaintPlatformCoverage::CapsuleCenterHeight(34, 88, 0.8f) > 90);
-	UStaticMesh* Ramp = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Maps/Stage1Test/SM_PaintableRamp.SM_PaintableRamp"));
+	UStaticMesh* Ramp = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Sample/Tests/SM_PaintableRamp.SM_PaintableRamp"));
 	if (TestNotNull(TEXT("test map's CPU readable ramp"), Ramp))
 	{
 		Floor->SetStaticMesh(Ramp);
