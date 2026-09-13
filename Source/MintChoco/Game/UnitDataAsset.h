@@ -31,6 +31,13 @@ enum class EUnitAction : uint8
 	Fire	UMETA(DisplayName = "페인트 발사"),
 	Hit		UMETA(DisplayName = "피격"),
 	Death	UMETA(DisplayName = "사망"),
+	/** 스피드 스타가 켜 둔 속도 부스트. 상태가 지속되는 동안 FX가 계속 붙어 있는다. */
+	SpeedBoost	UMETA(DisplayName = "속도 부스트"),
+	/**
+	 * 차지샷을 충전하는 동안 잡는 자세. 놓을 때까지 이어져야 하므로 **루프로** 재생되고,
+	 * 방아쇠를 놓는 순간 걷어낸다. 발사 동작(Fire)과 같은 슬롯에 두면 자연스럽게 이어진다.
+	 */
+	Charge		UMETA(DisplayName = "충전"),
 };
 
 /**

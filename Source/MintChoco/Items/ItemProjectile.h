@@ -47,6 +47,12 @@ public:
 	/** 던진 유닛. Instigator와 같지만 타입이 맞춰져 있다. */
 	AUnit* GetInstigatorUnit() const;
 
+	/**
+	 * 날아가는 구체의 반지름(cm). CDO에서도 읽힌다 — 조준 기능이 던지기 전에 진짜 공과
+	 * 같은 굵기로 궤적을 예측하려면 실체 없이 이 값을 알아야 한다.
+	 */
+	float GetCollisionRadius() const;
+
 protected:
 	/** 서버 전용. 월드(벽, 바닥)에 막혔다. 기본은 터진다. */
 	virtual void HandleWorldHit(const FHitResult& Hit);

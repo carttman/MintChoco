@@ -344,6 +344,9 @@ private:
 	/** 실제로 대시 상태가 바뀔 때 무브먼트 컴포넌트가 알려준다. */
 	void HandleDashStateChanged(bool bDashing);
 
+	/** 실제로 속도 부스트 상태가 바뀔 때 무브먼트 컴포넌트가 알려준다. */
+	void HandleSpeedBoostStateChanged(bool bBoosting);
+
 	/** 무기의 페인트 id가 바뀌면(로컬 세팅이든 복제든) 잉크병을 그 팀 색으로 맞춘다. */
 	UFUNCTION()
 	void HandlePaintIdChanged(uint8 PaintId);
@@ -357,6 +360,24 @@ private:
 
 	/** 연출의 몽타주 부분: 몽타주 에셋이 있으면 그것을, 없으면 Animation을 슬롯에 동적 몽타주로. */
 	void PlayFeedbackMontage(const struct FUnitActionFeedback& Feedback);
+
+	/**
+	 * 충전이 시작되고 끝날 때. 충전 중에는 총을 들고 발사 자세를 잡는다.
+	 *
+	 * 연출만의 문제가 아니다: 총은 캐릭터 메시의 Gun 소켓에 붙어 있고 발사 지점은 쏘는
+	 * 순간의 총구에서 재므로, IDLE 포즈로 충전하면 탄이 쉬는 손 위치에서 나간다.
+	 */
+	UFUNCTION()
+	void HandleChargingChanged(bool bCharging);
+
+	/**
+	 * 충전 자세를 슬롯에 건다. 충전은 놓을 때까지 이어지므로 한 번 재생으로는 모자라,
+	 * 충분히 오래 도는 루프로 얹어 두고 StopChargePose 가 걷어낸다.
+	 */
+	void StartChargePose();
+
+	/** 걸어 둔 충전 자세만 세운다. 슬롯째 세우면 방금 시작한 발사 동작까지 끊긴다. */
+	void StopChargePose();
 
 	/** 한 발 나갈 때마다. 총을 보이게 하고 유지 시간을 처음부터 다시 센다. */
 	void ShowGunForFire();
@@ -373,11 +394,20 @@ private:
 	/** 총을 숨기는 타이머. 발사마다 다시 걸려 마지막 한 발에서만 만료된다. */
 	FTimerHandle GunHideTimer;
 
+	/** 지금 걸려 있는 충전 자세. 이것만 골라 세우려고 들고 있는다. */
+	TWeakObjectPtr<class UAnimMontage> ChargePose;
+
 	UFUNCTION()
 	void OnRep_IsDashing();
 
 	/** 대시 트레일을 켜고 끈다. 데디케이티드 서버에서는 아무것도 하지 않는다. */
 	void UpdateDashEffects(bool bDashing);
+
+	UFUNCTION()
+	void OnRep_IsSpeedBoosting();
+
+	/** 속도 부스트 FX를 켜고 끈다. 대시와 같은 규칙이며, 데디케이티드 서버에서는 아무것도 하지 않는다. */
+	void UpdateSpeedBoostEffects(bool bBoosting);
 
 	/** 로컬 플레이어 폰에서만 카메라 프로브의 충돌을 켠다. 꺼질 때는 걸어 둔 페이드를 전부 되돌린다. */
 	void UpdateCameraProbe();
@@ -421,6 +451,17 @@ private:
 	/** 지속되는 트레일이라 시작할 때 만들고 끝날 때 직접 꺼야 한다. */
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> DashTrailComponent;
+
+	/**
+	 * 연출용 속도 부스트 상태. 대시와 같은 이유로 서버가 복제한다: 부스트 의도는
+	 * 압축 플래그로 서버까지만 가고 다른 클라이언트에는 닿지 않는다.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_IsSpeedBoosting)
+	bool bIsSpeedBoosting = false;
+
+	/** 부스트가 끝날 때까지 붙어 있는 FX. 끝나면 직접 꺼야 한다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> SpeedBoostFXComponent;
 
 	/**
 	 * 컨텍스트를 넣어준 서브시스템. EndPlay 시점에는 Controller가 이미 떨어져 나갔을

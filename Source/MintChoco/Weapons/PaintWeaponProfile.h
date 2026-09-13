@@ -124,10 +124,23 @@ public:
 		return FireMode == EPaintFireMode::Automatic || FireMode == EPaintFireMode::Continuous;
 	}
 
-	/** Seconds between shots while held. 0 means Continuous, which fires once per tick. */
+	/**
+	 * Seconds between shots. 0 means Continuous, which fires once per tick.
+	 *
+	 * Single reads it too, as a floor between two pulls: without one a click-spammer fires as fast
+	 * as the mouse reports, which is what the shotgun did before this existed. Charged paces itself
+	 * with ChargeTime instead and has no interval.
+	 */
 	float GetShotInterval() const
 	{
-		return FireMode == EPaintFireMode::Automatic ? 1.0f / FMath::Max(ShotsPerSecond, 0.1f) : 0.0f;
+		switch (FireMode)
+		{
+		case EPaintFireMode::Automatic:
+		case EPaintFireMode::Single:
+			return 1.0f / FMath::Max(ShotsPerSecond, 0.1f);
+		default:
+			return 0.0f;
+		}
 	}
 
 	/**

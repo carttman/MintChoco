@@ -83,6 +83,11 @@ void AItemProjectile::Init(AUnit* InInstigator, int32 InTeam, const FVector& Vel
 	}
 }
 
+float AItemProjectile::GetCollisionRadius() const
+{
+	return Sphere ? Sphere->GetScaledSphereRadius() : 0.0f;
+}
+
 void AItemProjectile::BeginPlay()
 {
 	Super::BeginPlay();

@@ -49,6 +49,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ChocolateFountain")
 	int32 GetTeam() const { return Team; }
 
+	/** 사용자의 페인트 id. 돔이 삼킬 대상인지 가릴 때 밖에서도 본다(히트스캔이 광선을 끊을지 정할 때). */
+	UFUNCTION(BlueprintPure, Category = "ChocolateFountain")
+	uint8 GetPaintId() const { return PaintId; }
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ChocolateFountain")
 	TObjectPtr<USphereComponent> Wall;

@@ -96,7 +96,7 @@ bool FItemProfileAssetTest::RunTest(const FString& Parameters)
 		}
 		else if (const UHoneyBalloonProfile* const Honey = Cast<UHoneyBalloonProfile>(Item))
 		{
-			TestTrue(*FString::Printf(TEXT("%s: instant"), *Name), Honey->IsInstant());
+			TestFalse(*FString::Printf(TEXT("%s: has an aim time limit"), *Name), Honey->IsInstant());
 			TestNotNull(*FString::Printf(TEXT("%s: ProjectileClass"), *Name), Honey->ProjectileClass.Get());
 			TestNotNull(*FString::Printf(TEXT("%s: Burst paintball"), *Name), Honey->Burst.Paintball.Get());
 			TestTrue(*FString::Printf(TEXT("%s: Burst count"), *Name), Honey->Burst.Count > 0);
@@ -126,7 +126,9 @@ bool FItemProfileAssetTest::RunTest(const FString& Parameters)
 		}
 		else if (const UDessertBombardmentProfile* const Bombardment = Cast<UDessertBombardmentProfile>(Item))
 		{
-			TestTrue(*FString::Printf(TEXT("%s: instant"), *Name), Bombardment->IsInstant());
+			// 조준 모드 아이템이라 즉발이 아니다: Duration이 조준 제한 시간이고, 그 안에
+			// 좌클릭하지 않으면 만료되며 아이템은 그대로 잃는다.
+			TestFalse(*FString::Printf(TEXT("%s: has an aim time limit"), *Name), Bombardment->IsInstant());
 			TestNotNull(*FString::Printf(TEXT("%s: Paintball"), *Name), Bombardment->Paintball.Get());
 			TestTrue(*FString::Printf(TEXT("%s: Columns is positive"), *Name), Bombardment->Columns > 0);
 		}

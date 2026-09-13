@@ -6,8 +6,10 @@
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 
+#include "Items/ChocolateFountain.h"
 #include "Paint/PaintLog.h"
 #include "Weapons/PaintProjectile.h"
+#include "Weapons/PaintVolley.h"
 
 namespace
 {
@@ -38,6 +40,10 @@ void UPaintSniperProfile::LogUnsetReferences(const UObject* Owner) const
 		*GetNameSafe(Owner), *GetName());
 	UE_CLOG(!Trail.CanPaint(), LogPaint, Warning, TEXT("%s: %s has no Trail BrushProfile, the ground under the ray will not paint."),
 		*GetNameSafe(Owner), *GetName());
+	// 순차 발사도 즉발 도포도 없으면 광선 아래에 아무것도 남지 않는다. 조용히 사라지는 대신 알린다.
+	UE_CLOG(!VolleyPaintball && bSkipTrailWhenVolleying && !Trail.CanPaint(), LogPaint, Warning,
+		TEXT("%s: %s paints nothing under the ray: no VolleyPaintball and no Trail brush."),
+		*GetNameSafe(Owner), *GetName());
 }
 
 bool UPaintSniperProfile::Fire(const FPaintFireContext& Context, FPaintStrokeState& Stroke, FPaintShot& OutShot) const
@@ -49,12 +55,46 @@ bool UPaintSniperProfile::Fire(const FPaintFireContext& Context, FPaintStrokeSta
 
 	// The paintball channel is what a ball would hit: pawns block it (their capsule and mesh both
 	// ignore Visibility), paintable meshes block it, balls in flight ignore it.
+	//
+	// Multi rather than Single: a chocolate dome's wall only *overlaps* the paintball channel, so a
+	// ball is swallowed by the overlap event while a single-hit trace ignores touches and passes
+	// straight through. Multi reports the touch too, so the ray can stop at the same wall the ball
+	// would have died on. Blocking the wall instead would make balls bounce rather than be eaten.
 	const FVector TraceEnd = Context.ViewOrigin + Context.ViewDirection * Range;
 	const FCollisionQueryParams Params(SCENE_QUERY_STAT(PaintSniper), /*bTraceComplex=*/false, Context.Instigator);
+	TArray<FHitResult> Hits;
+	Context.World->LineTraceMultiByChannel(Hits, Context.ViewOrigin, TraceEnd, PaintballChannel, Params);
+
+	// Hits come back ordered along the ray, so the first thing that stops it wins.
 	FHitResult Hit;
-	const bool bHit = Context.World->LineTraceSingleByChannel(Hit, Context.ViewOrigin, TraceEnd, PaintballChannel, Params);
+	bool bHit = false;
+	bool bStoppedByDome = false;
+	for (const FHitResult& Candidate : Hits)
+	{
+		const AChocolateFountain* const Dome = Cast<AChocolateFountain>(Candidate.GetActor());
+		if (Dome)
+		{
+			// A dome of the shooter's own colour lets its team's paint through, exactly as it does for balls.
+			if (Dome->GetPaintId() == Context.PaintId)
+			{
+				continue;
+			}
+			Hit = Candidate;
+			bHit = true;
+			bStoppedByDome = true;
+			break;
+		}
+		if (Candidate.bBlockingHit)
+		{
+			Hit = Candidate;
+			bHit = true;
+			break;
+		}
+	}
+
 	const FVector End = bHit ? Hit.ImpactPoint : TraceEnd;
-	const APawn* const Victim = bHit ? GetHitPawn(Hit) : nullptr;
+	// A dome swallows the shot: nobody behind it is hit and nothing is painted where it stopped.
+	const APawn* const Victim = (bHit && !bStoppedByDome) ? GetHitPawn(Hit) : nullptr;
 
 	// The player aims with the camera, the ray is drawn and the trail laid from the barrel: converge
 	// the two on the end point. A target closer than the muzzle would point the barrel backwards,
@@ -86,12 +126,23 @@ bool UPaintSniperProfile::Fire(const FPaintFireContext& Context, FPaintStrokeSta
 		UE_LOG(LogPaint, Log, TEXT("%s sniped %s (charge %.2f, %s)."), *GetNameSafe(Context.Instigator), *Victim->GetName(),
 			Context.ChargeFraction, bStunned ? TEXT("stunned") : TEXT("no stun"));
 	}
-	else if (bHit)
+	else if (bHit && !bStoppedByDome)
 	{
 		Impact.ApplyHit(Context.World, Hit, Context.ViewDirection * NominalImpactSpeed, Context.PaintId, Context.Seed);
 	}
 
-	PaintTrail(*Context.World, MuzzleLocation, OutShot.Direction, Length, Context.Instigator, Victim, Context.PaintId, Context.Seed);
+	// 순차 발사를 쓰면 줄무늬는 탄이 닿는 순서대로 생긴다. 즉발 도포를 함께 켜 두면 이미
+	// 칠해진 자리에 탄이 도착해 연출이 눈에 보이지 않으므로, 기본은 즉발 쪽을 건너뛴다.
+	const bool bVolleying = VolleyPaintball != nullptr;
+	if (!bVolleying || !bSkipTrailWhenVolleying)
+	{
+		PaintTrail(*Context.World, MuzzleLocation, OutShot.Direction, Length, Context.Instigator, Victim, Context.PaintId, Context.Seed);
+	}
+	if (bVolleying)
+	{
+		SpawnTrailVolley(*Context.World, MuzzleLocation, OutShot.Direction, Length,
+			Context.Instigator, Context.PaintId, Context.Seed);
+	}
 
 	// The shot multicast skips the authority, which shows its own tracer here instead.
 	DrawTracer(*Context.World, MuzzleLocation, End);
@@ -128,6 +179,33 @@ void UPaintSniperProfile::PaintTrail(UWorld& World, const FVector& Muzzle, const
 			: static_cast<int32>(HashCombineFast(static_cast<uint32>(Seed), static_cast<uint32>(Index)));
 		Trail.ApplyHit(&World, Drop, IncidentVelocity, PaintId, SampleSeed);
 	}
+}
+
+void UPaintSniperProfile::SpawnTrailVolley(UWorld& World, const FVector& Muzzle, const FVector& Direction, float Length,
+	APawn* Shooter, uint8 PaintId, int32 Seed) const
+{
+	const float Spacing = FMath::Max(VolleySpacing, 10.0f);
+	// 착탄 지점은 조준선을 따라 잰다. 마지막 한 발은 광선 끝의 Impact 자국과 겹치지 않도록 뺀다.
+	const int32 Shots = FMath::Clamp(FMath::FloorToInt((Length - Spacing * 0.5f) / Spacing), 0, MaxVolleyShots);
+	if (Shots <= 0)
+	{
+		return;
+	}
+
+	FPaintVolleyParams Params;
+	// 하늘이 아니라 총구에서 나간다. 좌클릭 무기와 같은 자리, 같은 높이다.
+	Params.Origin = Muzzle;
+	Params.Direction = Direction;
+	Params.Count = Shots;
+	Params.Spacing = Spacing;
+	Params.Interval = VolleyInterval;
+	Params.Speed = VolleySpeed;
+	Params.DropLead = VolleyDropLead;
+	Params.Paintball = VolleyPaintball;
+	Params.PaintId = PaintId;
+	Params.Seed = Seed;
+
+	APaintVolley::Spawn(World, Params, Shooter, VolleyClass);
 }
 
 void UPaintSniperProfile::PlayCosmetic(UWorld& World, APawn* Instigator, const FPaintShot& Shot) const

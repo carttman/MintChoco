@@ -32,7 +32,7 @@ public:
 	 * ProjectileClass is unset or the spawn was refused.
 	 */
 	APaintProjectile* Launch(UWorld& World, const FTransform& SpawnTransform, APawn* Instigator,
-		const FVector& Velocity, uint8 PaintId, int32 Seed, bool bCosmetic) const;
+		const FVector& Velocity, uint8 PaintId, int32 Seed, bool bCosmetic, float DropAfterOverride = -1.0f) const;
 
 	/** The actor that flies. Its Blueprint sets the mesh; radius and gravity come from here. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball")
@@ -45,6 +45,32 @@ public:
 	/** 0 flies straight, 1 drops like a thrown object. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball", meta = (ClampMin = "0", ForceUnits = "x"))
 	float GravityScale = 0.5f;
+
+	/**
+	 * Seconds of flight before gravity switches to DropGravityScale. 0 - the default - keeps one
+	 * gravity for the whole flight, which is what every ball did before this existed.
+	 *
+	 * This is how a gun states its reach: the ball flies where it was aimed, then falls out of the
+	 * air rather than vanishing at an invisible line. Straight distance is muzzle speed x this,
+	 * so the value reads as a range once the gun's speed is known.
+	 *
+	 * Every machine runs the switch off the same timer from the same launch, so the server's ball
+	 * and the clients' cosmetic ones fall together. Leave it 0 on anything whose reach is set by
+	 * the ballistic range formula instead (the burst items), or their radius stops matching.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball", meta = (ClampMin = "0", ForceUnits = "s"))
+	float DropAfter = 0.0f;
+
+	/**
+	 * Gravity once the straight phase has passed. Higher reads as a sharper break in the arc,
+	 * lower as paint flowing down out of the air.
+	 *
+	 * DropAfter 가 0 이어도 의미가 있다: 쏘는 쪽이 발마다 다른 직진 시간을 넘길 수 있기
+	 * 때문이다(차지샷의 연속 발사). 그래서 EditCondition 을 걸지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball",
+		meta = (ClampMin = "0", ForceUnits = "x"))
+	float DropGravityScale = 4.0f;
 
 	/** What the ball leaves where it lands. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball")

@@ -63,6 +63,28 @@ UAbilitySystemComponent* UItemSlotComponent::GetAbilitySystem() const
 	return UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetOwner());
 }
 
+bool UItemSlotComponent::IsAiming() const
+{
+	const UAbilitySystemComponent* const AbilitySystem = GetAbilitySystem();
+	return AbilitySystem && AbilitySystem->HasMatchingGameplayTag(ItemTags::State_Item_Aiming);
+}
+
+void UItemSlotComponent::ConfirmAim()
+{
+	// 예측 클라이언트는 자기 화면에서 바로 처리하고, 서버는 RPC로 같은 확정을 받는다.
+	// 리슠 서버 호스트는 권한을 가지므로 한 번만 알린다.
+	OnAimConfirmed.Broadcast();
+	if (!HasAuthority())
+	{
+		ServerConfirmAim();
+	}
+}
+
+void UItemSlotComponent::ServerConfirmAim_Implementation()
+{
+	OnAimConfirmed.Broadcast();
+}
+
 bool UItemSlotComponent::HasAuthority() const
 {
 	// 소유자 없는 컴포넌트는 테스트다. 권한이 있는 것으로 친다.
