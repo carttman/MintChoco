@@ -186,6 +186,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Match|Knockout")
 	float GetKnockoutHoldSeconds() const { return KnockoutHoldSeconds; }
 
+	/** 끝난 경기가 KO 로 끝났는지. 시간 만료와 결과 연출을 구분할 때 쓴다. */
+	UFUNCTION(BlueprintPure, Category = "Match|Knockout")
+	bool WasEndedByKnockout() const { return bEndedByKnockout; }
+
 	/**
 	 * 카운트다운이 시작되거나 취소될 때 서버와 모든 클라이언트에서 한 번씩.
 	 * 매 프레임 폴링하지 않으려는 UI 는 이것만 받아도 된다.
@@ -249,6 +253,10 @@ protected:
 	/** 지금 KO 를 노리는 팀. 시각과 함께 복제되므로 RepNotify 안에서 같이 읽어도 된다. */
 	UPROPERTY(ReplicatedUsing = OnRep_KnockoutTeam)
 	int32 KnockoutTeam = Teams::None;
+
+	/** KO 로 끝났는지. 승팀·종료와 같은 프레임에 복제되므로 OnRep_MatchEnded 안에서 읽어도 된다. */
+	UPROPERTY(Replicated)
+	bool bEndedByKnockout = false;
 
 	UFUNCTION()
 	void OnRep_KnockoutTeam();

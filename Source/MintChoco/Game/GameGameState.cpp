@@ -77,6 +77,7 @@ void AGameGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(AGameGameState, MatchDuration);
 	DOREPLIFETIME(AGameGameState, KnockoutEndServerTime);
 	DOREPLIFETIME(AGameGameState, KnockoutTeam);
+	DOREPLIFETIME(AGameGameState, bEndedByKnockout);
 }
 
 bool AGameGameState::AllowsPlayerInput(EMatchPhase Phase)
@@ -506,6 +507,7 @@ void AGameGameState::UpdateKnockout()
 	}
 
 	// 다 버텼다. 게임 모드가 아이템 스폰까지 정리하고 끝낸다.
+	bEndedByKnockout = true;
 	if (AGameGameMode* const Mode = GetWorld() ? GetWorld()->GetAuthGameMode<AGameGameMode>() : nullptr)
 	{
 		Mode->EndMatchByKnockout(Leader);

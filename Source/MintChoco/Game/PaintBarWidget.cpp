@@ -185,9 +185,15 @@ void UPaintBarWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	bHasCoverage = true;
 
 	// 판정은 복제된 값 그대로 하고, 그림은 따라가는 값으로 그린다. 따라가는 값도 같은 식을 거치므로 두 게이지는 정확히 맞닿는다.
+	// KO 규칙은 GameState 것이다. 없는 곳(샘플 맵, 미리보기)에서만 Rules 의 대체값으로 로컬 시계를 돌린다.
+	const AGameGameState* const GameState = FindRuleSource();
+	const float KoCoverage = GameState ? GameState->GetKnockoutThreshold() : Rules.PreviewKoCoverage;
+	const float KoHoldSeconds = GameState ? GameState->GetKnockoutHoldSeconds() : Rules.PreviewKoHoldSeconds;
+	LineFill = FPaintBarMath::KoLineFill(RawCoverage.X, RawCoverage.Y, Rules.ClashCoverage, KoCoverage);
+
 	const FPaintBarFill RuleFill = FPaintBarMath::ComputeFill(RawCoverage.X, RawCoverage.Y, Rules.ClashCoverage);
-	UpdateSide(LeftSide, RuleFill.Right, DeltaTime);
-	UpdateSide(RightSide, RuleFill.Left, DeltaTime);
+	UpdateSide(LeftSide, RuleFill.Right, MakeKoStatus(LeftSide, GameState, RightPaintId, RawCoverage.Y, KoCoverage, KoHoldSeconds, DeltaTime), DeltaTime);
+	UpdateSide(RightSide, RuleFill.Left, MakeKoStatus(RightSide, GameState, LeftPaintId, RawCoverage.X, KoCoverage, KoHoldSeconds, DeltaTime), DeltaTime);
 
 	const FPaintBarFill ShownFill = FPaintBarMath::ComputeFill(SmoothedCoverage.X, SmoothedCoverage.Y, Rules.ClashCoverage);
 	DisplayedFill = FPaintBarMath::Exaggerate(ShownFill, KoExaggeration * LeftSide.KoBlend, KoExaggeration * RightSide.KoBlend);
@@ -247,27 +253,59 @@ FVector2f UPaintBarWidget::CoverageOf(const FPaintCoverage& Coverage) const
 	return FVector2f(Coverage.GetFraction(Left), Coverage.GetFraction(Right));
 }
 
-void UPaintBarWidget::UpdateSide(FSideState& Side, float OpponentFill, float DeltaTime) const
+const AGameGameState* UPaintBarWidget::FindRuleSource() const
+{
+	if (IsDesignTime() || CoverageOverride.bEnabled)
+	{
+		return nullptr;
+	}
+	const UWorld* const World = GetWorld();
+	return World ? World->GetGameState<AGameGameState>() : nullptr;
+}
+
+UPaintBarWidget::FKoStatus UPaintBarWidget::MakeKoStatus(FSideState& Side, const AGameGameState* GameState, int32 OpponentPaintId,
+	float OpponentCoverage, float KoCoverage, float KoHoldSeconds, float DeltaTime) const
+{
+	FKoStatus Status;
+	if (GameState)
+	{
+		// 서버가 센 시각을 그대로 보여 준다. 링이 차는 속도와 숫자가 모든 머신에서 같다.
+		Status.bCounting = GameState->IsKnockoutPending() && GameState->GetKnockoutTeam() == OpponentPaintId;
+		Status.Progress = Status.bCounting ? GameState->GetKnockoutProgress() : 0.0f;
+		Status.SecondsLeft = Status.bCounting ? FMath::CeilToInt(GameState->GetKnockoutRemaining()) : 0;
+		Status.bKnockedOut = GameState->IsMatchEnded() && GameState->WasEndedByKnockout() && GameState->GetWinningTeam() == OpponentPaintId;
+		return Status;
+	}
+
+	Side.Clock.Advance(FPaintBarMath::IsPastKoLine(OpponentCoverage, KoCoverage), DeltaTime, KoHoldSeconds);
+	Status.bCounting = Side.Clock.IsCounting();
+	Status.Progress = Side.Clock.GetProgress(KoHoldSeconds);
+	Status.SecondsLeft = Side.Clock.GetSecondsLeft(KoHoldSeconds);
+	Status.bKnockedOut = Side.Clock.bKnockedOut;
+	return Status;
+}
+
+void UPaintBarWidget::UpdateSide(FSideState& Side, float OpponentFill, const FKoStatus& Ko, float DeltaTime) const
 {
 	using namespace PaintBarWidget;
 
-	Side.Clock.Advance(FPaintBarMath::IsPastKoLine(OpponentFill, Rules.KoLine), DeltaTime, Rules.KoHoldSeconds);
-	const bool bKnockedOut = Side.Clock.bKnockedOut;
+	const bool bKnockedOut = Ko.bKnockedOut;
+	Side.bKnockedOut = bKnockedOut;
 
 	// 선을 넘긴 뒤 카운트다운 중에도 점멸하고, KO가 나면 점멸 대신 탁해진다.
-	const bool bDanger = FPaintBarMath::IsInDanger(OpponentFill, Rules) && !bKnockedOut;
+	const bool bDanger = FPaintBarMath::IsInDanger(OpponentFill, LineFill, Rules.DangerMargin) && !bKnockedOut;
 	Side.DangerEnvelope = FMath::FInterpConstantTo(Side.DangerEnvelope, bDanger ? 1.0f : 0.0f, DeltaTime, 1.0f / FMath::Max(DangerFadeSeconds, 0.01f));
 	Side.DangerPhase = Side.DangerEnvelope > 0.0f ? Side.DangerPhase + DeltaTime / FMath::Max(DangerPulsePeriod, 0.05f) : 0.0f;
 
 	const float KoSpeed = 1.0f / FMath::Max(KoBlendSeconds, 0.01f);
 	Side.KoBlend = FMath::FInterpConstantTo(Side.KoBlend, bKnockedOut ? 1.0f : 0.0f, DeltaTime, KoSpeed);
 
-	if (Side.Clock.IsCounting() && !bKnockedOut)
+	if (Ko.bCounting && !bKnockedOut)
 	{
 		Side.RingAge += DeltaTime;
 		Side.RingAlpha = FMath::FInterpConstantTo(Side.RingAlpha, 1.0f, DeltaTime, RingFadeInSpeed);
-		Side.RingProgress = Side.Clock.GetProgress(Rules.KoHoldSeconds);
-		Side.RingNumber = Side.Clock.GetSecondsLeft(Rules.KoHoldSeconds);
+		Side.RingProgress = Ko.Progress;
+		Side.RingNumber = Ko.SecondsLeft;
 		return;
 	}
 
@@ -286,7 +324,7 @@ void UPaintBarWidget::UpdateSide(FSideState& Side, float OpponentFill, float Del
 
 void UPaintBarWidget::UpdateClash(float DeltaTime)
 {
-	const bool bKnockedOut = LeftSide.Clock.bKnockedOut || RightSide.Clock.bKnockedOut;
+	const bool bKnockedOut = LeftSide.bKnockedOut || RightSide.bKnockedOut;
 	const bool bClashing = DisplayedFill.IsClashing() && !bKnockedOut;
 
 	const float FadeSeconds = bClashing ? ClashFadeInSeconds : ClashFadeOutSeconds;
@@ -415,8 +453,9 @@ float UPaintBarWidget::GetInnerSpan(const FVector2f& Size) const
 
 float UPaintBarWidget::GetMarkX(const FVector2f& Size, bool bLeft) const
 {
-	const float Offset = Rules.KoLine * GetInnerSpan(Size);
-	return bLeft ? ShellPadding + Offset : Size.X - ShellPadding - Offset;
+	// 왼쪽 판정선은 오른쪽 팀의 게이지가 닿는 자리라 오른쪽 끝에서 LineFill 만큼 들어온 곳이다.
+	const float Offset = FMath::Clamp(LineFill, 0.0f, 1.0f) * GetInnerSpan(Size);
+	return bLeft ? Size.X - ShellPadding - Offset : ShellPadding + Offset;
 }
 
 FPaintBarClashFrame UPaintBarWidget::MakeClashFrame() const
@@ -443,9 +482,15 @@ int32 UPaintBarWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Allo
 			ESlateDrawEffect::None, InWidgetStyle.GetColorAndOpacityTint());
 	}
 
+	// 두 팀의 합이 KO 점유율에 못 미치면 판정선이 바 밖에 있다. 선·글자·링을 모두 숨긴다.
+	const bool bLineOnBar = FPaintBarMath::IsLineOnBar(LineFill);
+
 	++Layer;
-	PaintMark(AllottedGeometry, OutDrawElements, Layer, true, LeftSide);
-	PaintMark(AllottedGeometry, OutDrawElements, Layer, false, RightSide);
+	if (bLineOnBar)
+	{
+		PaintMark(AllottedGeometry, OutDrawElements, Layer, true, LeftSide);
+		PaintMark(AllottedGeometry, OutDrawElements, Layer, false, RightSide);
+	}
 
 	const FPaintBarClashFrame Frame = MakeClashFrame();
 	int32 EffectTop = Layer;
@@ -458,6 +503,10 @@ int32 UPaintBarWidget::NativePaint(const FPaintArgs& Args, const FGeometry& Allo
 	}
 
 	Layer = EffectTop + 1;
+	if (!bLineOnBar)
+	{
+		return Layer;
+	}
 	PaintLabel(AllottedGeometry, OutDrawElements, Layer, true);
 	PaintLabel(AllottedGeometry, OutDrawElements, Layer, false);
 

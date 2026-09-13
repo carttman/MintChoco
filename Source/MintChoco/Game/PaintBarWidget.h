@@ -11,6 +11,7 @@
 
 #include "PaintBarWidget.generated.h"
 
+class AGameGameState;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class USizeBox;
@@ -43,12 +44,13 @@ struct MINTCHOCO_API FPaintBarWave
 
 /**
  * 두 팀이 칠한 비율을 흰 통 안의 액체로 보여주는 바. 왼쪽 팀은 왼쪽 끝, 오른쪽 팀은 오른쪽 끝에서 차오르고,
- * 둘이 만나면 ClashEffects가 돈다. 양 끝에서 Rules.KoLine 떨어진 곳에 판정선이 있고, 상대가 선에 다가오면
- * 빨갛게 점멸하며, 선을 넘기면 링이 차오르다 KO가 난다.
+ * 둘이 만나면 ClashEffects가 돈다. 판정선은 AGameGameState 의 KO 점유율(KnockoutThreshold)이 게이지 길이로
+ * 오는 자리에 그려지므로(FPaintBarMath::KoLineFill) 상대 게이지가 선에 닿는 순간이 곧 서버가 세기 시작하는
+ * 순간이다. 상대가 선에 다가오면 빨갛게 점멸하고, 링은 GameState 가 복제한 카운트다운을 그대로 보여 준다.
  *
  * 액체는 BarMaterial(M_UI_PaintBar) 한 장으로 그리고, 판정선·글자·링·격돌 연출은 NativePaint에서 그린다.
- * 트리가 비어 있으면 BarSize 크기의 SizeBox를 루트로 만들어 그대로 배치할 수 있다. KO 시계는 각 머신이
- * 복제된 커버리지로 직접 센다.
+ * 트리가 비어 있으면 BarSize 크기의 SizeBox를 루트로 만들어 그대로 배치할 수 있다. GameState 가 없는 곳
+ * (샘플 맵, 디자이너 미리보기)에서만 Rules 의 Preview 값으로 로컬 시계를 돌린다.
  */
 UCLASS()
 class MINTCHOCO_API UPaintBarWidget : public UUserWidget
@@ -235,10 +237,21 @@ protected:
 	TObjectPtr<USizeBox> RootBox;
 
 private:
+	/** 한쪽 KO 시계가 지금 어떤지. 경기에서는 GameState 의 복제값, 밖에서는 로컬 시계에서 온다. */
+	struct FKoStatus
+	{
+		bool bCounting = false;
+		float Progress = 0.0f;
+		int32 SecondsLeft = 0;
+		bool bKnockedOut = false;
+	};
+
 	/** 한쪽 팀이 밀릴 때의 연출 상태. 왼쪽 상태는 오른쪽 팀이 밀어붙이는 상황이다. */
 	struct FSideState
 	{
+		/** GameState 가 없을 때만 도는 로컬 시계. */
 		FPaintKoClock Clock;
+		bool bKnockedOut = false;
 		float DangerEnvelope = 0.0f;
 		float DangerPhase = 0.0f;
 		float KoBlend = 0.0f;
@@ -250,7 +263,11 @@ private:
 
 	FVector2f ReadCoverage(float DeltaTime);
 	FVector2f CoverageOf(const FPaintCoverage& Coverage) const;
-	void UpdateSide(FSideState& Side, float OpponentFill, float DeltaTime) const;
+	/** 미리보기 중이면 nullptr. 판정은 GameState 가 있을 때만 그쪽을 믿는다. */
+	const AGameGameState* FindRuleSource() const;
+	FKoStatus MakeKoStatus(FSideState& Side, const AGameGameState* GameState, int32 OpponentPaintId, float OpponentCoverage,
+		float KoCoverage, float KoHoldSeconds, float DeltaTime) const;
+	void UpdateSide(FSideState& Side, float OpponentFill, const FKoStatus& Ko, float DeltaTime) const;
 	void UpdateClash(float DeltaTime);
 	void UpdateMaterial();
 	bool EnsureMaterialInstance();
@@ -279,6 +296,9 @@ private:
 
 	/** 과장까지 적용해 화면에 그리는 게이지. */
 	FPaintBarFill DisplayedFill;
+
+	/** KO 판정선이 게이지 길이로 오는 자리. 1을 넘으면 바 밖이라 그리지 않는다. 양쪽이 같은 값이다. */
+	float LineFill = 2.0f;
 
 	FVector2f LocalSize = FVector2f::ZeroVector;
 	float WaveTime = 0.0f;
