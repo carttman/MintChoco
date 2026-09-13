@@ -103,12 +103,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint Bar|Look", meta = (ClampMin = "0", ForceUnits = "px"))
 	float ShellPadding = 3.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint Bar|Look")
-	FLinearColor LeftColor = FLinearColor(FColor(40, 238, 174));
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint Bar|Look")
-	FLinearColor RightColor = FLinearColor(FColor(118, 77, 43));
-
+	/** 액체 색은 LeftPaintId/RightPaintId 의 팀 색(TeamLook, MPC_TeamLook)이다. 여기서 따로 정하지 않는다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint Bar|Look")
 	FLinearColor ShellColor = FLinearColor(FColor(252, 252, 254));
 
@@ -159,13 +154,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint Bar|KO")
 	FSlateFontInfo KoFont;
 
-	/** 왼쪽 판정선과 그 글자·링의 색. 오른쪽 팀이 넘어야 하는 선이라 오른쪽 팀 색을 어둡게 쓴다. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint Bar|KO")
-	FLinearColor LeftMarkColor = FLinearColor(FColor(97, 46, 18));
-
-	/** 오른쪽 판정선과 그 글자·링의 색. 왼쪽 팀이 넘어야 하는 선이라 왼쪽 팀 색을 어둡게 쓴다. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint Bar|KO")
-	FLinearColor RightMarkColor = FLinearColor(FColor(7, 153, 109));
+	/**
+	 * 판정선과 그 글자·링의 색은 그 선을 넘어야 하는 팀(반대쪽 팀)의 색을 어둡게 쓴다.
+	 * 팀 색의 HSV 명도에 곱하는 배율이다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint Bar|KO", meta = (ClampMin = "0", ClampMax = "1"))
+	float MarkDarken = 0.3f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint Bar|KO", meta = (ClampMin = "0.5", ForceUnits = "px"))
 	float MarkThickness = 3.0f;
@@ -275,6 +269,8 @@ private:
 
 	float GetDanger(const FSideState& Side) const;
 	FLinearColor GetDisplayedColor(const FLinearColor& Base, const FSideState& Side) const;
+	FLinearColor GetTeamColor(bool bLeft) const;
+	FLinearColor GetMarkColor(bool bLeft) const;
 	float GetInnerSpan(const FVector2f& Size) const;
 	float GetMarkX(const FVector2f& Size, bool bLeft) const;
 	FPaintBarClashFrame MakeClashFrame() const;

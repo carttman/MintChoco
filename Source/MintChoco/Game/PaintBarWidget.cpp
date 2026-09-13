@@ -13,6 +13,7 @@
 #include "UObject/ConstructorHelpers.h"
 
 #include "Game/GameGameState.h"
+#include "Game/TeamLook.h"
 #include "Paint/PaintCellGrid.h"
 #include "Paint/PaintSubsystem.h"
 
@@ -388,8 +389,8 @@ void UPaintBarWidget::UpdateMaterial()
 	UMaterialInstanceDynamic& Material = *BarMaterialInstance;
 	Material.SetVectorParameterValue(FrameName, FLinearColor(LocalSize.X, LocalSize.Y, ShellPadding, WaveTime));
 	Material.SetVectorParameterValue(FillName, FLinearColor(DisplayedFill.Left, DisplayedFill.Right, Turbulence, FoamWidth));
-	Material.SetVectorParameterValue(LeftColorName, LeftColor);
-	Material.SetVectorParameterValue(RightColorName, RightColor);
+	Material.SetVectorParameterValue(LeftColorName, GetTeamColor(true));
+	Material.SetVectorParameterValue(RightColorName, GetTeamColor(false));
 	Material.SetVectorParameterValue(ShellColorName, ShellColor);
 	Material.SetVectorParameterValue(DangerColorName, DangerColor);
 	Material.SetVectorParameterValue(
@@ -446,6 +447,19 @@ FLinearColor UPaintBarWidget::GetDisplayedColor(const FLinearColor& Base, const 
 	return Color;
 }
 
+FLinearColor UPaintBarWidget::GetTeamColor(bool bLeft) const
+{
+	return TeamLook::GetColor(bLeft ? LeftPaintId : RightPaintId, GetWorld());
+}
+
+FLinearColor UPaintBarWidget::GetMarkColor(bool bLeft) const
+{
+	// 왼쪽 판정선은 오른쪽 팀이 넘어야 하는 선이라 오른쪽 팀 색이다.
+	FLinearColor Hsv = GetTeamColor(!bLeft).LinearRGBToHSV();
+	Hsv.B *= MarkDarken;
+	return Hsv.HSVToLinearRGB();
+}
+
 float UPaintBarWidget::GetInnerSpan(const FVector2f& Size) const
 {
 	return FMath::Max(Size.X - 2.0f * ShellPadding, 1.0f);
@@ -465,8 +479,8 @@ FPaintBarClashFrame UPaintBarWidget::MakeClashFrame() const
 	Frame.LiquidHeight = FMath::Max(LocalSize.Y - 2.0f * ShellPadding, 1.0f);
 	Frame.Strength = ClashStrength;
 	Frame.ContactVelocity = ContactVelocity;
-	Frame.LeftColor = GetDisplayedColor(LeftColor, LeftSide);
-	Frame.RightColor = GetDisplayedColor(RightColor, RightSide);
+	Frame.LeftColor = GetDisplayedColor(GetTeamColor(true), LeftSide);
+	Frame.RightColor = GetDisplayedColor(GetTeamColor(false), RightSide);
 	return Frame;
 }
 
@@ -528,7 +542,7 @@ int32 UPaintBarWidget::PaintMark(const FGeometry& Geometry, FSlateWindowElementL
 
 	FSlateDrawElement::MakeBox(OutDrawElements, LayerId,
 		Geometry.ToPaintGeometry(RectSize, FSlateLayoutTransform(FVector2f(X - MarkThickness * 0.5f, Top))),
-		&PaintBarWidget::SolidBrush(), ESlateDrawEffect::None, bLeft ? LeftMarkColor : RightMarkColor);
+		&PaintBarWidget::SolidBrush(), ESlateDrawEffect::None, GetMarkColor(bLeft));
 	return LayerId;
 }
 
@@ -546,7 +560,7 @@ int32 UPaintBarWidget::PaintLabel(const FGeometry& Geometry, FSlateWindowElement
 
 	FSlateDrawElement::MakeText(OutDrawElements, LayerId,
 		Geometry.ToPaintGeometry(TextSize, FSlateLayoutTransform(TopLeft)),
-		KoText, KoFont, ESlateDrawEffect::None, bLeft ? LeftMarkColor : RightMarkColor);
+		KoText, KoFont, ESlateDrawEffect::None, GetMarkColor(bLeft));
 	return LayerId;
 }
 
@@ -564,7 +578,7 @@ int32 UPaintBarWidget::PaintRing(const FGeometry& Geometry, FSlateWindowElementL
 	const float Radius = RingRadius * FMath::Lerp(0.6f, 1.0f, EaseOutCubic(Side.RingAge / RingPopSeconds));
 	const float DiscRadius = Radius + RingThickness * 0.5f + 1.5f;
 	const FVector2f Center(GetMarkX(Size, bLeft), Size.Y + RingGap + DiscRadius);
-	const FLinearColor MarkColor = bLeft ? LeftMarkColor : RightMarkColor;
+	const FLinearColor MarkColor = GetMarkColor(bLeft);
 
 	const FVector2f DiscSize(DiscRadius * 2.0f, DiscRadius * 2.0f);
 	FSlateDrawElement::MakeBox(OutDrawElements, LayerId,
