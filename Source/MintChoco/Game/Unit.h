@@ -7,6 +7,7 @@
 #include "GameplayTagContainer.h"
 #include "GameFramework/Character.h"
 #include "Game/UnitDataAsset.h"
+#include "Game/UnitMovementComponent.h"
 #include "Unit.generated.h"
 
 class UAbilitySystemComponent;
@@ -169,6 +170,15 @@ public:
 	bool IsDashing() const { return bIsDashing; }
 
 	/**
+	 * 히어로 랜딩 단계. 애님 블루프린트가 이 값으로 준비·시작 자세를 고른다.
+	 *
+	 * 단계 기계는 압축 플래그로 굴러가므로 소유자와 서버에만 있다. 다른 클라이언트의 무브먼트는
+	 * SimulatedTick만 돌아 단계를 모르므로, 그쪽에는 서버가 복제한 값을 준다(대시와 같은 규칙).
+	 */
+	UFUNCTION(BlueprintPure, Category = "Unit|HeroLanding")
+	EHeroLandingPhase GetHeroLandingPhase() const;
+
+	/**
 	 * 서버 전용. 런타임에 캐릭터를 교체한다.
 	 *
 	 * 지금은 블루프린트 기본값으로 정해지지만, 캐릭터 선택이 로비로 올라가면
@@ -324,6 +334,9 @@ private:
 	/** 실제로 대시 상태가 바뀔 때 무브먼트 컴포넌트가 알려준다. */
 	void HandleDashStateChanged(bool bDashing);
 
+	/** 서버 전용. 무브먼트의 단계 변화를 복제 값으로 옮긴다. */
+	void HandleHeroLandingPhaseChanged(EHeroLandingPhase NewPhase);
+
 	/** 무기의 페인트 id가 바뀌면(로컬 세팅이든 복제든) 잉크병을 그 팀 색으로 맞춘다. */
 	UFUNCTION()
 	void HandlePaintIdChanged(uint8 PaintId);
@@ -397,6 +410,13 @@ private:
 	 */
 	UPROPERTY(ReplicatedUsing = OnRep_IsDashing)
 	bool bIsDashing = false;
+
+	/**
+	 * 애니메이션용 히어로 랜딩 단계. 소유자와 서버는 무브먼트에서 직접 읽으므로 쓰지 않는다.
+	 * 대시와 같은 이유로 여기 있다: 단계 자체는 압축 플래그라 다른 클라이언트에 닿지 않는다.
+	 */
+	UPROPERTY(Replicated)
+	EHeroLandingPhase ReplicatedHeroPhase = EHeroLandingPhase::None;
 
 	/** 지속되는 트레일이라 시작할 때 만들고 끝날 때 직접 꺼야 한다. */
 	UPROPERTY(Transient)

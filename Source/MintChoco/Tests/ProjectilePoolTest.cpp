@@ -8,6 +8,7 @@
 #include "GameFramework/WorldSettings.h"
 
 #include "Tests/TestPaintProjectile.h"
+#include "Tests/TestWorld.h"
 #include "Weapons/PaintProjectile.h"
 #include "Weapons/PaintballProfile.h"
 #include "Weapons/ProjectilePoolSubsystem.h"
@@ -16,32 +17,6 @@
 
 namespace
 {
-	/** 액터를 스폰해야 하므로 월드가 필요하다. 이 파일의 테스트만 쓰는 임시 월드다. */
-	UWorld* MakeTestWorld()
-	{
-		UWorld* const World = UWorld::CreateWorld(EWorldType::Game, /*bInformEngineOfWorld=*/false);
-		if (!World)
-		{
-			return nullptr;
-		}
-
-		FWorldContext& Context = GEngine->CreateNewWorldContext(EWorldType::Game);
-		Context.SetCurrentWorld(World);
-		World->InitializeActorsForPlay(FURL());
-		World->BeginPlay();
-		return World;
-	}
-
-	void DestroyTestWorld(UWorld* World)
-	{
-		if (!World)
-		{
-			return;
-		}
-		GEngine->DestroyWorldContext(World);
-		World->DestroyWorld(/*bInformEngineOfWorld=*/false);
-	}
-
 	UPrimitiveComponent* GetPawnBody(APawn* Pawn)
 	{
 		return Pawn ? Cast<UPrimitiveComponent>(Pawn->GetRootComponent()) : nullptr;
@@ -63,13 +38,13 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FProjectilePoolTest::RunTest(const FString& Parameters)
 {
-	UWorld* const World = MakeTestWorld();
+	UWorld* const World = MintChocoTest::MakeWorld();
 	if (!TestNotNull(TEXT("테스트 월드"), World))
 	{
 		return false;
 	}
 
-	ON_SCOPE_EXIT { DestroyTestWorld(World); };
+	ON_SCOPE_EXIT { MintChocoTest::DestroyWorld(World); };
 
 	UProjectilePoolSubsystem* const Pool = World->GetSubsystem<UProjectilePoolSubsystem>();
 	if (!TestNotNull(TEXT("풀 서브시스템이 월드에 있다"), Pool))
@@ -152,13 +127,13 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FProjectilePoolPrewarmTest::RunTest(const FString& Parameters)
 {
-	UWorld* const World = MakeTestWorld();
+	UWorld* const World = MintChocoTest::MakeWorld();
 	if (!TestNotNull(TEXT("테스트 월드"), World))
 	{
 		return false;
 	}
 
-	ON_SCOPE_EXIT { DestroyTestWorld(World); };
+	ON_SCOPE_EXIT { MintChocoTest::DestroyWorld(World); };
 
 	UProjectilePoolSubsystem* const Pool = World->GetSubsystem<UProjectilePoolSubsystem>();
 	if (!TestNotNull(TEXT("풀 서브시스템"), Pool))

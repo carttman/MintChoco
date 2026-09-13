@@ -19,6 +19,43 @@ UGA_HeroLanding::UGA_HeroLanding()
 	EffectClass = UGE_HeroLanding::StaticClass();
 }
 
+bool UGA_HeroLanding::WantsInput(EItemAbilityInput Input) const
+{
+	if (Input != EItemAbilityInput::Confirm)
+	{
+		return false;
+	}
+
+	// 이미 내리꽂는 중이면 받을 것이 없다. 어차피 이 상태에서는 상태 태그가 방아쇠를 막고
+	// 있으므로, 여기서 가져가지 않아도 총은 나가지 않는다.
+	const AUnit* const Unit = GetUnit();
+	const UUnitMovementComponent* const Movement = Unit ? Unit->GetUnitMovement() : nullptr;
+	if (!Movement)
+	{
+		return false;
+	}
+
+	const EHeroLandingPhase Phase = Movement->GetHeroLandingPhase();
+	return Phase == EHeroLandingPhase::Rise || Phase == EHeroLandingPhase::Hover;
+}
+
+void UGA_HeroLanding::HandleInput(EItemAbilityInput Input)
+{
+	if (Input != EItemAbilityInput::Confirm)
+	{
+		return;
+	}
+
+	// 의도만 세운다. 실제로 언제 꽂히는지는 단계 기계가 정하고(상승 중에 눌렀다면 정점에
+	// 닿는 순간), 서버는 무브에 실려 온 같은 플래그로 같은 판단을 한다.
+	AUnit* const Unit = GetUnit();
+	UUnitMovementComponent* const Movement = Unit ? Unit->GetUnitMovement() : nullptr;
+	if (Movement && Unit->IsLocallyControlled())
+	{
+		Movement->SetWantsHeroDive(true);
+	}
+}
+
 void UGA_HeroLanding::OnItemActivated(AUnit& Unit, const UItemProfile& Profile)
 {
 	Landing = Cast<UHeroLandingProfile>(&Profile);
@@ -69,9 +106,24 @@ void UGA_HeroLanding::HandleTick(float DeltaTime)
 		return;
 	}
 
-	// 내리꽂기부터는 고정, 그 전에는 지금 조준하는 곳.
-	const FVector Target = Movement->GetHeroLandingPhase() == EHeroLandingPhase::Dive ? Movement->GetHeroDiveTarget() : Movement->ComputeAimTarget();
-	Marker->SetActorLocation(Target);
+	// 착지점이 정해진 뒤에는 고정.
+	const EHeroLandingPhase Phase = Movement->GetHeroLandingPhase();
+	if (Phase == EHeroLandingPhase::Dive || Phase == EHeroLandingPhase::Approach)
+	{
+		Marker->SetActorHiddenInGame(false);
+		Marker->SetActorLocation(Movement->GetHeroDiveTarget());
+		return;
+	}
+
+	// 그 전에는 지금 조준하는 곳. 내려설 수 없는 곳(벽, 급경사, 사거리 밖, 허공)을 보고 있으면
+	// 표시를 감춘다 — 그 상태에서는 좌클릭도 듣지 않으므로, 표시가 곧 "지금 꽂을 수 있다"는 뜻이다.
+	FVector Target;
+	const bool bCanLand = Movement->ComputeAimTarget(Target);
+	Marker->SetActorHiddenInGame(!bCanLand);
+	if (bCanLand)
+	{
+		Marker->SetActorLocation(Target);
+	}
 }
 
 void UGA_HeroLanding::HandleLanded()

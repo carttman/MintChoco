@@ -20,6 +20,7 @@ UUnitMovementComponent::UUnitMovementComponent()
 	bWantsSpeedBoost = 0;
 	bWantsHeroLanding = 0;
 	bHeroLandingArmed = 1;
+	bWantsHeroDive = 0;
 }
 
 // 스턴·히어로 랜딩이면 0, 부스트 중이면 고정 속도, 대시 중이면 기본 속도에 배율을 곱한 값, 아니면 기본 속도.
@@ -131,6 +132,10 @@ void UUnitMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 
 	const bool bWantsLanding = (Flags & FSavedMove_Character::FLAG_Custom_2) != 0;
 	SetWantsHeroLanding(bWantsLanding && IsHeroLandingAllowed());
+
+	// 내리꽂기 요청은 따로 인정 검사를 하지 않는다. 단계가 정지 중일 때만 쓰이고, 그 단계에
+	// 들어가는 것 자체가 위의 검사를 이미 통과했다는 뜻이기 때문이다.
+	SetWantsHeroDive((Flags & FSavedMove_Character::FLAG_Custom_3) != 0);
 }
 
 void UUnitMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
@@ -159,10 +164,23 @@ void UUnitMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 	}
 }
 
+void UUnitMovementComponent::SetHeroPhase(EHeroLandingPhase NewPhase)
+{
+	if (HeroPhase == NewPhase)
+	{
+		return;
+	}
+
+	HeroPhase = NewPhase;
+	OnHeroLandingPhaseChanged.Broadcast(NewPhase);
+}
+
 void UUnitMovementComponent::StartHeroLanding()
 {
-	HeroPhase = EHeroLandingPhase::Rise;
+	SetHeroPhase(EHeroLandingPhase::Rise);
 	HeroPhaseTime = 0.0f;
+	// 지난 발동에서 남은 요청으로 정지 단계를 건너뛰지 않도록.
+	bWantsHeroDive = 0;
 	HeroTakeoff = UpdatedComponent->GetComponentLocation();
 	HeroDiveTarget = HeroTakeoff;
 	Velocity = FVector::ZeroVector;
@@ -171,9 +189,10 @@ void UUnitMovementComponent::StartHeroLanding()
 
 void UUnitMovementComponent::AbortHeroLanding()
 {
-	HeroPhase = EHeroLandingPhase::None;
+	SetHeroPhase(EHeroLandingPhase::None);
 	HeroPhaseTime = 0.0f;
 	bWantsHeroLanding = 0;
+	bWantsHeroDive = 0;
 	if (MovementMode == MOVE_Custom && CustomMovementMode == CustomMode_HeroLanding)
 	{
 		SetMovementMode(MOVE_Falling);
@@ -186,9 +205,10 @@ bool UUnitMovementComponent::FinishHeroLandingDive()
 	{
 		return false;
 	}
-	HeroPhase = EHeroLandingPhase::None;
+	SetHeroPhase(EHeroLandingPhase::None);
 	HeroPhaseTime = 0.0f;
 	bWantsHeroLanding = 0;
+	bWantsHeroDive = 0;
 	return true;
 }
 
@@ -217,7 +237,7 @@ void UUnitMovementComponent::PhysHeroLanding(float DeltaTime, int32 Iterations)
 	}
 
 	// 단계가 없는데 이 모드에 있다면 무엇인가 어긋난 것이다. 낙하로 돌아간다.
-	if (HeroPhase != EHeroLandingPhase::Rise && HeroPhase != EHeroLandingPhase::Hover)
+	if (HeroPhase != EHeroLandingPhase::Rise && HeroPhase != EHeroLandingPhase::Hover && HeroPhase != EHeroLandingPhase::Approach)
 	{
 		AbortHeroLanding();
 		StartNewPhysics(DeltaTime, Iterations);
@@ -225,6 +245,12 @@ void UUnitMovementComponent::PhysHeroLanding(float DeltaTime, int32 Iterations)
 	}
 
 	HeroPhaseTime += DeltaTime;
+
+	if (HeroPhase == EHeroLandingPhase::Approach)
+	{
+		PhysHeroApproach(DeltaTime, Iterations);
+		return;
+	}
 
 	if (HeroPhase == EHeroLandingPhase::Rise)
 	{
@@ -242,7 +268,7 @@ void UUnitMovementComponent::PhysHeroLanding(float DeltaTime, int32 Iterations)
 		const bool bBlockedAbove = Hit.bBlockingHit && Hit.ImpactNormal.Z < -0.3f;
 		if (Alpha >= 1.0f || bBlockedAbove)
 		{
-			HeroPhase = EHeroLandingPhase::Hover;
+			SetHeroPhase(EHeroLandingPhase::Hover);
 			HeroPhaseTime = 0.0f;
 			Velocity = FVector::ZeroVector;
 		}
@@ -251,37 +277,127 @@ void UUnitMovementComponent::PhysHeroLanding(float DeltaTime, int32 Iterations)
 
 	// Hover
 	Velocity = FVector::ZeroVector;
-	if (HeroPhaseTime < HeroParams.HoverTime)
+
+	FVector Target;
+	const bool bHasTarget = ComputeAimTarget(Target);
+
+	// 좌클릭은 내려설 수 있는 바닥을 보고 있을 때만 듣는다. 벽을 보고 눌렀다면 요청 자체를
+	// 버린다: 남겨 두면 나중에 시선이 바닥에 걸리는 순간 뜬금없이 꽂힌다.
+	if (bWantsHeroDive && !bHasTarget)
+	{
+		bWantsHeroDive = 0;
+	}
+
+	if (HeroPhaseTime < HeroParams.HoverTime && !bWantsHeroDive)
 	{
 		return;
 	}
 
-	// 착지점을 고정하고 내리꽂는다. 낙하 모드라 착지가 ProcessLanded → ACharacter::Landed로 온다.
-	HeroDiveTarget = ComputeAimTarget();
-	HeroPhase = EHeroLandingPhase::Dive;
+	// 시간이 다 됐는데 착지할 바닥을 못 고른 채다. 로딩 화면처럼 갇히면 안 되므로 제자리에 떨어진다.
+	if (!bHasTarget)
+	{
+		Target = UpdatedComponent->GetComponentLocation() - FVector(0.0f, 0.0f, GetHeroCapsuleHalfHeight());
+	}
+
+	StartHeroDive(Target, DeltaTime, Iterations);
+}
+
+void UUnitMovementComponent::StartHeroDive(const FVector& Target, float DeltaTime, int32 Iterations)
+{
+	HeroDiveTarget = Target;
 	HeroPhaseTime = 0.0f;
+	bWantsHeroDive = 0;
 
 	// 캡슐 중심이 지면의 착지점으로 가면 발이 먼저 땅에 닿아 그만큼 앞에서 멈춘다. 얕게 꽂을수록
 	// 그 차이가 커지므로, 캡슐 반높이만큼 올린 점을 향한다. 그러면 발바닥이 착지점에 닿는다.
-	const float HalfHeight = CharacterOwner && CharacterOwner->GetCapsuleComponent()
-		? CharacterOwner->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()
-		: 0.0f;
-	FVector DiveDirection = HeroDiveTarget + FVector(0.0f, 0.0f, HalfHeight) - UpdatedComponent->GetComponentLocation();
-	if (!DiveDirection.Normalize() || DiveDirection.Z > -0.1f)
+	const FVector Destination = HeroDiveTarget + FVector(0.0f, 0.0f, GetHeroCapsuleHalfHeight());
+	const FVector Location = UpdatedComponent->GetComponentLocation();
+
+	// 착지점이 지금 높이보다 위다(높은 단, 옥상). 위로 향하는 직선은 바닥을 위에서 만나지
+	// 못해 그대로 지나쳐 버리므로, 착지점 위까지 건너간 다음 수직으로 떨어뜨린다.
+	if (Destination.Z >= Location.Z)
+	{
+		SetHeroPhase(EHeroLandingPhase::Approach);
+		HeroApproachPoint = Destination + FVector(0.0f, 0.0f, HeroParams.DiveApexClearance);
+		return;
+	}
+
+	FVector DiveDirection = Destination - Location;
+	if (!DiveDirection.Normalize())
 	{
 		DiveDirection = FVector::DownVector;
 	}
+	SetHeroPhase(EHeroLandingPhase::Dive);
 	Velocity = DiveDirection * HeroParams.DiveSpeed;
 	SetMovementMode(MOVE_Falling);
 	StartNewPhysics(DeltaTime, Iterations);
 }
 
-FVector UUnitMovementComponent::ComputeAimTarget() const
+void UUnitMovementComponent::PhysHeroApproach(float DeltaTime, int32 Iterations)
+{
+	const FVector Location = UpdatedComponent->GetComponentLocation();
+	const FVector Remaining = HeroApproachPoint - Location;
+	float Budget = HeroParams.DiveSpeed * DeltaTime;
+
+	// 높이를 먼저 맞추고 그 다음에 옆으로 간다. 대각선으로 질러가면 올라서려는 단의 모서리에
+	// 캡슐이 걸린다: 시선이 윗면을 보고 있다는 것과 몸이 지나갈 자리가 있다는 것은 다르다.
+	FVector Delta = FVector::ZeroVector;
+	if (Remaining.Z > UE_KINDA_SMALL_NUMBER)
+	{
+		const float Climb = FMath::Min(Remaining.Z, Budget);
+		Delta.Z = Climb;
+		Budget -= Climb;
+	}
+
+	FVector Flat = Remaining;
+	Flat.Z = 0.0f;
+	const float FlatDistance = Flat.Size();
+	if (Budget > 0.0f && FlatDistance > UE_KINDA_SMALL_NUMBER)
+	{
+		Delta += Flat / FlatDistance * FMath::Min(FlatDistance, Budget);
+	}
+
+	// 착지점 위에 닿았다. 남은 것은 수직 낙하뿐이다.
+	if (Delta.IsNearlyZero())
+	{
+		StartHeroPlunge(DeltaTime, Iterations);
+		return;
+	}
+
+	FHitResult Hit;
+	SafeMoveUpdatedComponent(Delta, UpdatedComponent->GetComponentQuat(), /*bSweep=*/true, Hit);
+	Velocity = Delta / DeltaTime;
+
+	// 길이 막혔다(천장, 시선에는 안 보이던 처마). 더 밀고 가면 벽을 긁으며 헤매게 되므로
+	// 그 자리에서 떨어뜨린다. 착지 효과는 떨어진 곳에서 난다.
+	if (Hit.bBlockingHit)
+	{
+		StartHeroPlunge(DeltaTime, Iterations);
+	}
+}
+
+void UUnitMovementComponent::StartHeroPlunge(float DeltaTime, int32 Iterations)
+{
+	SetHeroPhase(EHeroLandingPhase::Dive);
+	HeroPhaseTime = 0.0f;
+	Velocity = FVector::DownVector * HeroParams.DiveSpeed;
+	SetMovementMode(MOVE_Falling);
+	StartNewPhysics(DeltaTime, Iterations);
+}
+
+float UUnitMovementComponent::GetHeroCapsuleHalfHeight() const
+{
+	return CharacterOwner && CharacterOwner->GetCapsuleComponent()
+		? CharacterOwner->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()
+		: 0.0f;
+}
+
+bool UUnitMovementComponent::ComputeAimTarget(FVector& OutTarget) const
 {
 	const UWorld* const World = GetWorld();
 	if (!CharacterOwner || !World)
 	{
-		return HeroTakeoff;
+		return false;
 	}
 
 	// 눈높이에서 컨트롤 회전 방향으로. 카메라 위치가 아니라 폰 기준이어야 서버가 같은 값을 낸다.
@@ -290,34 +406,30 @@ FVector UUnitMovementComponent::ComputeAimTarget() const
 
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(HeroLandingAim), /*bTraceComplex=*/false, CharacterOwner);
 	FHitResult Hit;
-	FVector Target;
-	if (World->LineTraceSingleByChannel(Hit, Origin, Origin + Direction * HeroParams.AimTraceDistance, ECC_Visibility, Params))
+	if (!World->LineTraceSingleByChannel(Hit, Origin, Origin + Direction * HeroParams.AimTraceDistance, ECC_Visibility, Params))
 	{
-		Target = Hit.ImpactPoint;
-	}
-	else if (Direction.Z < -KINDA_SMALL_NUMBER)
-	{
-		// 이륙 높이의 수평면과 만나는 점.
-		const float Distance = (HeroTakeoff.Z - Origin.Z) / Direction.Z;
-		Target = Origin + Direction * FMath::Min(Distance, HeroParams.AimTraceDistance);
-	}
-	else
-	{
-		// 위를 보고 있다. 시선의 수평 방향으로 최대 거리.
-		FVector Flat = Direction;
-		Flat.Z = 0.0f;
-		Target = HeroTakeoff + Flat.GetSafeNormal() * HeroParams.MaxAimDistance;
+		// 사거리 안에 아무것도 없다. 허공에는 내려설 수 없다.
+		return false;
 	}
 
-	// 이륙점 기준 수평 거리를 자른다. 높이는 그대로 둔다.
-	FVector Offset = Target - HeroTakeoff;
-	const float Height = Offset.Z;
+	// 걸을 수 있는 바닥만 착지점이다. 벽과 급경사는 여기서 걸러지고, 그러면 표시도 뜨지 않는다.
+	// 캐릭터가 실제로 설 수 있는지를 묻는 것이므로 판정은 무브먼트의 경사 기준과 같다.
+	if (!IsWalkable(Hit))
+	{
+		return false;
+	}
+
+	// 이륙점 기준 수평 사거리. 넘으면 착지점이 없는 것으로 친다: 갈 수 없는 곳에 표시를
+	// 그려 두면 눌러도 안 되는 이유를 알 수 없다. 높이는 자르지 않는다 — 높은 곳도 착지점이다.
+	FVector Offset = Hit.ImpactPoint - HeroTakeoff;
 	Offset.Z = 0.0f;
 	if (Offset.SizeSquared() > FMath::Square(HeroParams.MaxAimDistance))
 	{
-		Offset = Offset.GetSafeNormal() * HeroParams.MaxAimDistance;
+		return false;
 	}
-	return HeroTakeoff + Offset + FVector(0.0f, 0.0f, Height);
+
+	OutTarget = Hit.ImpactPoint;
+	return true;
 }
 
 FNetworkPredictionData_Client* UUnitMovementComponent::GetPredictionData_Client() const
@@ -339,10 +451,12 @@ void FSavedMove_Unit::Clear()
 	bSavedWantsSpeedBoost = 0;
 	bSavedWantsHeroLanding = 0;
 	bSavedHeroLandingArmed = 1;
+	bSavedWantsHeroDive = 0;
 	SavedHeroPhase = EHeroLandingPhase::None;
 	SavedHeroPhaseTime = 0.0f;
 	SavedHeroTakeoff = FVector::ZeroVector;
 	SavedHeroDiveTarget = FVector::ZeroVector;
+	SavedHeroApproachPoint = FVector::ZeroVector;
 }
 
 uint8 FSavedMove_Unit::GetCompressedFlags() const
@@ -364,6 +478,11 @@ uint8 FSavedMove_Unit::GetCompressedFlags() const
 		Result |= FLAG_Custom_2;
 	}
 
+	if (bSavedWantsHeroDive)
+	{
+		Result |= FLAG_Custom_3;
+	}
+
 	return Result;
 }
 
@@ -376,6 +495,7 @@ bool FSavedMove_Unit::CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* I
 	if (Other && (bSavedWantsToDash != Other->bSavedWantsToDash
 		|| bSavedWantsSpeedBoost != Other->bSavedWantsSpeedBoost
 		|| bSavedWantsHeroLanding != Other->bSavedWantsHeroLanding
+		|| bSavedWantsHeroDive != Other->bSavedWantsHeroDive
 		|| SavedHeroPhase != EHeroLandingPhase::None
 		|| Other->SavedHeroPhase != EHeroLandingPhase::None))
 	{
@@ -395,10 +515,12 @@ void FSavedMove_Unit::SetMoveFor(ACharacter* C, float InDeltaTime, FVector const
 		bSavedWantsSpeedBoost = Movement->bWantsSpeedBoost;
 		bSavedWantsHeroLanding = Movement->bWantsHeroLanding;
 		bSavedHeroLandingArmed = Movement->bHeroLandingArmed;
+		bSavedWantsHeroDive = Movement->bWantsHeroDive;
 		SavedHeroPhase = Movement->HeroPhase;
 		SavedHeroPhaseTime = Movement->HeroPhaseTime;
 		SavedHeroTakeoff = Movement->HeroTakeoff;
 		SavedHeroDiveTarget = Movement->HeroDiveTarget;
+		SavedHeroApproachPoint = Movement->HeroApproachPoint;
 	}
 }
 
@@ -415,10 +537,12 @@ void FSavedMove_Unit::PrepMoveFor(ACharacter* C)
 		Movement->bWantsSpeedBoost = bSavedWantsSpeedBoost;
 		Movement->bWantsHeroLanding = bSavedWantsHeroLanding;
 		Movement->bHeroLandingArmed = bSavedHeroLandingArmed;
+		Movement->bWantsHeroDive = bSavedWantsHeroDive;
 		Movement->HeroPhase = SavedHeroPhase;
 		Movement->HeroPhaseTime = SavedHeroPhaseTime;
 		Movement->HeroTakeoff = SavedHeroTakeoff;
 		Movement->HeroDiveTarget = SavedHeroDiveTarget;
+		Movement->HeroApproachPoint = SavedHeroApproachPoint;
 	}
 }
 

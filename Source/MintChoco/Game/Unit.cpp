@@ -553,6 +553,7 @@ void AUnit::PostInitializeComponents()
 	if (UUnitMovementComponent* Movement = GetUnitMovement())
 	{
 		Movement->OnDashStateChanged.AddUObject(this, &AUnit::HandleDashStateChanged);
+		Movement->OnHeroLandingPhaseChanged.AddUObject(this, &AUnit::HandleHeroLandingPhaseChanged);
 	}
 	else
 	{
@@ -685,6 +686,13 @@ void AUnit::UseItem()
 // 컴포넌트에 Release/Cancel로 오는데, 그쪽은 아무것도 하지 않으므로 따로 걸러내지 않는다.
 void AUnit::StartFire()
 {
+	// 효과 중인 아이템이 좌클릭을 먼저 가져간다. 꿀풍선은 조준을 확정해 던지고, 히어로 랜딩은
+	// 공중에 멈춰 있으면 그 자리에서 내리꽂는다. 가져갔으면 무기에는 닿지 않는다.
+	if (ItemSlot && ItemSlot->HandleFireInput())
+	{
+		return;
+	}
+
 	if (PaintWeapon && !(SecondaryWeapon && SecondaryWeapon->IsTriggerHeld()))
 	{
 		PaintWeapon->PullTrigger();
@@ -709,6 +717,12 @@ void AUnit::CancelFire()
 
 void AUnit::StartSecondaryFire()
 {
+	// 우클릭은 조준 취소가 먼저다.
+	if (ItemSlot && ItemSlot->HandleCancelInput())
+	{
+		return;
+	}
+
 	if (SecondaryWeapon && !(PaintWeapon && PaintWeapon->IsTriggerHeld()))
 	{
 		SecondaryWeapon->PullTrigger();
@@ -832,6 +846,26 @@ void AUnit::HandleDashStateChanged(bool bDashing)
 	}
 
 	UpdateDashEffects(bDashing);
+}
+
+void AUnit::HandleHeroLandingPhaseChanged(EHeroLandingPhase NewPhase)
+{
+	// 복제는 서버만 한다. 소유 클라이언트도 이 알림을 받지만 자기 값은 무브먼트에서 직접 읽는다.
+	if (HasAuthority())
+	{
+		ReplicatedHeroPhase = NewPhase;
+	}
+}
+
+EHeroLandingPhase AUnit::GetHeroLandingPhase() const
+{
+	// 이 머신이 단계 기계를 직접 돌리는 경우(소유자, 서버)에는 그 값이 가장 빠르고 정확하다.
+	if (IsLocallyControlled() || HasAuthority())
+	{
+		const UUnitMovementComponent* const Movement = GetUnitMovement();
+		return Movement ? Movement->GetHeroLandingPhase() : EHeroLandingPhase::None;
+	}
+	return ReplicatedHeroPhase;
 }
 
 void AUnit::OnRep_IsDashing()
@@ -1005,6 +1039,7 @@ void AUnit::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 	// 소유자는 예측으로 이미 알고 있다. 보내면 자기가 아는 값을 한 번 더 받을 뿐이고,
 	// 지연 때문에 오히려 예측을 되돌리게 된다.
 	DOREPLIFETIME_CONDITION(AUnit, bIsDashing, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(AUnit, ReplicatedHeroPhase, COND_SkipOwner);
 }
 
 void AUnit::SetUnitData(UUnitDataAsset* NewUnitData)
