@@ -76,7 +76,7 @@ Need-Asset '0' 'Content/Blueprints/Game/BP_Unit.uasset' 'State.Item.Aiming'
 
 # --------------------------------------------------- 1단계 디저트 폭격 조준
 Need-Text '1' 'Source/MintChoco/Items/DessertBombardmentProfile.h' 'AimPreviewClass'
-Need-Text '1' 'Source/MintChoco/Items/DessertBombardmentAbility.h' 'UItemAimAbility'
+Need-Text '1' 'Source/MintChoco/Items/DessertBombardmentAbility.h' 'IsAimingItem'
 Need-Text '1' 'Source/MintChoco/Items/ItemGameplayEffect.h' 'UGE_DessertBombardment'
 Need-Asset '1' 'Content/Blueprints/Items/DA_Item_DessertBombardment.uasset' 'BP_BombardmentAimLine'
 
@@ -108,11 +108,17 @@ Need-Text '5' 'Source/MintChoco/Weapons/PaintSniperProfile.h' 'VolleyPaintball'
 Need-Text '5' 'Source/MintChoco/Weapons/PaintSniperProfile.h' 'VolleyDropLead'
 Need-Text '5' 'Source/MintChoco/Weapons/PaintSniperProfile.h' 'bSkipTrailWhenVolleying'
 Need-Text '5' 'Source/MintChoco/Weapons/PaintSniperProfile.cpp' 'SpawnTrailVolley'
+# 풀을 거치는 경로가 발마다 다른 낙하 시각을 버리면 순차 발사가 평범한 산탄이 된다.
+Need-Text '5' 'Source/MintChoco/Weapons/ProjectilePoolSubsystem.h' 'DropAfterOverride'
+Need-Text '5' 'Source/MintChoco/Weapons/PaintballProfile.cpp' 'bCosmetic, DropAfterOverride'
 Need-Asset '5' 'Content/Blueprints/Weapons/Profiles/DA_Weapon_Sniper.uasset' 'DA_Paintball_SniperVolley'
 
 # ------------------------------------- 계획 외: 발사 자세와 총구 정합 (최고 위험)
 Need-Text '자세' 'Source/MintChoco/Game/UnitAnimInstance.h' 'bWeaponPoseHeld'
 Need-Text '자세' 'Source/MintChoco/Game/UnitAnimInstance.h' 'bIsAiming'
+# 헤더에 선언만 남고 .cpp의 계산이 통째로 사라진 적이 있다. 값을 실제로 채우는 줄을 본다.
+Need-Text '자세' 'Source/MintChoco/Game/UnitAnimInstance.cpp' 'bWeaponPoseHeld ='
+Need-Text '자세' 'Source/MintChoco/Game/UnitAnimInstance.cpp' 'Weapon->IsAiming()'
 Need-Text '자세' 'Source/MintChoco/Game/UnitDataAsset.h' 'Charge'
 Need-Text '자세' 'Source/MintChoco/Game/Unit.h' 'StartChargePose'
 Need-Text '자세' 'Source/MintChoco/Game/Unit.h' 'HandleChargingChanged'

@@ -50,7 +50,10 @@ public:
 		uint8 PaintId,
 		int32 Seed,
 		const FVector& Velocity,
-		bool bCosmetic);
+		bool bCosmetic,
+		// 0 이상이면 프로필의 DropAfter 대신 이 시간 뒤에 2단 중력이 걸린다. 차지샷 순차
+		// 발사가 발마다 다른 값을 넘겨 “언제 꺾이느냐” 로 순서를 만든다.
+		float DropAfterOverride = -1.0f);
 
 	/** 다 쓴 공을 돌려받는다. 파괴하지 않고 재워 둔다. */
 	void Release(APaintProjectile* Projectile);

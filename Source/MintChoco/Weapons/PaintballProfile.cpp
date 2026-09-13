@@ -27,7 +27,8 @@ APaintProjectile* UPaintballProfile::Launch(UWorld& World, const FTransform& Spa
 	// 연결도 여기 한 곳이면 된다. 풀이 비어 있으면 알아서 새로 스폰하므로 사격은 끊기지 않는다.
 	if (UProjectilePoolSubsystem* const Pool = UProjectilePoolSubsystem::Get(&World))
 	{
-		return Pool->Launch(ProjectileClass, SpawnTransform, Instigator, this, PaintId, Seed, Velocity, bCosmetic);
+		return Pool->Launch(ProjectileClass, SpawnTransform, Instigator, this, PaintId, Seed, Velocity,
+			bCosmetic, DropAfterOverride);
 	}
 
 	// 풀이 없는 월드(테스트 등)에서는 예전처럼 직접 스폰한다.
