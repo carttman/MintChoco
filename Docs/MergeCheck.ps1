@@ -38,14 +38,10 @@ function Need-Asset([string]$Step, [string]$Rel, [string]$Needle) {
 }
 
 # 2026-09-13 main 통합: 0·2·3단계는 10fd596 에서 carttman 의 조준 구현(HandleFireInput / IsAimingItem /
-# FItemAimPreviewStyle)으로 갈아탔으므로 그 이름을 본다. UItemAimAbility·AimArcPreview·ConfirmAim 은 죽은 코드다.
+# FItemAimPreviewStyle)으로 갈아탔으므로 그 이름을 본다. UItemAimAbility·AimArcPreview·ConfirmAim 은 정리에서 지웠다.
 # 2026-09-13 main 통합: 9단계의 도넛 링(KnockoutGaugeWidget)과 점유율 바(PaintCoverageBarWidget)는 액체 바
 # UPaintBarWidget(WBP_PaintBar) 하나로 합쳤다. 판정은 그대로 GameState 이고 위젯은 그 값을 읽는다.
 # ---------------------------------------------------------------- 신규 파일
-Need-File '0' 'Source/MintChoco/Items/ItemAimAbility.h'
-Need-File '0' 'Source/MintChoco/Items/ItemAimAbility.cpp'
-Need-File '2' 'Source/MintChoco/Items/AimArcPreview.h'
-Need-File '2' 'Source/MintChoco/Items/AimArcPreview.cpp'
 Need-File '3' 'Source/MintChoco/Items/LandingMarker.h'
 Need-File '3' 'Source/MintChoco/Items/LandingMarker.cpp'
 Need-File '9' 'Source/MintChoco/Game/PaintBarWidget.h'
@@ -55,7 +51,6 @@ Need-File '5' 'Source/MintChoco/Weapons/PaintVolley.h'
 Need-File '5' 'Source/MintChoco/Weapons/PaintVolley.cpp'
 Need-File '9' 'Content/Assets/UI/Widgets/Game/WBP_PaintBar.uasset'
 Need-File '1' 'Content/Blueprints/Items/BP_BombardmentAimLine.uasset'
-Need-File '2' 'Content/Blueprints/Items/BP_HoneyBalloonAimArc.uasset'
 Need-File '5' 'Content/Blueprints/Weapons/Paintballs/DA_Paintball_SniperVolley.uasset'
 
 # ------------------------------------------------------- 8단계 초콜릿 분수
@@ -70,11 +65,6 @@ Need-Text '4' 'Source/MintChoco/Weapons/PaintWeaponComponent.h' 'LastShotTime'
 Need-Text '4' 'Source/MintChoco/Weapons/PaintWeaponProfile.h' 'case EPaintFireMode::Single'
 
 # ----------------------------------------------------- 0단계 조준 모드 토대
-Need-Text '0' 'Source/MintChoco/Items/ItemGameplayTags.h' 'State_Item_Aiming'
-Need-Text '0' 'Source/MintChoco/Items/ItemGameplayTags.cpp' 'State.Item.Aiming'
-Need-Text '0' 'Source/MintChoco/Items/ItemSlotComponent.h' 'ConfirmAim'
-Need-Text '0' 'Source/MintChoco/Items/ItemSlotComponent.h' 'OnAimConfirmed'
-Need-Text '0' 'Source/MintChoco/Items/ItemSlotComponent.h' 'ServerConfirmAim'
 Need-Text '0' 'Source/MintChoco/Game/Unit.cpp' 'ItemSlot->HandleFireInput()'
 Need-Text '0' 'Source/MintChoco/Items/ItemSlotComponent.h' 'HandleFireInput'
 

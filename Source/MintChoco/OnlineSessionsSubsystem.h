@@ -39,16 +39,16 @@ struct FMySessionInfo
 	FString HostName;
 
 	UPROPERTY(BlueprintReadWrite)
-	int32 MaxPlayer;
+	int32 MaxPlayer = 0;
 
 	UPROPERTY(BlueprintReadWrite)
-	int32 JoinPlayerCount;
+	int32 JoinPlayerCount = 0;
 
 	UPROPERTY(BlueprintReadWrite)
-	int32 PingSpeed;
+	int32 PingSpeed = 0;
 
 	UPROPERTY(BlueprintReadWrite)
-	int32 Index;
+	int32 Index = 0;
 
 	void Print()
 	{
