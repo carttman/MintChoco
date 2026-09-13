@@ -6,6 +6,7 @@
 
 #include "SweetSpinnerAbility.generated.h"
 
+class AUnit;
 class USweetSpinnerProfile;
 
 /**
@@ -13,9 +14,15 @@ class USweetSpinnerProfile;
  * 출발해 Turns바퀴를 고르게 나눠 돈다(SweetSpinner::VolleyYawDegrees). 캐릭터가 도는 모습은
  * 애니메이션이 맡으므로 액터 회전과 컨트롤 요 추종은 건드리지 않는다.
  *
- * 산탄은 서버만 쏜다. 무기의 ServerFire와 달리 조준이 없고, 발사 원점은 캐릭터 중심(손 높이),
- * 방향은 그 발의 요다. 클라이언트는 슬롯 컴포넌트의 멀티캐스트로 같은 산탄을 연출로 본다.
- * 잉크는 쓰지 않는다.
+ * 산탄은 서버만 쏜다. 무기의 ServerFire와 달리 조준이 없다. 원점과 방향은 손 소켓에서 온다:
+ * 손에서 나가고, 몸 중심에서 손으로 뻗은 쪽으로 날아가므로 애니메이션이 도는 대로 탄이 나간다.
+ * 소켓이 없으면 예전 방식(캐릭터 중심의 손 높이 + 계산한 요)으로 돌아간다.
+ *
+ * 언제 쏘는지도 애니메이션이 정한다. 시퀀스에 얹은 Spinner Volley Window 구간 동안만 쏘므로,
+ * 준비 동작이나 마무리 동안에는 나가지 않는다. 구간은 에셋에 박힌 데이터라 메시의 포즈를
+ * 돌리지 않는 데디케이티드 서버에서도 그대로 읽힌다(런타임 노티파이로는 그게 안 된다).
+ *
+ * 클라이언트는 슬롯 컴포넌트의 멀티캐스트로 같은 산탄을 연출로 본다. 잉크는 쓰지 않는다.
  */
 UCLASS()
 class MINTCHOCO_API UGA_SweetSpinner : public UItemAbility
@@ -25,11 +32,23 @@ class MINTCHOCO_API UGA_SweetSpinner : public UItemAbility
 public:
 	UGA_SweetSpinner();
 
+	/**
+	 * 이번 발의 원점과 수평 방향. 손 소켓이 있으면 거기서 나가고, 방향도 몸 중심에서 손으로
+	 * 뻗은 쪽이다 — 원점과 방향이 모두 애니메이션에서 오므로 도는 모습과 정확히 맞는다.
+	 *
+	 * 소켓이 없거나 손이 몸 중심 바로 위아래에 있으면 거짓이고, 그때는 호출부가 계산한 요로 쏜다.
+	 */
+	static bool ComputeHandMuzzle(const AUnit& Unit, const USweetSpinnerProfile& Profile, FVector& OutOrigin, FVector& OutFlatDirection);
+
 protected:
 	virtual void OnItemActivated(AUnit& Unit, const UItemProfile& Profile) override;
 	virtual void OnItemEnded(AUnit& Unit, const UItemProfile& Profile) override;
 
 private:
+	/** 회전 구간이 시작될 때. 여기서부터 VolleyInterval 간격으로 산탄이 나간다. */
+	UFUNCTION()
+	void StartVolleys();
+
 	UFUNCTION()
 	void HandleVolley(int32 ActionNumber);
 
