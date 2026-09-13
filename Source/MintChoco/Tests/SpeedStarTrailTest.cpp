@@ -1,8 +1,14 @@
 #include "Misc/AutomationTest.h"
 
+#include "Components/CapsuleComponent.h"
+#include "Engine/HitResult.h"
+#include "Engine/World.h"
+
 #include "Items/SpeedStarAbility.h"
 #include "Items/SpeedStarProfile.h"
 #include "Paint/PaintBrushProfile.h"
+#include "Tests/TestUnitCharacter.h"
+#include "Tests/TestWorld.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -56,6 +62,65 @@ bool FSpeedStarTrailStretchTest::RunTest(const FString& Parameters)
 
 	Star->TrailDeposit.BrushProfile = nullptr;
 	TestEqual(TEXT("without a brush the trail stays round"), UGA_SpeedStar::StretchForRun(*Star, 10000.0f), 1.0f);
+
+	return true;
+}
+
+/**
+ * 자국을 찍을 바닥을 얼마나 멀리까지 찾는가.
+ *
+ * 예전에는 발밑 60cm 고정이라 살짝만 떠도(점프, 히어로 랜딩) 트레이스가 아무것도 맞히지 못해
+ * 자국이 끊겼다. 공중에서도 지나간 자리 아래가 칠해져야 한다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSpeedStarGroundReachTest,
+	"MintChoco.Items.SpeedStar.GroundReach",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FSpeedStarGroundReachTest::RunTest(const FString& Parameters)
+{
+	UWorld* const World = MintChocoTest::MakeWorld();
+	if (!TestNotNull(TEXT("테스트 월드"), World))
+	{
+		return false;
+	}
+
+	ON_SCOPE_EXIT { MintChocoTest::DestroyWorld(World); };
+
+	// 윗면이 Z=0인 바닥.
+	MintChocoTest::SpawnBlock(*World, FVector(0.0f, 0.0f, -100.0f), FVector(4000.0f, 4000.0f, 100.0f));
+
+	ATestUnitCharacter* const Character = World->SpawnActor<ATestUnitCharacter>(FVector(0.0f, 0.0f, 500.0f), FRotator::ZeroRotator);
+	if (!TestNotNull(TEXT("테스트 캐릭터"), Character))
+	{
+		return false;
+	}
+
+	USpeedStarProfile* const Profile = NewObject<USpeedStarProfile>();
+	const float HalfHeight = Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	FHitResult Hit;
+
+	// 땅에 붙어 달릴 때. 예전 거리(60cm)로도 찾던 경우이고, 늘려도 같은 바닥을 찾아야 한다.
+	const FVector OnGround(0.0f, 0.0f, HalfHeight);
+	if (TestTrue(TEXT("땅에 붙어 달리면 바닥을 찾는다"), UGA_SpeedStar::FindTrailGround(*Character, *Profile, OnGround, Hit)))
+	{
+		TestTrue(TEXT("찾은 바닥은 발밑이다"), FMath::IsNearlyEqual(Hit.ImpactPoint.Z, 0.0f, 1.0f));
+	}
+
+	// 이게 이 테스트의 핵심: 발밑 500cm 떠 있어도 아래 바닥을 찾는다.
+	const FVector InAir(0.0f, 0.0f, HalfHeight + 500.0f);
+	if (TestTrue(TEXT("공중에 떠 있어도 아래 바닥을 찾는다"), UGA_SpeedStar::FindTrailGround(*Character, *Profile, InAir, Hit)))
+	{
+		TestTrue(TEXT("공중에서도 같은 바닥이다"), FMath::IsNearlyEqual(Hit.ImpactPoint.Z, 0.0f, 1.0f));
+	}
+
+	// 다만 끝없이 칠하지는 않는다. 사거리가 곧 "얼마나 높은 데서 칠할 수 있는가"다.
+	const FVector TooHigh(0.0f, 0.0f, HalfHeight + Profile->MarkGroundReach + 100.0f);
+	TestFalse(TEXT("사거리 밖에서는 바닥을 찾지 않는다"), UGA_SpeedStar::FindTrailGround(*Character, *Profile, TooHigh, Hit));
+
+	// 사거리를 0으로 두면 발밑만 본다. 옛 동작으로 되돌리고 싶을 때의 탈출구다.
+	Profile->MarkGroundReach = 0.0f;
+	TestFalse(TEXT("사거리가 0이면 공중에서는 찾지 않는다"), UGA_SpeedStar::FindTrailGround(*Character, *Profile, InAir, Hit));
 
 	return true;
 }
