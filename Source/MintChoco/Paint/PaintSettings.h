@@ -7,6 +7,7 @@
 
 class UStaticMesh;
 class UMaterialInterface;
+class UMaterialParameterCollection;
 
 /**
  * Project-wide pieces of the paint pipeline that every paintable surface shares: how the score
@@ -88,4 +89,12 @@ public:
 	 */
 	UPROPERTY(Config, EditAnywhere, Category = "Side Splats")
 	TSoftClassPtr<AActor> SideSplatEffectClass;
+
+	/**
+	 * Team colors and gloss (MPC_TeamLook). Every team-tinted material reads it through
+	 * MF_TeamLook and C++ through TeamLook::Get, so the two never disagree. Unset falls back
+	 * to the built-in table in TeamLook.cpp.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Team Look")
+	TSoftObjectPtr<UMaterialParameterCollection> TeamLookCollection;
 };

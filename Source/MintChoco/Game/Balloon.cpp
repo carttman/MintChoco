@@ -7,6 +7,7 @@
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
+#include "Game/TeamLook.h"
 #include "MintChoco.h"
 #include "Weapons/PaintProjectile.h"
 #include "Weapons/PaintBurst.h"
@@ -179,7 +180,7 @@ void ABalloon::ApplyLook()
 	{
 		if (UMaterialInstanceDynamic* const Dynamic = GetOrCreateMaterial())
 		{
-			Dynamic->SetVectorParameterValue(ColorParameterName, FLinearColor(Teams::GetDisplayColor(State.LastTeam)));
+			Dynamic->SetVectorParameterValue(ColorParameterName, TeamLook::GetColor(State.LastTeam, GetWorld()));
 		}
 	}
 	else if (Material)

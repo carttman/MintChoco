@@ -29,20 +29,14 @@ namespace Teams
 		return TeamId >= 0 && TeamId < Count;
 	}
 
-	/**
-	 * 팀 색. 로비 목록과 디버그 표시가 같은 값을 쓴다.
-	 * 화면 두 곳에 같은 팀이 다른 색으로 나오는 일이 없도록 여기 한 곳에만 둔다.
-	 */
-	inline const FColor MintColor = FColor(62, 180, 137);
-	inline const FColor ChocoColor = FColor(210, 105, 30);
-
-	inline FColor GetDisplayColor(int32 TeamId)
+	/** MPC_TeamLook 항목 접두와 ML_Look_* 에셋 이름에 쓰는 내부 이름. 화면용은 GetDisplayName, 색은 TeamLook. */
+	inline const TCHAR* GetInternalName(int32 TeamId)
 	{
 		switch (TeamId)
 		{
-		case Mint:  return MintColor;
-		case Choco: return ChocoColor;
-		default:    return FColor::Silver;
+		case Mint:  return TEXT("Mint");
+		case Choco: return TEXT("Choco");
+		default:    return TEXT("None");
 		}
 	}
 

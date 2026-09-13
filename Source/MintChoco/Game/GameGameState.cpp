@@ -4,6 +4,7 @@
 #include "Engine/World.h"
 #include "Game/GameGameMode.h"
 #include "Game/PaintBar.h"
+#include "Game/TeamLook.h"
 #include "Game/TeamTypes.h"
 #include "MintChoco.h"
 #include "Net/UnrealNetwork.h"
@@ -207,7 +208,7 @@ void AGameGameState::DrawCoverageDebug() const
 	{
 		const uint8 PaintId = static_cast<uint8>(Team);
 		GEngine->AddOnScreenDebugMessage(
-			CoverageDebugKeyBase + 1 + Team, Duration, Teams::GetDisplayColor(Team),
+			CoverageDebugKeyBase + 1 + Team, Duration, TeamLook::GetDisplayColor(Team, GetWorld()),
 			FString::Printf(TEXT("  %s  %6.2f%%   %.0f cm^2"),
 				Teams::GetDisplayName(Team),
 				WorldCoverage.GetFraction(PaintId) * 100.0f,
@@ -234,7 +235,7 @@ void AGameGameState::DrawCoverageDebug() const
 	if (bMatchEnded)
 	{
 		GEngine->AddOnScreenDebugMessage(
-			CoverageDebugKeyBase + 3 + Teams::Count, Duration, Teams::GetDisplayColor(WinningTeam),
+			CoverageDebugKeyBase + 3 + Teams::Count, Duration, TeamLook::GetDisplayColor(WinningTeam, GetWorld()),
 			FString::Printf(TEXT("  경기 종료 — %s (WinningTeam %d)"),
 				Teams::IsValidId(WinningTeam) ? Teams::GetDisplayName(WinningTeam) : TEXT("무승부"),
 				WinningTeam));
