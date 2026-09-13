@@ -351,6 +351,29 @@ private:
 	/** 연출의 몽타주 부분: 몽타주 에셋이 있으면 그것을, 없으면 Animation을 슬롯에 동적 몽타주로. */
 	void PlayFeedbackMontage(const struct FUnitActionFeedback& Feedback);
 
+	/**
+	 * 차지샷 충전이 시작·종료될 때. 무기가 알려 준다(UPaintWeaponComponent::OnChargingChanged).
+	 *
+	 * 충전 중에는 총이 계속 들려 있어야 한다. 총은 캐릭터 메시의 Gun 소켓에 붙어 있어서,
+	 * 자세가 내려가면 발사 지점이 쉬는 손으로 돌아간다.
+	 */
+	UFUNCTION()
+	void HandleChargingChanged(bool bCharging);
+
+	/**
+	 * 충전 자세를 UpperBody 슬롯에 루프로 건다.
+	 *
+	 * 애님 그래프가 이 슬롯이 도는지를 보고 상체 자세를 켜므로(Is Slot Active), 그래프에
+	 * 따로 배선할 것이 없다 — 슬롯을 채우는 것이 곧 신호다.
+	 */
+	void StartChargePose();
+
+	/** 걸어 둔 충전 자세만 지목해 세운다. 슬롯째 세우면 방금 시작한 발사 동작까지 끊긴다. */
+	void StopChargePose();
+
+	/** 지금 걸려 있는 충전 자세 몽타주. 없으면 비어 있다. */
+	TWeakObjectPtr<class UAnimMontage> ChargePose;
+
 	/** 한 발 나갈 때마다. 총을 보이게 하고 유지 시간을 처음부터 다시 센다. */
 	void ShowGunForFire();
 

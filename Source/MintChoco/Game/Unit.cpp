@@ -553,6 +553,14 @@ void AUnit::PostInitializeComponents()
 	if (UUnitMovementComponent* Movement = GetUnitMovement())
 	{
 		Movement->OnDashStateChanged.AddUObject(this, &AUnit::HandleDashStateChanged);
+		if (PaintWeapon)
+		{
+			PaintWeapon->OnChargingChanged.AddDynamic(this, &AUnit::HandleChargingChanged);
+		}
+		if (SecondaryWeapon)
+		{
+			SecondaryWeapon->OnChargingChanged.AddDynamic(this, &AUnit::HandleChargingChanged);
+		}
 		Movement->OnHeroLandingPhaseChanged.AddUObject(this, &AUnit::HandleHeroLandingPhaseChanged);
 	}
 	else
@@ -1007,6 +1015,72 @@ void AUnit::HandleWeaponFired(int32 Seed)
 		{
 			UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), Feedback->FX, GetActorLocation(), GetActorRotation());
 		}
+	}
+}
+
+void AUnit::HandleChargingChanged(bool bCharging)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	if (!bCharging)
+	{
+		// 쏘고 끝났든 취소됐든 총은 평소처럼 잠시 남았다가 들어간다. 실제로 한 발 나갔다면
+		// HandleWeaponFired 가 곧 타이머를 다시 걸어 준다.
+		StopChargePose();
+		ShowGunForFire();
+		return;
+	}
+
+	// 충전하는 동안 총은 계속 들려 있어야 한다. 유지 타이머를 걷어 두지 않으면 충전 도중에
+	// 총이 사라지고, 그러면 발사 지점이 다시 쉬는 손으로 돌아간다.
+	GetWorldTimerManager().ClearTimer(GunHideTimer);
+	bGunVisible = true;
+	UpdateGunVisibility();
+
+	// 상체 자세는 UpperBody 슬롯이 정한다. 평소에는 이 슬롯으로 팔 내린 기본 포즈가 흐르고,
+	// 발사할 때만 잠깐 발사 동작이 얹힌다. 충전은 놓을 때까지 이어지므로 그 사이 자세를
+	// 붙들어 둘 것이 필요하다.
+	StartChargePose();
+}
+
+void AUnit::StartChargePose()
+{
+	StopChargePose();
+
+	const FUnitActionFeedback* const Feedback = UnitData ? UnitData->FindFeedback(EUnitAction::Charge) : nullptr;
+	UAnimInstance* const AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+	if (!Feedback || !Feedback->Animation || !AnimInstance)
+	{
+		// 충전 자세를 등록하지 않은 캐릭터는 지금까지처럼 기본 포즈로 충전한다.
+		return;
+	}
+
+	// 슬롯 몽타주에는 “무한” 이 없다. 어떤 충전보다도 길게 돌 만큼만 반복해 두고, 실제로는
+	// 방아쇠를 놓는 순간 StopChargePose 가 세운다.
+	constexpr int32 LoopCount = 120;
+	ChargePose = AnimInstance->PlaySlotAnimationAsDynamicMontage(
+		Feedback->Animation, Feedback->AnimationSlot,
+		Feedback->AnimationBlendIn, Feedback->AnimationBlendOut, /*InPlayRate=*/1.0f, LoopCount);
+}
+
+void AUnit::StopChargePose()
+{
+	UAnimMontage* const Pose = ChargePose.Get();
+	ChargePose.Reset();
+	if (!Pose)
+	{
+		return;
+	}
+
+	if (UAnimInstance* const AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+	{
+		const FUnitActionFeedback* const Feedback = UnitData ? UnitData->FindFeedback(EUnitAction::Charge) : nullptr;
+		const float BlendOut = Feedback ? Feedback->AnimationBlendOut : 0.15f;
+		// 이 몽타주만 지목해서 세운다. 발사 동작이 이미 슬롯을 가져갔다면 아무 일도 일어나지 않는다.
+		AnimInstance->Montage_Stop(BlendOut, Pose);
 	}
 }
 
