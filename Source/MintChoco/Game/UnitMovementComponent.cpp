@@ -164,6 +164,17 @@ void UUnitMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 	}
 }
 
+float UUnitMovementComponent::GetHeroCharge() const
+{
+	// 정지 중이면 지금까지 버틴 양이다. 미리보기가 매 프레임 이 값으로 원을 키운다.
+	if (HeroPhase == EHeroLandingPhase::Hover)
+	{
+		return FMath::Clamp(HeroPhaseTime / FMath::Max(HeroParams.HoverTime, UE_KINDA_SMALL_NUMBER), 0.0f, 1.0f);
+	}
+	// 내리꽂기에 들어섰으면 그때 굳은 값. 착지한 뒤에도 남아 있어 서버가 효과를 낼 때 읽는다.
+	return HeroCharge;
+}
+
 void UUnitMovementComponent::SetHeroPhase(EHeroLandingPhase NewPhase)
 {
 	if (HeroPhase == NewPhase)
@@ -183,6 +194,7 @@ void UUnitMovementComponent::StartHeroLanding()
 	bWantsHeroDive = 0;
 	HeroTakeoff = UpdatedComponent->GetComponentLocation();
 	HeroDiveTarget = HeroTakeoff;
+	HeroCharge = 0.0f;
 	Velocity = FVector::ZeroVector;
 	SetMovementMode(MOVE_Custom, CustomMode_HeroLanding);
 }
@@ -292,6 +304,11 @@ void UUnitMovementComponent::PhysHeroLanding(float DeltaTime, int32 Iterations)
 	{
 		return;
 	}
+
+	// 버틸수록 세진다. 끝까지 기다리면 최대, 일찍 누르면 그만큼 약하다. StartHeroDive가
+	// HeroPhaseTime을 0으로 되돌리므로 그 전에 재 둔다.
+	HeroCharge = FMath::Clamp(
+		HeroPhaseTime / FMath::Max(HeroParams.HoverTime, UE_KINDA_SMALL_NUMBER), 0.0f, 1.0f);
 
 	// 시간이 다 됐는데 착지할 바닥을 못 고른 채다. 로딩 화면처럼 갇히면 안 되므로 제자리에 떨어진다.
 	if (!bHasTarget)
@@ -516,6 +533,7 @@ void FSavedMove_Unit::SetMoveFor(ACharacter* C, float InDeltaTime, FVector const
 		bSavedWantsHeroLanding = Movement->bWantsHeroLanding;
 		bSavedHeroLandingArmed = Movement->bHeroLandingArmed;
 		bSavedWantsHeroDive = Movement->bWantsHeroDive;
+		SavedHeroCharge = Movement->HeroCharge;
 		SavedHeroPhase = Movement->HeroPhase;
 		SavedHeroPhaseTime = Movement->HeroPhaseTime;
 		SavedHeroTakeoff = Movement->HeroTakeoff;
@@ -538,6 +556,7 @@ void FSavedMove_Unit::PrepMoveFor(ACharacter* C)
 		Movement->bWantsHeroLanding = bSavedWantsHeroLanding;
 		Movement->bHeroLandingArmed = bSavedHeroLandingArmed;
 		Movement->bWantsHeroDive = bSavedWantsHeroDive;
+		Movement->HeroCharge = SavedHeroCharge;
 		Movement->HeroPhase = SavedHeroPhase;
 		Movement->HeroPhaseTime = SavedHeroPhaseTime;
 		Movement->HeroTakeoff = SavedHeroTakeoff;

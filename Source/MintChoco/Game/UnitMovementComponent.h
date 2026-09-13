@@ -151,6 +151,15 @@ public:
 	void SetWantsHeroDive(bool bNewWantsHeroDive) { bWantsHeroDive = bNewWantsHeroDive ? 1 : 0; }
 	bool WantsHeroDive() const { return bWantsHeroDive != 0; }
 
+	/**
+	 * 정지 단계를 얼마나 버텼는지(0~1). 내리꽂기가 시작되는 순간 굳는다.
+	 *
+	 * 시간으로만 정해지므로 서버가 스스로 안다 — 클라이언트가 보내 주는 값이 아니라서
+	 * 조작할 여지가 없고, 복제할 것도 없다. 착지 효과의 배율이 여기서 나온다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "HeroLanding")
+	float GetHeroCharge() const;
+
 	/** 시작 전에 양쪽이 같은 값을 넣어야 같은 궤적이 나온다. 단계 중에 바꿔도 다음 발동부터다. */
 	void SetHeroLandingParams(const FHeroLandingParams& Params) { HeroParams = Params; }
 	const FHeroLandingParams& GetHeroLandingParams() const { return HeroParams; }
@@ -228,6 +237,9 @@ private:
 	/** 정지 단계를 지금 끝내고 내리꽂겠다는 의도. 내리꽂기가 시작되면 스스로 내려간다. */
 	uint8 bWantsHeroDive : 1;
 
+	/** 내리꽂기가 시작될 때 굳은 충전량(0~1). 그 전에는 GetHeroCharge()가 시간으로 센다. */
+	float HeroCharge = 0.0f;
+
 	EHeroLandingPhase HeroPhase = EHeroLandingPhase::None;
 	float HeroPhaseTime = 0.0f;
 	FVector HeroTakeoff = FVector::ZeroVector;
@@ -290,6 +302,7 @@ private:
 	uint8 bSavedWantsHeroLanding : 1;
 	uint8 bSavedHeroLandingArmed : 1;
 	uint8 bSavedWantsHeroDive : 1;
+	float SavedHeroCharge = 0.0f;
 	EHeroLandingPhase SavedHeroPhase = EHeroLandingPhase::None;
 	float SavedHeroPhaseTime = 0.0f;
 	FVector SavedHeroTakeoff = FVector::ZeroVector;
