@@ -37,6 +37,8 @@ function Need-Asset([string]$Step, [string]$Rel, [string]$Needle) {
     else { Fail $Step "$Rel 에 '$Needle' 참조 없음" }
 }
 
+# 2026-09-13 main 통합: 0·2·3단계는 10fd596 에서 carttman 의 조준 구현(HandleFireInput / IsAimingItem /
+# FItemAimPreviewStyle)으로 갈아탔으므로 그 이름을 본다. UItemAimAbility·AimArcPreview·ConfirmAim 은 죽은 코드다.
 # ---------------------------------------------------------------- 신규 파일
 Need-File '0' 'Source/MintChoco/Items/ItemAimAbility.h'
 Need-File '0' 'Source/MintChoco/Items/ItemAimAbility.cpp'
@@ -71,8 +73,8 @@ Need-Text '0' 'Source/MintChoco/Items/ItemGameplayTags.cpp' 'State.Item.Aiming'
 Need-Text '0' 'Source/MintChoco/Items/ItemSlotComponent.h' 'ConfirmAim'
 Need-Text '0' 'Source/MintChoco/Items/ItemSlotComponent.h' 'OnAimConfirmed'
 Need-Text '0' 'Source/MintChoco/Items/ItemSlotComponent.h' 'ServerConfirmAim'
-Need-Text '0' 'Source/MintChoco/Game/Unit.cpp' 'ItemSlot->ConfirmAim()'
-Need-Asset '0' 'Content/Blueprints/Game/BP_Unit.uasset' 'State.Item.Aiming'
+Need-Text '0' 'Source/MintChoco/Game/Unit.cpp' 'ItemSlot->HandleFireInput()'
+Need-Text '0' 'Source/MintChoco/Items/ItemSlotComponent.h' 'HandleFireInput'
 
 # --------------------------------------------------- 1단계 디저트 폭격 조준
 Need-Text '1' 'Source/MintChoco/Items/DessertBombardmentProfile.h' 'AimPreviewClass'
@@ -81,12 +83,12 @@ Need-Text '1' 'Source/MintChoco/Items/ItemGameplayEffect.h' 'UGE_DessertBombardm
 Need-Asset '1' 'Content/Blueprints/Items/DA_Item_DessertBombardment.uasset' 'BP_BombardmentAimLine'
 
 # ------------------------------------------------------- 2단계 꿀풍선 조준
-Need-Text '2' 'Source/MintChoco/Items/HoneyBalloonProfile.h' 'AimPreviewClass'
-Need-Text '2' 'Source/MintChoco/Items/HoneyBalloonAbility.h' 'UItemAimAbility'
-Need-Text '2' 'Source/MintChoco/Items/HoneyBalloonAbility.cpp' 'ComputeThrow'
+Need-Text '2' 'Source/MintChoco/Items/HoneyBalloonProfile.h' 'FItemAimPreviewStyle AimPreview'
+Need-Text '2' 'Source/MintChoco/Items/HoneyBalloonAbility.h' 'IsAimingItem'
+Need-Text '2' 'Source/MintChoco/Items/HoneyBalloonAbility.cpp' 'GetThrowOrigin'
 Need-Text '2' 'Source/MintChoco/Items/ItemGameplayEffect.h' 'UGE_HoneyBalloon'
 Need-Text '2' 'Source/MintChoco/Items/ItemProjectile.h' 'GetCollisionRadius'
-Need-Asset '2' 'Content/Blueprints/Items/DA_Item_HoneyBalloon.uasset' 'BP_HoneyBalloonAimArc'
+Need-Asset '2' 'Content/Blueprints/Items/DA_Item_HoneyBalloon.uasset' 'RT_LifeLock_Start'
 
 # --------------------------------------- 계획 외: 샷건 2단 중력 (7단계 대체)
 Need-Text '7' 'Source/MintChoco/Weapons/PaintballProfile.h' 'DropAfter'
@@ -135,7 +137,7 @@ Need-Text '3' 'Source/MintChoco/Game/UnitMovementComponent.h' 'SetWantsHeroDive'
 Need-Text '3' 'Source/MintChoco/Game/UnitMovementComponent.h' 'GetHeroCharge'
 Need-Text '3' 'Source/MintChoco/Game/UnitMovementComponent.h' 'SavedHeroCharge'
 Need-Text '3' 'Source/MintChoco/Game/UnitMovementComponent.cpp' 'FLAG_Custom_3'
-Need-Text '3' 'Source/MintChoco/Game/Unit.cpp' 'SetWantsHeroDive(true)'
+Need-Text '3' 'Source/MintChoco/Items/HeroLandingAbility.cpp' 'SetWantsHeroDive(true)'
 Need-Text '3' 'Source/MintChoco/Items/HeroLandingProfile.h' 'ChargeScaleFor'
 Need-Text '3' 'Source/MintChoco/Items/HeroLandingProfile.h' 'MinChargeScale'
 Need-Text '3' 'Source/MintChoco/Items/HeroLandingAbility.cpp' 'ALandingMarker'
