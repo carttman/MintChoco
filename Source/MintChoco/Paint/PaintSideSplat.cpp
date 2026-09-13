@@ -5,11 +5,11 @@
 #include "Engine/World.h"
 #include "Materials/MaterialInstanceDynamic.h"
 
+#include "Game/TeamLook.h"
 #include "Paint/PaintLog.h"
 
 namespace
 {
-	const FName SplatColorParam(TEXT("SplatColor"));
 	const FName RadiusParam(TEXT("Radius"));
 	const FName StretchParam(TEXT("Stretch"));
 	const FName SeedParam(TEXT("Seed"));
@@ -32,13 +32,6 @@ APaintSideSplat::APaintSideSplat()
 	Decal = CreateDefaultSubobject<UDecalComponent>(TEXT("Decal"));
 	Decal->SetupAttachment(GetRootComponent());
 	Decal->SetRelativeRotation(FRotator(-90.0f, 0.0f, 0.0f));
-
-	TeamColors = {
-		FLinearColor(0.35f, 0.90f, 0.70f),
-		FLinearColor(0.32f, 0.18f, 0.10f),
-		FLinearColor(0.35f, 0.90f, 0.70f),
-		FLinearColor(0.32f, 0.18f, 0.10f),
-	};
 }
 
 void APaintSideSplat::OnPaintSplat_Implementation(const FPaintSplat& Splat)
@@ -64,10 +57,7 @@ void APaintSideSplat::OnPaintSplat_Implementation(const FPaintSplat& Splat)
 	DecalMID = Decal->CreateDynamicMaterialInstance();
 	if (DecalMID)
 	{
-		const FLinearColor Color = TeamColors.IsEmpty()
-			? FLinearColor::White
-			: TeamColors[FMath::Min<int32>(Splat.PaintId, TeamColors.Num() - 1)];
-		DecalMID->SetVectorParameterValue(SplatColorParam, Color);
+		DecalMID->SetScalarParameterValue(TeamLook::TeamIdParameter, static_cast<float>(Splat.PaintId));
 		DecalMID->SetScalarParameterValue(RadiusParam, Splat.Radius);
 		DecalMID->SetScalarParameterValue(StretchParam, Splat.Stretch);
 		DecalMID->SetScalarParameterValue(SeedParam, static_cast<float>(Splat.Seed));

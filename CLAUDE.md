@@ -20,6 +20,35 @@ personal styles do not apply here.
 - Try a new node type or property write on a scratch asset first, through
   save + recompile, before touching real assets.
 
+## Team look (colors and gloss)
+
+The single source is `Content/Assets/Paint/Materials/Team/MPC_TeamLook` (a Material
+Parameter Collection): `MintColor`, `MintSubsurface`, `MintSurface`, and the same three for
+`Choco`. `Surface` packs `(Roughness, Specular [UE 0..1], Metallic, WetCoat)`. Editing a value
+in the MPC updates every material live; no recompile, no restart.
+
+- Shaders read it through `MF_TeamLook(TeamId)` → `Color, Subsurface, Roughness, Specular,
+  Metallic, WetCoat`. Never reorder or delete those outputs: call nodes address them by index.
+- C++ reads it through `TeamLook::Get / GetColor / GetDisplayColor` (`Game/TeamLook.h`), which
+  resolve `UPaintSettings::TeamLookCollection`. The fallback table in `TeamLook.cpp` must
+  match the MPC seed. `Teams::` holds ids and names only.
+- Every team-tinted master material declares a scalar `TeamId` (0 Mint, 1 Choco) feeding
+  `MF_TeamLook`; per-team MIs differ only by `TeamId` (`MI_InkBall_*`, `MI_InkLiquid_*`,
+  `MI_InkSurface_*`, `MI_GB_*`). A non-team look (`MI_InkLiquid_Red`, `MI_InkSurface_Red`)
+  sets `UseTeamLook = 0` and keeps its own color parameters. `ML_Look_Mint/Choco` call the
+  function with a constant 0/1, so `Albedo/Roughness/Specular/SSSMFP/WetCoat` no longer exist
+  as layer parameters (old `MI_PaintStyle_*` overrides of them are dead). MIDs set `TeamId`
+  from `Splat.PaintId` (`APaintSideSplat`); the HUD bar and Niagara `User.TintColor` take
+  `TeamLook::GetColor(PaintId)`.
+- MCP: `MaterialTools.create_parameter_collection`; append MPC entries one per
+  `set_properties` call on `VectorParameters` (GUIDs are created automatically). A
+  `MaterialExpressionCollectionParameter` needs `Collection` written first and
+  `ParameterName` in a second call (`ParameterId` is synced by PostEditChange and is
+  invisible to ObjectTools); a clean material compile proves the id landed. Single-input pins
+  (Saturate, ComponentMask, FunctionOutput) are addressed as `"None"`. MPC default values are
+  live in the session without a restart.
+- Test: `MintChoco.Game.TeamLook.*` (collection entries, fallback, per-team instances).
+
 ## Unreal MCP pitfalls
 
 Each of these cost real debugging time once.

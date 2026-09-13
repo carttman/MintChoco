@@ -1,10 +1,12 @@
 #include "Misc/AutomationTest.h"
 
+#include "Materials/MaterialInstance.h"
 #include "Materials/MaterialParameterCollection.h"
 
 #include "Game/TeamLook.h"
 #include "Game/TeamTypes.h"
 #include "Paint/PaintSettings.h"
+#include "Paint/PaintSideSplat.h"
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
@@ -78,6 +80,79 @@ bool FTeamLookFallbackTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("ChocoSurface"), TeamLook::SurfaceParameterName(Teams::Choco), FName(TEXT("ChocoSurface")));
 	TestEqual(TEXT("MintSubsurface"), TeamLook::SubsurfaceParameterName(Teams::Mint), FName(TEXT("MintSubsurface")));
 	TestEqual(TEXT("no team has no entry name"), TeamLook::ColorParameterName(Teams::None), FName(NAME_None));
+	return true;
+}
+
+namespace
+{
+	bool ReadScalar(const UMaterialInstance& Instance, FName Name, float& OutValue)
+	{
+		return Instance.GetScalarParameterValue(FHashedMaterialParameterInfo(Name), OutValue);
+	}
+}
+
+/**
+ * 팀별 MI 는 TeamId 하나로 팀을 고르고, 팀이 아닌 룩(무한탄 빨강)은 UseTeamLook 을 꺼야 한다.
+ * TeamId 가 빠지면 두 팀이 같은 색이 되고, UseTeamLook 이 켜져 있으면 빨강이 팀 색으로 덮인다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FTeamLookInstancesTest,
+	"MintChoco.Game.TeamLook.Instances",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FTeamLookInstancesTest::RunTest(const FString& Parameters)
+{
+	struct FTeamInstance
+	{
+		const TCHAR* Path;
+		int32 Team;
+	};
+	const FTeamInstance TeamInstances[] = {
+		{TEXT("/Game/Assets/InkBall/Materials/MI_InkBall_Mint.MI_InkBall_Mint"), Teams::Mint},
+		{TEXT("/Game/Assets/InkBall/Materials/MI_InkBall_Choco.MI_InkBall_Choco"), Teams::Choco},
+		{TEXT("/Game/Assets/InkBottle/Materials/Liquid/MI_InkLiquid_Mint.MI_InkLiquid_Mint"), Teams::Mint},
+		{TEXT("/Game/Assets/InkBottle/Materials/Liquid/MI_InkLiquid_Choco.MI_InkLiquid_Choco"), Teams::Choco},
+		{TEXT("/Game/Assets/InkBottle/Materials/Surface/MI_InkSurface_Mint.MI_InkSurface_Mint"), Teams::Mint},
+		{TEXT("/Game/Assets/InkBottle/Materials/Surface/MI_InkSurface_Choco.MI_InkSurface_Choco"), Teams::Choco},
+		{TEXT("/Game/LevelPrototyping/Paint/Graybox/MI_GB_Mint.MI_GB_Mint"), Teams::Mint},
+		{TEXT("/Game/LevelPrototyping/Paint/Graybox/MI_GB_Choco.MI_GB_Choco"), Teams::Choco},
+	};
+	for (const FTeamInstance& Entry : TeamInstances)
+	{
+		const UMaterialInstance* const Instance = LoadObject<UMaterialInstance>(nullptr, Entry.Path);
+		if (!TestNotNull(*FString::Printf(TEXT("%s loads"), Entry.Path), Instance))
+		{
+			continue;
+		}
+		float TeamId = -1.0f;
+		TestTrue(*FString::Printf(TEXT("%s: has TeamId"), Entry.Path), ReadScalar(*Instance, TeamLook::TeamIdParameter, TeamId));
+		TestEqual(*FString::Printf(TEXT("%s: TeamId"), Entry.Path), TeamId, static_cast<float>(Entry.Team));
+	}
+
+	static const FName UseTeamLookParameter(TEXT("UseTeamLook"));
+	for (const TCHAR* const Path : {
+			 TEXT("/Game/Assets/InkBottle/Materials/Liquid/MI_InkLiquid_Red.MI_InkLiquid_Red"),
+			 TEXT("/Game/Assets/InkBottle/Materials/Surface/MI_InkSurface_Red.MI_InkSurface_Red")})
+	{
+		const UMaterialInstance* const Instance = LoadObject<UMaterialInstance>(nullptr, Path);
+		if (!TestNotNull(*FString::Printf(TEXT("%s loads"), Path), Instance))
+		{
+			continue;
+		}
+		float UseTeamLook = 1.0f;
+		ReadScalar(*Instance, UseTeamLookParameter, UseTeamLook);
+		TestEqual(*FString::Printf(TEXT("%s: UseTeamLook is off"), Path), UseTeamLook, 0.0f);
+	}
+
+	const UClass* const SideSplatClass = UPaintSettings::Get().SideSplatEffectClass.LoadSynchronous();
+	if (TestNotNull(TEXT("SideSplatEffectClass loads"), SideSplatClass))
+	{
+		const APaintSideSplat* const SideSplat = Cast<APaintSideSplat>(SideSplatClass->GetDefaultObject());
+		if (TestNotNull(TEXT("SideSplatEffectClass is a PaintSideSplat"), SideSplat))
+		{
+			TestNotNull(TEXT("side splat has a decal material"), SideSplat->GetDecalMaterial());
+		}
+	}
 	return true;
 }
 
