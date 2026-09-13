@@ -1,13 +1,14 @@
 ﻿# 10단계 개발분이 머지 후에도 살아 있는지 기계적으로 확인한다.
 #
-#   pwsh -File Docs\MergeCheck.ps1          (저장소 루트에서)
+#   pwsh -File docs\history\2026-09-merge\MergeCheck.ps1   (저장소 루트에서)
 #
 # 값(숫자)까지는 못 본다 — .uasset 안의 수치는 에디터로 확인해야 하므로
-# Docs/MergeRecovery.md 의 표를 보고 손으로 대조할 것.
+# docs/history/2026-09-merge/MergeRecovery.md 의 표를 보고 손으로 대조할 것.
 # 여기서 잡는 것은 "통째로 사라진 것"이다.
 
 $ErrorActionPreference = 'Stop'
-$Root = Split-Path -Parent $PSScriptRoot
+# docs/history/2026-09-merge/ 에서 세 단계 위가 저장소 루트다.
+$Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
 $script:Missing = @()
 $script:Ok = 0
 
@@ -146,5 +147,5 @@ if ($script:Missing.Count -eq 0) {
 Write-Host "통과 $($script:Ok)개 / 실패 $($script:Missing.Count)개" -ForegroundColor Yellow
 Write-Host ''
 $script:Missing | Sort-Object Step | Format-Table -AutoSize
-Write-Host "Docs/MergeRecovery.md 에서 해당 단계를 찾아 복구할 것." -ForegroundColor Yellow
+Write-Host "docs/history/2026-09-merge/MergeRecovery.md 에서 해당 단계를 찾아 복구할 것." -ForegroundColor Yellow
 exit 1

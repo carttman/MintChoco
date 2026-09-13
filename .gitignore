@@ -73,3 +73,10 @@ Plugins/**/Intermediate/*
 
 # Cache files for the editor to use
 DerivedDataCache/*
+
+# IDE user settings
+.idea/
+*.DotSettings.user
+
+# Per-user editor settings
+Config/DefaultEditorPerProjectUserSettings.ini
