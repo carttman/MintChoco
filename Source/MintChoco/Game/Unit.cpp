@@ -857,6 +857,17 @@ void AUnit::HandleHeroLandingPhaseChanged(EHeroLandingPhase NewPhase)
 	}
 }
 
+void AUnit::OnRep_HeroLandingPhase()
+{
+	// 프록시의 무브먼트는 단계 기계를 돌리지 않아 단계를 모른다. 내리꽂기가 중력 없는 직선인
+	// 것도 단계로 판단하므로(GetGravityZ), 복제된 값을 넣어 주지 않으면 프록시만 중력을 더
+	// 받아 서버보다 빨리 가라앉는다.
+	if (UUnitMovementComponent* const Movement = GetUnitMovement())
+	{
+		Movement->SetSimulatedHeroLandingPhase(ReplicatedHeroPhase);
+	}
+}
+
 EHeroLandingPhase AUnit::GetHeroLandingPhase() const
 {
 	// 이 머신이 단계 기계를 직접 돌리는 경우(소유자, 서버)에는 그 값이 가장 빠르고 정확하다.

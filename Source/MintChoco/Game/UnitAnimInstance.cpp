@@ -104,6 +104,7 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		bIsStunned = Unit->IsStunned();
 		// 유닛에게 묻는다: 원격 폰의 단계는 무브먼트가 아니라 복제된 값에서 온다.
 		HeroLandingPhase = Unit->GetHeroLandingPhase();
+		bIsHeroLanding = HeroLandingPhase != EHeroLandingPhase::None;
 		bIsFiring = Unit->GetPaintWeapon() && Unit->GetPaintWeapon()->IsTriggerHeld();
 
 		const UItemSlotComponent* const Slot = Unit->GetItemSlot();
@@ -128,6 +129,7 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		bIsDashing = false;
 		bIsStunned = false;
 		HeroLandingPhase = EHeroLandingPhase::None;
+		bIsHeroLanding = false;
 		bIsFiring = false;
 		bRecentlyFired = false;
 		bIsAiming = false;

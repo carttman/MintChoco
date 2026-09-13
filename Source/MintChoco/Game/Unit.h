@@ -415,8 +415,11 @@ private:
 	 * 애니메이션용 히어로 랜딩 단계. 소유자와 서버는 무브먼트에서 직접 읽으므로 쓰지 않는다.
 	 * 대시와 같은 이유로 여기 있다: 단계 자체는 압축 플래그라 다른 클라이언트에 닿지 않는다.
 	 */
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_HeroLandingPhase)
 	EHeroLandingPhase ReplicatedHeroPhase = EHeroLandingPhase::None;
+
+	UFUNCTION()
+	void OnRep_HeroLandingPhase();
 
 	/** 지속되는 트레일이라 시작할 때 만들고 끝날 때 직접 꺼야 한다. */
 	UPROPERTY(Transient)

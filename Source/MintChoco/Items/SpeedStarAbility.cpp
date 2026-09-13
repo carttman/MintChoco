@@ -4,6 +4,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Engine/HitResult.h"
 #include "Engine/World.h"
+#include "GameFramework/Character.h"
 
 #include "Game/GameGameState.h"
 #include "Game/Unit.h"
@@ -125,6 +126,24 @@ float UGA_SpeedStar::StretchForRun(const USpeedStarProfile& Profile, float Strai
 	return FMath::Min(Profile.TrailStretch, Brush->StretchWithinTail(Radius, Radius + FMath::Max(StraightRun, 0.0f)));
 }
 
+bool UGA_SpeedStar::FindTrailGround(const ACharacter& Character, const USpeedStarProfile& Profile, const FVector& At, FHitResult& OutHit)
+{
+	const UWorld* const World = Character.GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	// At은 캡슐 중심이므로 발밑까지 내려온 다음 MarkGroundReach만큼 더 본다. 예전에는 이 값이
+	// 60cm 고정이라 살짝만 떠도(점프, 히어로 랜딩) 바닥을 못 찾아 자국이 끊겼다.
+	const float HalfHeight = Character.GetCapsuleComponent() ? Character.GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 90.0f;
+	const FVector End = At - FVector(0.0f, 0.0f, HalfHeight + FMath::Max(Profile.MarkGroundReach, 0.0f));
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(SpeedStarTrail), /*bTraceComplex=*/true, &Character);
+	Params.bReturnFaceIndex = true;
+	return World->LineTraceSingleByChannel(OutHit, At, End, ECC_Visibility, Params);
+}
+
 bool UGA_SpeedStar::DropMark(AUnit& Unit, const USpeedStarProfile& Profile, const FVector& At, const FVector& Direction, float Stretch, uint8 PaintId, uint8 StarGen)
 {
 	UWorld* const World = Unit.GetWorld();
@@ -133,15 +152,8 @@ bool UGA_SpeedStar::DropMark(AUnit& Unit, const USpeedStarProfile& Profile, cons
 		return false;
 	}
 
-	const float HalfHeight = Unit.GetCapsuleComponent() ? Unit.GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 90.0f;
-	const FVector Start = At;
-	const FVector End = At - FVector(0.0f, 0.0f, HalfHeight + 60.0f);
-
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(SpeedStarTrail), /*bTraceComplex=*/true, &Unit);
-	Params.bReturnFaceIndex = true;
-
 	FHitResult Hit;
-	if (!World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+	if (!FindTrailGround(Unit, Profile, At, Hit))
 	{
 		return false;
 	}
