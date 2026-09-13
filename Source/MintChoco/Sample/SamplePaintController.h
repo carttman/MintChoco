@@ -129,11 +129,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI")
 	TSubclassOf<UUserWidget> HUDWidgetClass;
 
-	/** The team paint ratio bar (WBP_PaintBar), shown at the top center. Optional. */
+	/**
+	 * The team paint ratio bar (WBP_PaintBar), shown at the top center. Optional.
+	 * Skipped when HUDWidgetClass already carries a UPaintBarWidget; that bar is used instead.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI")
 	TSubclassOf<UPaintBarWidget> PaintBarWidgetClass;
 
-	/** Distance from the top of the screen to the bar; the KO labels sit in this space. */
+	/** Distance from the top of the screen to a standalone bar; the KO labels sit in this space. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Sample|UI", meta = (ForceUnits = "px"))
 	float PaintBarTopOffset = 56.0f;
 

@@ -4,6 +4,7 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Blueprint/GameViewportSubsystem.h"
+#include "Blueprint/WidgetTree.h"
 #include "DrawDebugHelpers.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -26,6 +27,26 @@
 #include "Weapons/PaintDeposit.h"
 #include "Weapons/PaintWeaponComponent.h"
 #include "Weapons/PaintWeaponProfile.h"
+
+namespace
+{
+	/** The paint bar a HUD widget already carries, so the sample does not stack a second one on top of it. */
+	UPaintBarWidget* FindPaintBar(UUserWidget* Hud)
+	{
+		UPaintBarWidget* Found = nullptr;
+		if (Hud && Hud->WidgetTree)
+		{
+			Hud->WidgetTree->ForEachWidget([&Found](UWidget* Widget)
+			{
+				if (!Found)
+				{
+					Found = Cast<UPaintBarWidget>(Widget);
+				}
+			});
+		}
+		return Found;
+	}
+}
 
 ASamplePaintController::ASamplePaintController()
 {
@@ -56,18 +77,22 @@ void ASamplePaintController::BeginPlay()
 	ChargeWidget = AddLocalWidget(ChargeWidgetClass);
 	HUDWidget = AddLocalWidget(HUDWidgetClass);
 
-	PaintBarWidget = AddLocalWidget(PaintBarWidgetClass);
-	UGameViewportSubsystem* const Viewport = UGameViewportSubsystem::Get();
-	if (PaintBarWidget && Viewport)
+	PaintBarWidget = FindPaintBar(HUDWidget);
+	if (!PaintBarWidget)
 	{
-		// A viewport widget stretches over the whole screen by default; pin the bar to the top center at its own size.
-		// The slot is written in one go because SetDesiredSizeInViewport and SetPositionInViewport reset the anchors to (0, 0).
-		FGameViewportWidgetSlot Slot = Viewport->GetWidgetSlot(PaintBarWidget);
-		const FVector2D BarSize = PaintBarWidget->GetBarSize();
-		Slot.Anchors = FAnchors(0.5f, 0.0f);
-		Slot.Alignment = FVector2D(0.5f, 0.0f);
-		Slot.Offsets = FMargin(0.0f, PaintBarTopOffset, static_cast<float>(BarSize.X), static_cast<float>(BarSize.Y));
-		Viewport->SetWidgetSlot(PaintBarWidget, Slot);
+		PaintBarWidget = AddLocalWidget(PaintBarWidgetClass);
+		UGameViewportSubsystem* const Viewport = UGameViewportSubsystem::Get();
+		if (PaintBarWidget && Viewport)
+		{
+			// A viewport widget stretches over the whole screen by default; pin the bar to the top center at its own size.
+			// The slot is written in one go because SetDesiredSizeInViewport and SetPositionInViewport reset the anchors to (0, 0).
+			FGameViewportWidgetSlot Slot = Viewport->GetWidgetSlot(PaintBarWidget);
+			const FVector2D BarSize = PaintBarWidget->GetBarSize();
+			Slot.Anchors = FAnchors(0.5f, 0.0f);
+			Slot.Alignment = FVector2D(0.5f, 0.0f);
+			Slot.Offsets = FMargin(0.0f, PaintBarTopOffset, static_cast<float>(BarSize.X), static_cast<float>(BarSize.Y));
+			Viewport->SetWidgetSlot(PaintBarWidget, Slot);
+		}
 	}
 }
 
