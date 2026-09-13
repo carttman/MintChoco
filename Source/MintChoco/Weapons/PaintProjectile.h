@@ -36,7 +36,14 @@ public:
 	 * when it initializes. A cosmetic ball is a client's picture of one the server owns: it flies
 	 * and dies identically but leaves no paint.
 	 */
-	void Init(const UPaintballProfile* InProfile, uint8 InPaintId, int32 InSeed, const FVector& Velocity, bool bInCosmetic);
+	/**
+	 * InDropAfterOverride 가 0 이상이면 프로필의 DropAfter 대신 그 시간을 쓴다.
+	 *
+	 * 프로필의 값은 “이 탄은 언제나 이 거리에서 떨어진다” 는 뜻이다. 한 번의 사격이 여러 발을
+	 * 서로 다른 거리에 떨어뜨려야 할 때(차지샷의 연속 발사)만 발마다 다른 값을 받는다.
+	 */
+	void Init(const UPaintballProfile* InProfile, uint8 InPaintId, int32 InSeed, const FVector& Velocity, bool bInCosmetic,
+		float InDropAfterOverride = -1.0f);
 
 	/** 이 공이 칠하는 id(팀). 초콜릿 돔이 상대 탄을 가려낼 때 본다. */
 	uint8 GetPaintId() const { return PaintId; }
@@ -44,28 +51,11 @@ public:
 	/** The body material a ball of this paint id wears, or null when the id has none and keeps the mesh's own. */
 	UMaterialInterface* GetTeamMaterial(uint8 InPaintId) const;
 
-	/**
-	 * 풀에서 꺼낸 공을 날 수 있는 상태로 되돌린다. Init 직전에 불린다.
-	 *
-	 * 충돌한 무브먼트 컴포넌트는 StopSimulating으로 UpdatedComponent를 null로 만든다.
-	 * 속도만 다시 넣으면 공이 제자리에 서 있으므로, 붙잡을 컴포넌트를 다시 알려 줘야 한다.
-	 */
-	void RestoreForReuse();
-
-	/**
-	 * 날기를 멈추고 재운다. 풀 반납과 EndPlay 양쪽에서 불린다.
-	 *
-	 * 쏜 사람의 콜리전에 박아 둔 상호 무시 항목을 여기서 지운다. 풀로 반납할 때는 EndPlay가
-	 * 불리지 않으므로, 이 정리가 여기 있지 않으면 슈터의 무시 목록이 쏠 때마다 하나씩
-	 * 영원히 자란다.
-	 */
-	void Deactivate();
-
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 
-	/** 수명이 다했을 때. 파괴 대신 풀로 돌아간다. */
-	virtual void LifeSpanExpired() override;
+	/** Only ticks when this ball paints a trail; a plain ball is driven by its movement component alone. */
+	virtual void Tick(float DeltaSeconds) override;
 
 	UFUNCTION()
 	void OnHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent,
@@ -90,10 +80,32 @@ protected:
 	TArray<TObjectPtr<UMaterialInterface>> TeamMaterials;
 
 private:
+	/**
+	 * Paints the surfaces around one point of the flight path: rays spread around the plane across
+	 * the direction of travel, so the same code covers floor, ceiling and walls whichever way the
+	 * ball is heading. Returns how many splats it left.
+	 */
+	int32 PaintTrailSample(const FVector& Location, int32 SampleIndex);
+
+	/** DropAfter가 지났다. 여기서부터 무겁게 떨어진다. */
+	void ApplyDropGravity();
+
 	UPROPERTY(Transient)
 	TObjectPtr<const UPaintballProfile> Profile;
 
 	uint8 PaintId = 0;
 	int32 Seed = 0;
 	bool bCosmetic = false;
+
+	/** Trail bookkeeping. Distance is measured along the real path, so a lobbed arc samples evenly. */
+	FVector LastTrailLocation = FVector::ZeroVector;
+	float TrailDistance = 0.0f;
+	int32 TrailSampleCount = 0;
+	int32 TrailSplatCount = 0;
+
+	/**
+	 * 중력을 바꾸는 타이머. Tick이 아닌 이유는 Tick이 궤적 도포용이라 서버의 진짜 탄에서만
+	 * 켜지기 때문이다. 타이머는 모든 머신에서 같은 시각에 돌아 연출 탄도 함께 떨어진다.
+	 */
+	FTimerHandle DropTimer;
 };
