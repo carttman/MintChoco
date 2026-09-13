@@ -7,7 +7,9 @@
 #include "SweetSpinnerAbility.generated.h"
 
 class AUnit;
+class UAnimSequenceBase;
 class USweetSpinnerProfile;
+enum class EItemPoseBlend : uint8;
 
 /**
  * 스위트 스피너. 캐릭터는 돌지 않고, 서버가 일정 간격으로 쏘는 산탄의 방향만 시작 요에서
@@ -45,6 +47,21 @@ protected:
 	virtual void OnItemEnded(AUnit& Unit, const UItemProfile& Profile) override;
 
 private:
+	/**
+	 * 시작(상체) → 회전(전신) → 끝(상체)으로 자세를 넘길 타이머를 건다. 구간의 길이는 각 클립의
+	 * 길이가 정한다. 서버와 소유 클라이언트가 각자 굴리고, 나머지 머신은 슬롯의 복제로 따라온다.
+	 */
+	void SchedulePosePhases(AUnit& Unit);
+
+	/** 자세를 갈아 끼운다. 슬롯이 없으면 아무것도 안 한다. */
+	void SetPose(UAnimSequenceBase* Animation, EItemPoseBlend Blend);
+
+	UFUNCTION()
+	void EnterSpinPose();
+
+	UFUNCTION()
+	void EnterEndPose();
+
 	/** 회전 구간이 시작될 때. 여기서부터 VolleyInterval 간격으로 산탄이 나간다. */
 	UFUNCTION()
 	void StartVolleys();

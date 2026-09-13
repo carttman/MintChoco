@@ -38,6 +38,9 @@ void UGA_SweetSpinner::OnItemActivated(AUnit& Unit, const UItemProfile& Profile)
 		Secondary->ReleaseTrigger();
 	}
 
+	// 자세는 연출이라 서버와 소유 클라이언트가 각자 굴린다. 나머지 머신은 슬롯의 복제로 따라온다.
+	SchedulePosePhases(Unit);
+
 	if (!IsAuthority() || !Spinner->Volley)
 	{
 		return;
@@ -64,6 +67,54 @@ void UGA_SweetSpinner::OnItemActivated(AUnit& Unit, const UItemProfile& Profile)
 	StartVolleys();
 }
 
+void UGA_SweetSpinner::SchedulePosePhases(AUnit& Unit)
+{
+	const float StartLength = Spinner->GetStartPhaseLength();
+	const float SpinLength = Spinner->GetSpinPhaseLength();
+
+	// 시작 동작이 있으면 상체에만 얹는다: 하체는 로코모션이 그대로 돌아 달리면서 준비할 수 있다.
+	if (Spinner->StartAnimation && StartLength > UE_KINDA_SMALL_NUMBER)
+	{
+		SetPose(Spinner->StartAnimation, EItemPoseBlend::UpperBody);
+
+		UAbilityTask_WaitDelay* const ToSpin = UAbilityTask_WaitDelay::WaitDelay(this, StartLength);
+		ToSpin->OnFinish.AddDynamic(this, &UGA_SweetSpinner::EnterSpinPose);
+		ToSpin->ReadyForActivation();
+	}
+	else
+	{
+		EnterSpinPose();
+	}
+
+	// 마무리는 회전이 끝나는 시각에. 없으면 회전 자세가 효과 끝까지 간다.
+	if (Spinner->EndAnimation)
+	{
+		UAbilityTask_WaitDelay* const ToEnd = UAbilityTask_WaitDelay::WaitDelay(this, StartLength + SpinLength);
+		ToEnd->OnFinish.AddDynamic(this, &UGA_SweetSpinner::EnterEndPose);
+		ToEnd->ReadyForActivation();
+	}
+}
+
+void UGA_SweetSpinner::SetPose(UAnimSequenceBase* Animation, EItemPoseBlend Blend)
+{
+	AUnit* const Unit = GetUnit();
+	if (UItemSlotComponent* const Slot = Unit ? Unit->GetItemSlot() : nullptr)
+	{
+		Slot->SetItemPoseOverride(Animation, Blend);
+	}
+}
+
+void UGA_SweetSpinner::EnterSpinPose()
+{
+	// 회전만 전신을 덮는다. 제자리에서 도는 동작이라 하체가 따로 놀면 안 된다.
+	SetPose(Spinner ? ToRawPtr(Spinner->SpinAnimation) : nullptr, EItemPoseBlend::FullBody);
+}
+
+void UGA_SweetSpinner::EnterEndPose()
+{
+	SetPose(Spinner ? ToRawPtr(Spinner->EndAnimation) : nullptr, EItemPoseBlend::UpperBody);
+}
+
 void UGA_SweetSpinner::StartVolleys()
 {
 	if (!Spinner || !Spinner->Volley)
@@ -78,6 +129,12 @@ void UGA_SweetSpinner::StartVolleys()
 
 void UGA_SweetSpinner::OnItemEnded(AUnit& Unit, const UItemProfile& Profile)
 {
+	// 갈아 끼운 자세를 되돌린다. 남겨 두면 다음 아이템의 자세가 이걸로 덮인다.
+	if (UItemSlotComponent* const Slot = Unit.GetItemSlot())
+	{
+		Slot->SetItemPoseOverride(nullptr, EItemPoseBlend::FullBody);
+	}
+
 	Spinner = nullptr;
 }
 

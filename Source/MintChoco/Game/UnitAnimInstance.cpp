@@ -108,10 +108,20 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		bIsFiring = Unit->GetPaintWeapon() && Unit->GetPaintWeapon()->IsTriggerHeld();
 
 		const UItemSlotComponent* const Slot = Unit->GetItemSlot();
-		ItemPose = Slot ? Slot->GetItemPose() : nullptr;
-		bHasItemPose = ItemPose != nullptr;
+		UAnimSequenceBase* const Pose = Slot ? Slot->GetItemPose() : nullptr;
+		bHasItemPose = Pose != nullptr;
 		bHasUpperBodyItemPose = bHasItemPose && Slot->GetItemPoseBlend() == EItemPoseBlend::UpperBody;
 		bHasFullBodyItemPose = bHasItemPose && !bHasUpperBodyItemPose;
+
+		// 자세가 사라져도 마지막 클립은 그대로 들고 있는다.
+		//
+		// 가지가 꺼질 때 곧바로 사라지는 것이 아니라 블렌드 아웃되는데, 그동안에도 그 안의
+		// 시퀀스 플레이어는 계속 평가된다. 여기를 비우면 클립 없는 플레이어가 레퍼런스 포즈를
+		// 내므로 블렌드 시간만큼 T 포즈가 새어 나온다.
+		if (Pose)
+		{
+			ItemPose = Pose;
+		}
 
 		const UWorld* const World = GetWorld();
 		bRecentlyFired = World && FUnitAnimMath::IsFireHoldActive(World->GetTimeSeconds(), LastFiredTime, FireHoldTime);
@@ -124,7 +134,7 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		bIsHeroLanding = false;
 		bIsFiring = false;
 		bRecentlyFired = false;
-		ItemPose = nullptr;
+		// ItemPose는 비우지 않는다. 위와 같은 이유로, 블렌드 아웃되는 동안에도 클립이 있어야 한다.
 		bHasItemPose = false;
 		bHasFullBodyItemPose = false;
 		bHasUpperBodyItemPose = false;

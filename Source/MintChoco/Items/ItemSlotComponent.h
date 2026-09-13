@@ -82,6 +82,15 @@ public:
 	EItemPoseBlend GetItemPoseBlend() const;
 
 	/**
+	 * 효과가 도는 중에 어빌리티가 자세를 갈아 끼울 때. 프로필의 PoseAnimation보다 우선하고,
+	 * nullptr을 넣으면 다시 프로필 값으로 돌아간다.
+	 *
+	 * 스위트 스피너가 시작(상체) → 회전(전신) → 끝(상체)을 이걸로 넘긴다. 대시와 같은 규칙이다:
+	 * 서버와 소유 클라이언트가 각자 세우고, 나머지에게는 서버가 복제한다.
+	 */
+	void SetItemPoseOverride(UAnimSequenceBase* Animation, EItemPoseBlend Blend);
+
+	/**
 	 * 조준형 아이템이 조준을 시작하거나 끝낼 때 어빌리티가 부른다. 조준 중에는 슬롯을 비우지
 	 * 않으므로, 무엇을 조준하는지는 HeldItem이 그대로 알려 준다.
 	 *
@@ -198,6 +207,16 @@ private:
 	 */
 	UPROPERTY(Transient)
 	TObjectPtr<UItemProfile> EffectItem;
+
+	/**
+	 * 어빌리티가 효과 중에 갈아 끼운 자세. 프로필의 값보다 우선한다. 효과 하나 안에서 구간마다
+	 * 자세가 바뀌는 아이템(스위트 스피너)이 쓴다. 소유자는 자기 어빌리티로 이미 알고 있다.
+	 */
+	UPROPERTY(Replicated)
+	TObjectPtr<UAnimSequenceBase> PoseOverride;
+
+	UPROPERTY(Replicated)
+	EItemPoseBlend PoseOverrideBlend = EItemPoseBlend::FullBody;
 
 	/** 지금 자세를 정하는 아이템. 조준 중이면 슬롯의 것, 아니면 효과가 도는 것. 없으면 nullptr. */
 	const UItemProfile* GetPoseItem() const;

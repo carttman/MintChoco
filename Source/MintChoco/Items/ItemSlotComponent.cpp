@@ -63,6 +63,10 @@ void UItemSlotComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 
 	// 소유자는 자기가 조준을 시작했다는 것을 이미 안다. 보내면 지연된 값이 예측을 되돌린다.
 	DOREPLIFETIME_CONDITION(UItemSlotComponent, bAiming, COND_SkipOwner);
+
+	// 자세 교체도 같다: 소유자는 자기 어빌리티가 구간을 굴리므로 이미 알고 있다.
+	DOREPLIFETIME_CONDITION(UItemSlotComponent, PoseOverride, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(UItemSlotComponent, PoseOverrideBlend, COND_SkipOwner);
 }
 
 UAbilitySystemComponent* UItemSlotComponent::GetAbilitySystem() const
@@ -256,14 +260,28 @@ const UItemProfile* UItemSlotComponent::GetPoseItem() const
 
 UAnimSequenceBase* UItemSlotComponent::GetItemPose() const
 {
+	if (PoseOverride)
+	{
+		return PoseOverride;
+	}
 	const UItemProfile* const Item = GetPoseItem();
 	return Item ? Item->PoseAnimation : nullptr;
 }
 
 EItemPoseBlend UItemSlotComponent::GetItemPoseBlend() const
 {
+	if (PoseOverride)
+	{
+		return PoseOverrideBlend;
+	}
 	const UItemProfile* const Item = GetPoseItem();
 	return Item ? Item->PoseBlend : EItemPoseBlend::FullBody;
+}
+
+void UItemSlotComponent::SetItemPoseOverride(UAnimSequenceBase* Animation, EItemPoseBlend Blend)
+{
+	PoseOverride = Animation;
+	PoseOverrideBlend = Blend;
 }
 
 void UItemSlotComponent::SetAiming(bool bNewAiming)

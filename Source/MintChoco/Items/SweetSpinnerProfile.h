@@ -22,9 +22,16 @@ namespace SweetSpinner
 
 	/**
 	 * 시퀀스에서 회전 구간 표시(UAnimNotifyState_SpinnerVolley)를 찾아 시작·끝 시각(초)을 준다.
-	 * 표시가 없거나 길이가 0이면 거짓이고, 그때는 지속시간 내내 쏜다.
+	 * 표시가 없거나 길이가 0이면 거짓이고, 그때는 회전 클립 전체가 발사 구간이다.
 	 */
 	MINTCHOCO_API bool FindVolleyWindow(const UAnimSequenceBase* Sequence, float& OutStart, float& OutEnd);
+
+	/**
+	 * 효과 안에서 산탄이 나가는 구간(초). 시작 동작이 끝난 뒤 회전이 시작되고, 회전 클립 안에
+	 * 표시(Inner)가 있으면 그 안에서만 쏜다. 전부 지속시간 안으로 잘린다.
+	 */
+	MINTCHOCO_API void ComposeVolleyWindow(float StartLength, float SpinLength, float InnerStart, float InnerEnd,
+		float Duration, float& OutStart, float& OutEnd);
 }
 
 /**
@@ -67,16 +74,35 @@ public:
 	FName HandSocket = TEXT("hand_r");
 
 	/**
-	 * 회전 구간을 표시해 둔 애니메이션. 그 시퀀스의 Spinner Volley Window 구간에서만 발사한다.
-	 * 비어 있거나 표시가 없으면 지속시간 내내 쏜다.
-	 *
-	 * 캐릭터에 실제로 재생되는 것은 UseAnimation·PoseAnimation이다. 여기는 "언제 도는지"를 읽어
-	 * 갈 곳을 가리킬 뿐이므로, 보통 같은 에셋을 넣는다.
+	 * 회전에 들어가기 전의 동작. 상체에만 얹히므로 하체는 로코모션이 그대로 돈다.
+	 * 이 클립의 길이가 곧 준비 구간의 길이다. 비어 있으면 바로 회전부터 시작한다.
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spinner")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spinner|Animation")
+	TObjectPtr<UAnimSequenceBase> StartAnimation;
+
+	/**
+	 * 도는 동안의 동작. 전신을 덮는다. 이 클립의 길이가 곧 회전 구간의 길이이고, 산탄은 이
+	 * 구간에서만 나간다.
+	 *
+	 * 클립 안에 Spinner Volley Window를 얹으면 그 안에서만 쏜다(도입부가 붙어 있는 클립을 다듬을
+	 * 때). 표시가 없으면 클립 전체에서 쏜다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spinner|Animation")
 	TObjectPtr<UAnimSequenceBase> SpinAnimation;
 
-	/** 발사 구간(초). 표시가 없으면 [0, Duration] 전체다. */
+	/**
+	 * 회전이 끝난 뒤의 마무리. 상체에만 얹힌다. 비어 있으면 회전 자세가 효과가 끝날 때까지 간다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spinner|Animation")
+	TObjectPtr<UAnimSequenceBase> EndAnimation;
+
+	/** 준비 구간의 길이(초). 시작 동작의 클립 길이이고, 없으면 0. */
+	float GetStartPhaseLength() const;
+
+	/** 회전 구간의 길이(초). 회전 클립 길이이고, 없으면 지속시간에서 준비 구간을 뺀 나머지 전부. */
+	float GetSpinPhaseLength() const;
+
+	/** 발사 구간(초). 회전 구간 안이고, 표시가 있으면 그 안이다. */
 	void GetVolleyWindow(float& OutStart, float& OutEnd) const;
 
 	/** 주어진 구간을 VolleyInterval로 나눈 발사 횟수. 최소 1. */
