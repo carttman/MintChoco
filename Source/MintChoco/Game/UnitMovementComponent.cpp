@@ -107,6 +107,20 @@ bool UUnitMovementComponent::IsHeroLandingAllowed() const
 	return Held && Held->GetStateTag() == ItemTags::State_Item_HeroLanding;
 }
 
+bool UUnitMovementComponent::IsSimulatedProxy() const
+{
+	return CharacterOwner && CharacterOwner->GetLocalRole() == ROLE_SimulatedProxy;
+}
+
+void UUnitMovementComponent::SetSimulatedHeroLandingPhase(EHeroLandingPhase NewPhase)
+{
+	// 단계를 직접 굴리는 쪽은 자기 계산이 진실이다. 복제된 값으로 덮으면 지연만큼 어긋난다.
+	if (IsSimulatedProxy())
+	{
+		HeroPhase = NewPhase;
+	}
+}
+
 bool UUnitMovementComponent::IsInputLocked() const
 {
 	if (HeroPhase != EHeroLandingPhase::None)
@@ -141,6 +155,25 @@ void UUnitMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 void UUnitMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
 {
 	Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
+
+	// 프록시에도 이 함수는 불린다(SimulateMovement 안에서). 그쪽에는 의도 플래그가 없어 항상
+	// 0이므로, 그대로 두면 복제로 받은 단계를 스스로 취소해 낙하로 되돌린다.
+	if (IsSimulatedProxy())
+	{
+		return;
+	}
+
+	// 착지 경직. 시간이 다 되면 스스로 풀린다. 이 단계에 있는 동안은 IsInputLocked가 참이라
+	// 최고 속도가 0이고 입력 가속도 0이 되므로, 서버와 클라이언트가 같은 결과를 낸다.
+	if (HeroPhase == EHeroLandingPhase::Recover)
+	{
+		HeroPhaseTime += DeltaSeconds;
+		if (HeroPhaseTime >= HeroParams.LandingRecoverTime)
+		{
+			SetHeroPhase(EHeroLandingPhase::None);
+			HeroPhaseTime = 0.0f;
+		}
+	}
 
 	if (bWantsHeroLanding)
 	{
@@ -205,7 +238,11 @@ bool UUnitMovementComponent::FinishHeroLandingDive()
 	{
 		return false;
 	}
-	SetHeroPhase(EHeroLandingPhase::None);
+	// 곧바로 평소로 돌아가지 않는다. 착지 동작이 도는 동안은 움직일 수 없어야 하는데, 그 판단이
+	// 이미 단계에 걸려 있다(IsInputLocked). 시간은 UpdateCharacterStateBeforeMovement가 깎고,
+	// HeroPhaseTime은 저장 무브에 실리므로 보정 후 리플레이에서도 같은 지점에서 풀린다.
+	const bool bRecovers = HeroParams.LandingRecoverTime > 0.0f;
+	SetHeroPhase(bRecovers ? EHeroLandingPhase::Recover : EHeroLandingPhase::None);
 	HeroPhaseTime = 0.0f;
 	bWantsHeroLanding = 0;
 	bWantsHeroDive = 0;
@@ -223,7 +260,14 @@ void UUnitMovementComponent::PhysCustom(float DeltaTime, int32 Iterations)
 {
 	if (CustomMovementMode == CustomMode_HeroLanding)
 	{
-		PhysHeroLanding(DeltaTime, Iterations);
+		// 시뮬레이션 프록시도 여기까지 온다: 이동 모드는 복제되고, MoveSmooth는 MOVE_Custom이면
+		// 속도가 0이어도 PhysCustom을 부른다(CharacterMovementComponent.cpp). 그런데 그쪽에는
+		// 단계도 이륙점도 없으므로, 그대로 굴리면 아래의 "단계가 없다" 분기가 낙하로 되돌려
+		// 프록시만 바닥으로 떨어진다. 프록시의 위치는 복제가 끌고 가므로 여기서는 할 일이 없다.
+		if (!IsSimulatedProxy())
+		{
+			PhysHeroLanding(DeltaTime, Iterations);
+		}
 		return;
 	}
 	Super::PhysCustom(DeltaTime, Iterations);

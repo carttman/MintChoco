@@ -97,11 +97,22 @@ protected:
 	/**
 	 * 히어로 랜딩 단계. None이면 평소.
 	 *
-	 * 준비(Rise·Hover), 건너가기(Approach), 내리꽂기(Dive) 자세를 여기서 고른다. 착지 동작은
-	 * Dive에서 None으로 떨어지는 전이에 걸면 된다 — 그 전환은 모든 머신에서 보인다.
+	 * 준비(Rise·Hover), 건너가기(Approach), 내리꽂기(Dive), 착지 경직(Recover) 자세를 여기서
+	 * 고른다. 착지 동작은 Recover 동안 돌면 되고, 그 길이는 LandingRecoverTime이 정한다 —
+	 * 그동안은 움직일 수도 없으므로 동작과 조작이 어긋나지 않는다.
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Unit|State")
 	EHeroLandingPhase HeroLandingPhase = EHeroLandingPhase::None;
+
+	/**
+	 * 히어로 랜딩 중인지(단계가 None이 아닌지). 상체 레이어를 끄는 조건으로 쓴다.
+	 *
+	 * 히어로 랜딩 자세는 로코모션 스테이트 머신 안에 있어 상체 레이어보다 위에 있다. 그래서
+	 * 발사 직후 FireHoldTime 동안은 조준 상체가 랜딩 자세를 덮어쓴다. 랜딩 중에는 방아쇠가
+	 * 막혀 있으므로(State.Item.HeroLanding) 상체 조준을 켤 이유가 없다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|State")
+	bool bIsHeroLanding = false;
 
 	//~ 아이템
 

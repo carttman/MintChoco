@@ -27,6 +27,13 @@ enum class EHeroLandingPhase : uint8
 	 * 착지 판정이 오지 않는다. 그래서 높은 곳은 넘어가서 떨어뜨린다.
 	 */
 	Approach,
+	/**
+	 * 착지 직후의 경직. LandingRecoverTime 동안 움직일 수 없고, 그동안 착지 동작이 돈다.
+	 *
+	 * 곧바로 None으로 가지 않는 이유는 "못 움직인다"는 판단이 이미 단계에 걸려 있기 때문이다
+	 * (IsInputLocked). 시간을 따로 재면 서버와 클라이언트의 시계가 갈라져 고무줄이 난다.
+	 */
+	Recover,
 };
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnHeroLandingPhaseChanged, EHeroLandingPhase /*NewPhase*/);
@@ -62,6 +69,15 @@ struct MINTCHOCO_API FHeroLandingParams
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HeroLanding", meta = (ClampMin = "0", ForceUnits = "cm"))
 	float DiveApexClearance = 150.0f;
+
+	/**
+	 * 착지 뒤 움직이지 못하는 시간(초). 착지 동작이 이 시간 동안 돈다.
+	 *
+	 * 애님 블루프린트의 착지 상태도 이 단계(Recover)를 보고 들어오고 나가므로, 이 값을 클립
+	 * 길이에 맞추면 동작이 잘리거나 마지막 포즈로 멈춰 있는 일이 없다. 0이면 경직 없이 곧바로 움직인다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HeroLanding", meta = (ClampMin = "0", ForceUnits = "s"))
+	float LandingRecoverTime = 0.5f;
 
 	/** 조준 트레이스 길이(cm). 이보다 먼 곳을 보면 이륙 높이의 수평면과 만나는 점을 쓴다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HeroLanding", meta = (ClampMin = "100", ForceUnits = "cm"))
@@ -189,6 +205,15 @@ public:
 	void AbortHeroLanding();
 
 	/**
+	 * 시뮬레이션 프록시 전용. 복제된 단계를 그대로 받는다(AUnit이 넣어 준다).
+	 *
+	 * 프록시는 단계 기계를 돌리지 않으므로 단계를 알 길이 없는데, 내리꽂기 중 중력을 끄는
+	 * 판단이 거기 걸려 있다. 넣어 주지 않으면 프록시만 중력을 더 받아 서버보다 빨리 가라앉는다.
+	 * 단계를 직접 굴리는 쪽(소유자, 서버)에서는 아무 일도 하지 않는다.
+	 */
+	void SetSimulatedHeroLandingPhase(EHeroLandingPhase NewPhase);
+
+	/**
 	 * 부스트 중의 이동 속도(cm/s). 배율이 아니라 고정값이다: "감속 지대 무시"가 규칙이라
 	 * 기본 속도에 무엇이 곱해지든 이 값으로 달린다. 대시도 여기에 곱해지지 않는다.
 	 */
@@ -246,6 +271,14 @@ private:
 
 	/** 입력으로 움직일 수 없는 상태인지(스턴, 히어로 랜딩 단계). 유닛이 답하고, 유닛이 아니면 단계만 본다. */
 	bool IsInputLocked() const;
+
+	/**
+	 * 이 컴포넌트가 시뮬레이션 프록시(남의 화면에 보이는 남의 캐릭터)의 것인지.
+	 *
+	 * 그쪽에는 의도 플래그도 단계도 없다. 둘 다 압축 플래그를 타고 소유자와 서버에만 닿기
+	 * 때문이다. 위치는 복제가 끌고 가므로 단계 기계를 돌릴 이유도 없다.
+	 */
+	bool IsSimulatedProxy() const;
 
 	/** 값이 실제로 바뀔 때만 알린다. 단계는 이 함수로만 바꾼다(리플레이 복원은 예외). */
 	void SetHeroPhase(EHeroLandingPhase NewPhase);

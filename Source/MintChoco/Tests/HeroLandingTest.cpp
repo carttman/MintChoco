@@ -185,6 +185,129 @@ bool FHeroLandingDiveOnClickTest::RunTest(const FString& Parameters)
 }
 
 /**
+ * 착지 경직: 내려선 뒤 LandingRecoverTime 동안은 움직일 수 없고, 그 뒤 스스로 풀린다.
+ *
+ * 시간을 따로 재지 않고 단계로 다루는 것이 핵심이다. HeroPhaseTime은 저장 무브에 실리므로
+ * 보정 후 리플레이에서도 같은 지점에서 풀리고, 서버와 클라이언트가 같은 결론을 낸다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FHeroLandingRecoverTest,
+	"MintChoco.Items.HeroLanding.Recover",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FHeroLandingRecoverTest::RunTest(const FString& Parameters)
+{
+	TestTrue(TEXT("기본 경직은 0.5초다"), FMath::IsNearlyEqual(FHeroLandingParams().LandingRecoverTime, 0.5f));
+
+	UWorld* const World = MintChocoTest::MakeWorld();
+	if (!TestNotNull(TEXT("테스트 월드"), World))
+	{
+		return false;
+	}
+
+	ON_SCOPE_EXIT { MintChocoTest::DestroyWorld(World); };
+
+	MintChocoTest::SpawnBlock(*World, FVector(0.0f, 0.0f, -100.0f), FVector(4000.0f, 4000.0f, 100.0f));
+
+	UTestUnitMovementComponent* const Movement = HoverAt(*World, FVector(0.0f, 0.0f, 100.0f));
+	if (!TestNotNull(TEXT("정지 단계의 테스트 캐릭터"), Movement))
+	{
+		return false;
+	}
+
+	// 아래를 보고 좌클릭 → 내리꽂기.
+	LookAlong(*Movement, FRotator(-45.0f, 0.0f, 0.0f));
+	Movement->SetWantsHeroDive(true);
+	Movement->PhysCustom(0.016f, 0);
+	if (!TestEqual(TEXT("내리꽂기가 시작된다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::Dive))
+	{
+		return false;
+	}
+
+	// 착지. 곧바로 평소로 돌아가지 않고 경직 단계로 들어간다.
+	TestTrue(TEXT("내리꽂기 중의 착지는 히어로 랜딩의 착지다"), Movement->FinishHeroLandingDive());
+	TestEqual(TEXT("착지 직후는 경직 단계다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::Recover);
+
+	// 이게 이 테스트의 핵심: 경직 중에는 움직일 수 없다.
+	TestEqual(TEXT("경직 중에는 최고 속도가 0이다"), Movement->GetMaxSpeed(), 0.0f);
+	TestTrue(TEXT("경직 중에는 입력 가속도 먹지 않는다"),
+		Movement->ConstrainInputAcceleration(FVector(600.0f, 0.0f, 0.0f)).IsNearlyZero());
+
+	// 시간이 덜 지났으면 아직 풀리지 않는다.
+	Movement->UpdateCharacterStateBeforeMovement(0.25f);
+	TestEqual(TEXT("0.25초로는 풀리지 않는다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::Recover);
+
+	// 다 지나면 스스로 풀린다. 따로 걷어 주는 코드가 없어야 한다.
+	Movement->UpdateCharacterStateBeforeMovement(0.25f);
+	TestEqual(TEXT("0.5초가 지나면 풀린다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::None);
+	TestTrue(TEXT("풀리면 다시 움직일 수 있다"), Movement->GetMaxSpeed() > 0.0f);
+
+	return true;
+}
+
+/**
+ * 남의 화면에 보이는 남의 캐릭터(시뮬레이션 프록시)는 단계 기계를 돌리지 않아야 한다.
+ *
+ * 이동 모드는 복제되므로 프록시도 MOVE_Custom에 들어가고, MoveSmooth는 MOVE_Custom이면 속도가
+ * 0이어도 PhysCustom을 부른다. 그런데 단계와 이륙점은 압축 플래그를 타므로 프록시에는 없다.
+ * 그대로 굴리면 "단계가 없다" 분기가 낙하로 되돌려, 공중에 떠 있어야 할 캐릭터가 프록시
+ * 화면에서만 바닥으로 떨어진다. 눈에 띄는 증상인데 호스트 화면에서는 멀쩡해서 늦게 발견됐다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FHeroLandingSimulatedProxyTest,
+	"MintChoco.Items.HeroLanding.SimulatedProxy",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FHeroLandingSimulatedProxyTest::RunTest(const FString& Parameters)
+{
+	UWorld* const World = MintChocoTest::MakeWorld();
+	if (!TestNotNull(TEXT("테스트 월드"), World))
+	{
+		return false;
+	}
+
+	ON_SCOPE_EXIT { MintChocoTest::DestroyWorld(World); };
+
+	MintChocoTest::SpawnBlock(*World, FVector(0.0f, 0.0f, -100.0f), FVector(4000.0f, 4000.0f, 100.0f));
+
+	ATestUnitCharacter* const Character = World->SpawnActor<ATestUnitCharacter>(FVector(0.0f, 0.0f, 800.0f), FRotator::ZeroRotator);
+	UTestUnitMovementComponent* const Movement = Character ? Character->GetTestMovement() : nullptr;
+	if (!TestNotNull(TEXT("테스트 캐릭터의 무브먼트"), Movement))
+	{
+		return false;
+	}
+
+	// 프록시가 받는 것은 이동 모드뿐이다. 단계는 오지 않으므로 None으로 남는다.
+	Character->SetRole(ROLE_SimulatedProxy);
+	Movement->SetMovementMode(MOVE_Custom, UUnitMovementComponent::CustomMode_HeroLanding);
+	TestEqual(TEXT("프록시에는 단계가 없다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::None);
+
+	const FVector Before = Character->GetActorLocation();
+	for (int32 Step = 0; Step < 10; ++Step)
+	{
+		Movement->PhysCustom(0.016f, 0);
+	}
+
+	// 이게 깨지면 프록시 화면에서만 캐릭터가 공중에서 바닥으로 떨어진다.
+	TestEqual(TEXT("프록시는 커스텀 모드에 그대로 있는다"),
+		Movement->MovementMode, static_cast<TEnumAsByte<EMovementMode>>(MOVE_Custom));
+	TestEqual(TEXT("프록시는 스스로 움직이지 않는다(위치는 복제가 끌고 간다)"),
+		Character->GetActorLocation().Z, Before.Z);
+
+	// 복제된 단계는 그대로 받는다. 내리꽂기의 중력을 끄는 판단이 여기 걸려 있다.
+	Movement->SetSimulatedHeroLandingPhase(EHeroLandingPhase::Dive);
+	TestEqual(TEXT("프록시는 복제된 단계를 받는다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::Dive);
+	TestEqual(TEXT("내리꽂기는 프록시에서도 중력이 없다"), Movement->GetGravityZ(), 0.0f);
+
+	// 단계를 직접 굴리는 쪽은 복제 값으로 덮이지 않는다. 지연만큼 어긋나기 때문이다.
+	Character->SetRole(ROLE_Authority);
+	Movement->SetSimulatedHeroLandingPhase(EHeroLandingPhase::None);
+	TestEqual(TEXT("권한 쪽은 복제 값을 무시한다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::Dive);
+
+	return true;
+}
+
+/**
  * 착지점은 "내려설 수 있는 바닥"일 때만 나온다. 벽·허공·사거리 밖은 착지점이 없고, 그러면
  * 착지점 표시도 뜨지 않고 좌클릭도 듣지 않는다.
  */
