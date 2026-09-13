@@ -128,12 +128,16 @@ Each of these cost real debugging time once.
   edits through a fresh MIC, or save and restart the editor; a PIE-created MID
   renders whatever shader its parent material loaded at editor start.
 - `EditorAppToolset.CaptureViewport` with `captureTransform` renders the **editor
-  world**, not the PIE world. Use `CaptureEditorImage` for PIE; `SceneTools.find_actors`
-  does search the PIE world while it runs, and PIE actors address as
+  world**, not the PIE world. During Simulate, `SetCameraTransform` then `CaptureViewport`
+  with `captureTransform: null` renders the simulate world at that camera, without editor
+  sprites or wireframes; `CaptureEditorImage` grabs the whole editor window instead.
+  `SceneTools.find_actors` does search the PIE world while it runs, and PIE actors address as
   `/Game/<Path>/UEDPIE_0_<Map>.<Map>:PersistentLevel.<Actor>_C_0`.
 - There is no console-command or editor-python route: `ProgrammaticToolset` only
   orchestrates registered tools, and `EditorAppToolset.SearchCVars` only reads.
   `try/except` inside a script does not reliably catch `execute_tool` failures.
+  `time.sleep` inside a script lets the engine tick (Lumen settles), but a long script loses the
+  MCP session and its result: 14 viewport captures did, 6 plus a 30 s sleep did not.
 - The MCP server is **not** started with the editor: someone has to run the console
   command `ModelContextProtocol.StartServer`. When launching the editor yourself, pass it
   on the command line so no hand is needed:
@@ -158,8 +162,9 @@ Each of these cost real debugging time once.
   `BodyInstance: {CollisionEnabled: "NoCollision"}`, not a top-level `CollisionEnabled`. A
   `TSoftObjectPtr` array reads back as plain path strings, but an appended element is stored as a
   `{refPath}` object: re-read the array before every append and pass the elements exactly as read.
-- There is no create-blueprint tool: `AssetTools.duplicate` a small BP (`BP_ItemSpawnPoint`) and
-  `BlueprintTools.set_parent` (`blueprint` + `parent_class`) to the C++ class. `DataAssetTools.create`
+- `BlueprintTools.create` (`folder_path`, `asset_name`, `asset_type` = parent class ref) makes a
+  Blueprint; `ActorTools.add_component` on the Blueprint asset returns the template
+  `/Game/X/BP_Y.BP_Y_C:Comp_GEN_VARIABLE`, which `ObjectTools` writes directly. `DataAssetTools.create`
   makes data assets (`folder_path`, `asset_name`, `asset_type` = class ref); `MaterialInstanceTools.create`
   makes MICs (`parent`); `TextureTools.import_file` (`folder_path`, `asset_name`, `source_file`).
   `MaterialTools.get_expressions`/`recompile` and `MaterialInstanceTools.list_parameters` take
@@ -293,6 +298,7 @@ Each of these cost real debugging time once.
 | Paint looks flat from the side | Normal/POM cannot change the silhouette. Is WPO or Displacement actually connected, and is the mesh tessellated enough? |
 | A hitscan or aim trace passes straight through units | In 5.8 the `Pawn` capsule profile **and** the `CharacterMesh` profile ignore `ECC_Visibility` (BaseEngine.ini). Trace on `PaintballChannel` (`ECC_GameTraceChannel1`, `Weapons/PaintProjectile.h`): pawns and paintable meshes block it, balls in flight ignore it, so the ray hits what a paintball would. The sniper does this; the gun's aim trace still uses Visibility and converges through pawns. |
 | Splats cut off at actor boundaries | The stamp is world-space and every overlapping surface (sphere overlap in `UPaintSubsystem::ApplySplat`) draws its own part; a missing half means that actor has no `UPaintableComponent`, keeps no direction facing the hit, or its collision does not answer `ECC_Visibility`. |
+| A side splat stains the floor at the wall's foot in a hard-edged band, or paints a unit standing next to the wall | The side splat is a deferred decal and lands on every pixel inside its box, whatever the actor; a box as deep as the stamp radius extrudes the blob into a band on any surface perpendicular to the wall. Keep the box a thin slab (`ProjectionHalfDepth` in `APaintSideSplat::OnPaintSplat_Implementation`), keep `M_PaintSideSplat`'s `NormalFade` on Coverage (receiver normal from `cross(ddx(wp), ddy(wp))` of `GetTranslatedWorldPosition(Parameters)`, compared with `ObjectOrientation`, which in a decal material is the decal's projection axis), and keep `bReceivesDecals` off on unit primitives (`AUnit::PostInitializeComponents`). |
 | Colors differ between clients | Overlap-order differences are expected and allowed. A missing splat means the Unreliable Multicast dropped it — also check that local prediction and the server event are not drawn twice. |
 | A texture set via SetTextureParameterValue reaches one sample node but not a Custom node | A TextureSampleParameter2D and a TextureObjectParameter sharing one parameter name: the instance override only reaches the sampler one. Give the object parameter its own name and set both from C++. A stale MaterialInstance can also keep failing after a parameter rename — test with a freshly created instance. |
 | Paint mask/roughness respond but the relief normal stays flat on some faces | The height gradient is computed in atlas space but MP_Normal is applied in the mesh's UV0-derived tangent frame; per-island orientation makes the result wrong or invisible. Build a world-space normal from position-atlas-derived axes instead of trusting mesh tangents. |
