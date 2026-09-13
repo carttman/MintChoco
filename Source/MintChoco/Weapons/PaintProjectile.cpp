@@ -7,9 +7,11 @@
 #include "TimerManager.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 
 #include "MeshScale.h"
+#include "Game/TeamLook.h"
 #include "Game/TeamTypes.h"
 #include "Game/Unit.h"
 #include "Paint/PaintSplat.h"
@@ -342,9 +344,11 @@ void APaintProjectile::OnHit(UPrimitiveComponent*, AActor*, UPrimitiveComponent*
 			// MakeFromZ다. FVector::Rotation()은 넘긴 방향을 +X(앞)로 삼으므로 바닥 법선을 주면
 			// 이펙트가 90도 눕는다. 이펙트의 위쪽인 +Z를 법선에 맞춰야 바닥에 선 채로 나온다.
 			const FRotator Upright = FRotationMatrix::MakeFromZ(Hit.ImpactNormal).Rotator();
-			UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-				World, Profile->ImpactFX, Hit.ImpactPoint, Upright,
-				FVector(Profile->ImpactFXScale));
+			if (UNiagaraComponent* const FX = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+					World, Profile->ImpactFX, Hit.ImpactPoint, Upright, FVector(Profile->ImpactFXScale)))
+			{
+				FX->SetVariableLinearColor(TeamLook::NiagaraTintParameter, TeamLook::GetColor(PaintId, World));
+			}
 		}
 	}
 
