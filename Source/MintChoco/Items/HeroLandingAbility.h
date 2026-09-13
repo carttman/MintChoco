@@ -21,6 +21,10 @@ class MINTCHOCO_API UGA_HeroLanding : public UItemAbility
 public:
 	UGA_HeroLanding();
 
+	/** 상승·정지 중의 좌클릭. 그 순간 내리꽂기를 시작한다. */
+	virtual bool WantsInput(EItemAbilityInput Input) const override;
+	virtual void HandleInput(EItemAbilityInput Input) override;
+
 protected:
 	virtual void OnItemActivated(AUnit& Unit, const UItemProfile& Profile) override;
 	virtual void OnItemEnded(AUnit& Unit, const UItemProfile& Profile) override;

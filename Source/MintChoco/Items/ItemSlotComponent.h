@@ -6,11 +6,14 @@
 #include "Engine/TimerHandle.h"
 #include "GameplayTagContainer.h"
 
+#include "Items/ItemAbility.h"
+#include "Items/ItemProfile.h"
 #include "Weapons/PaintWeaponProfile.h"
 
 #include "ItemSlotComponent.generated.h"
 
 class UAbilitySystemComponent;
+class UAnimSequenceBase;
 class UItemProfile;
 class UNiagaraComponent;
 class UNiagaraSystem;
@@ -71,6 +74,46 @@ public:
 	FSimpleMulticastDelegate OnAimConfirmed;
 
 	/**
+	 * 좌클릭. 효과 중인 아이템이 가져갔으면 true이고, 그러면 무기는 쏘지 않는다.
+	 * 꿀풍선은 조준을 확정해 던지고, 히어로 랜딩은 정지 중이면 그 자리에서 내리꽂는다.
+	 */
+	bool HandleFireInput();
+
+	/** 우클릭. 조준 중인 아이템이 있으면 물리고 true. 아이템은 슬롯에 남는다. */
+	bool HandleCancelInput();
+
+	/**
+	 * 지금 유지할 아이템 자세. 없으면 nullptr. 애님 인스턴스가 매 프레임 읽어 ABP로 넘긴다.
+	 *
+	 * 효과 중인 아이템은 복제되는 상태 태그에서, 조준 중인 아이템은 복제되는 bAiming에서
+	 * 나오므로 모든 머신에서 같은 자세가 나온다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Item")
+	UAnimSequenceBase* GetItemPose() const;
+
+	/** 그 자세가 덮는 범위. 자세가 없으면 전신(기본값)을 돌려준다. */
+	UFUNCTION(BlueprintPure, Category = "Item")
+	EItemPoseBlend GetItemPoseBlend() const;
+
+	/**
+	 * 조준형 아이템이 조준을 시작하거나 끝낼 때 어빌리티가 부른다. 조준 중에는 슬롯을 비우지
+	 * 않으므로, 무엇을 조준하는지는 HeldItem이 그대로 알려 준다.
+	 *
+	 * 대시와 같은 규칙이다: 소유 클라이언트는 예측으로 바로 세우고 서버가 나머지에게 복제한다.
+	 */
+	void SetAiming(bool bNewAiming);
+
+	bool IsAimingItem() const { return bAiming; }
+
+	/**
+	 * 즉발 아이템(Duration 0)의 사용 연출. 이 머신에서 재생하고, 서버라면 구경꾼에게도 보낸다.
+	 *
+	 * 즉발은 GE를 걸지 않아 상태 태그가 없고, 그래서 태그 변화로 도는 평소의 연출 경로가 아예
+	 * 돌지 않는다. 어빌리티가 발동하는 자리에서 직접 불러 준다.
+	 */
+	void PlayInstantUseFeedback(const UItemProfile* Item);
+
+	/**
 	 * 디버그. UItemSettings 목록의 Index번째(0부터) 아이템을 바로 슬롯에 넣는다. 클라이언트는
 	 * 서버에 부탁한다. Shipping 빌드에서는 아무 일도 하지 않는다.
 	 */
@@ -125,7 +168,42 @@ protected:
 	UFUNCTION()
 	void OnRep_HeldItem();
 
+	/**
+	 * 조준형 아이템을 조준하는 중인지.
+	 *
+	 * 조준은 GE도 상태 태그도 남기지 않으므로(그래서 취소가 되돌릴 것이 없다) 다른 머신에는
+	 * 아무 신호도 가지 않는다. 자세를 보여 주려면 이것 하나가 필요하다. 소유자는 예측으로
+	 * 이미 알고 있으므로 제외한다.
+	 */
+	UPROPERTY(Replicated)
+	bool bAiming = false;
+
 private:
+	/**
+	 * 입력을 처리할 어빌리티를 로컬에서 찾아 넘기고, 조준의 확정·취소라면 서버에도 알린다.
+	 * 히어로 랜딩처럼 무브먼트 플래그로 끝나는 입력은 무브에 실려 가므로 RPC가 없다.
+	 */
+	bool RouteItemInput(EItemAbilityInput Input);
+
+	/** 이 입력을 가져가겠다는 활성 아이템 어빌리티. 없으면 nullptr. */
+	UItemAbility* FindItemAbilityForInput(EItemAbilityInput Input) const;
+
+	/** 조준 중인 아이템이 있으면 물린다. 스턴과 새 아이템 습득이 부른다. */
+	void CancelItemAim();
+
+	UFUNCTION(Server, Reliable)
+	void ServerItemInput(EItemAbilityInput Input);
+
+	/** 즉발 아이템의 사용 연출을 구경꾼에게. 서버와 소유자는 이미 재생했으므로 건너뛴다. */
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastItemUsed(const UItemProfile* Item);
+
+	/** 사용 동작 + 이펙트 + 소리를 이 머신에서 한 번. 데디케이티드 서버에서는 아무것도 안 한다. */
+	void PlayUseFeedback(const UItemProfile& Item);
+
+	/** 사용 동작만. 슬롯에 동적 몽타주로 얹으므로 애님 그래프에 그 이름의 Slot 노드가 있어야 한다. */
+	void PlayUseAnimation(const UItemProfile& Item);
+
 	UFUNCTION(Server, Reliable)
 	void ServerDebugGiveItem(int32 Index);
 
@@ -150,6 +228,16 @@ private:
 
 	/** 서버 전용. HeldItem에 해당하는 스펙. 비우면 효과 종료 시 제거된다. */
 	FGameplayAbilitySpecHandle HeldSpec;
+
+	/**
+	 * 효과가 도는 아이템. 상태 태그가 오르내릴 때만 갱신된다. 유지 자세와 그 범위를 여기서 읽는다.
+	 * 태그는 모든 머신에 복제되므로 이 값도 모든 머신에서 같다.
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<UItemProfile> EffectItem;
+
+	/** 지금 자세를 정하는 아이템. 조준 중이면 슬롯의 것, 아니면 효과가 도는 것. 없으면 nullptr. */
+	const UItemProfile* GetPoseItem() const;
 
 	/** 상태 태그별로 켜 둔 이펙트. 태그가 내려가면 끈다. */
 	UPROPERTY(Transient)

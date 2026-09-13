@@ -8,6 +8,7 @@
 #include "UnitAnimInstance.generated.h"
 
 class AUnit;
+class UAnimSequenceBase;
 
 /** 애니메이션 변수 계산의 순수 부분. 월드 없이 테스트한다. */
 struct MINTCHOCO_API FUnitAnimMath
@@ -93,9 +94,43 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Unit|State")
 	bool bIsStunned = false;
 
-	/** 히어로 랜딩 단계. None이면 평소. */
+	/**
+	 * 히어로 랜딩 단계. None이면 평소.
+	 *
+	 * 준비(Rise·Hover), 건너가기(Approach), 내리꽂기(Dive) 자세를 여기서 고른다. 착지 동작은
+	 * Dive에서 None으로 떨어지는 전이에 걸면 된다 — 그 전환은 모든 머신에서 보인다.
+	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Unit|State")
 	EHeroLandingPhase HeroLandingPhase = EHeroLandingPhase::None;
+
+	//~ 아이템
+
+	/**
+	 * 효과가 도는(또는 조준 중인) 아이템의 유지 자세. 없으면 nullptr.
+	 *
+	 * 시퀀스 플레이어의 Sequence 핀에 바인딩하고 Loop를 켜서 쓴다. 아이템이 몇 개로 늘어도
+	 * 애님 그래프는 그대로이고, 새 아이템은 프로필의 PoseAnimation을 채우는 것으로 끝난다.
+	 * 상태 태그(와 조준 플래그)에서 오므로 모든 머신에서 같은 자세가 나온다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|Item")
+	TObjectPtr<UAnimSequenceBase> ItemPose;
+
+	/** 유지할 아이템 자세가 있는지(덮는 범위와 무관). */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|Item")
+	bool bHasItemPose = false;
+
+	/**
+	 * 전신을 덮는 유지 자세가 있는지. 전신 블렌드의 조건.
+	 *
+	 * 범위별로 따로 내보내는 이유는 애님 그래프에서 AND·NOT을 엮지 않게 하기 위해서다. 둘은
+	 * 동시에 참이 되지 않으므로 두 가지를 차례로 물려도 한 번에 하나만 켜진다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|Item")
+	bool bHasFullBodyItemPose = false;
+
+	/** 상체만 덮는 유지 자세가 있는지. 상체 블렌드의 조건. */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|Item")
+	bool bHasUpperBodyItemPose = false;
 
 	//~ 조준·사격
 

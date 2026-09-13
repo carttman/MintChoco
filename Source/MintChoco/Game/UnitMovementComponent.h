@@ -20,7 +20,16 @@ enum class EHeroLandingPhase : uint8
 	Hover,
 	/** 고정된 착지점으로 내리꽂힌다(MOVE_Falling). 착지하면 끝. */
 	Dive,
+	/**
+	 * 착지점이 지금 높이보다 위라 곧장 꽂을 수 없다. 착지점 바로 위까지 건너간 뒤 Dive로 넘어간다.
+	 *
+	 * 위로 향하는 직선은 바닥을 위에서 만나지 못한다: 그대로 지나쳐 허공으로 날아가 버리므로
+	 * 착지 판정이 오지 않는다. 그래서 높은 곳은 넘어가서 떨어뜨린다.
+	 */
+	Approach,
 };
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnHeroLandingPhaseChanged, EHeroLandingPhase /*NewPhase*/);
 
 /** 히어로 랜딩의 튜닝값. 프로필에서 오고, 어빌리티가 시작할 때 양쪽 무브먼트에 같은 값을 넣는다. */
 USTRUCT(BlueprintType)
@@ -43,9 +52,16 @@ struct MINTCHOCO_API FHeroLandingParams
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HeroLanding", meta = (ClampMin = "0", ForceUnits = "cm"))
 	float MaxAimDistance = 1500.0f;
 
-	/** 내리꽂히는 속도(cm/s). */
+	/** 내리꽂히는 속도(cm/s). 높은 곳으로 건너갈 때도 같은 속도로 움직인다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HeroLanding", meta = (ClampMin = "100", ForceUnits = "cm/s"))
 	float DiveSpeed = 3000.0f;
+
+	/**
+	 * 착지점이 지금 높이보다 위일 때, 그 위 이만큼까지 건너간 다음 수직으로 떨어진다(cm).
+	 * 0이면 착지점 바로 위에서 떨어지므로 난간이나 턱에 걸리기 쉽다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HeroLanding", meta = (ClampMin = "0", ForceUnits = "cm"))
+	float DiveApexClearance = 150.0f;
 
 	/** 조준 트레이스 길이(cm). 이보다 먼 곳을 보면 이륙 높이의 수평면과 만나는 점을 쓴다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HeroLanding", meta = (ClampMin = "100", ForceUnits = "cm"))
@@ -123,6 +139,18 @@ public:
 	void SetWantsHeroLanding(bool bNewWantsHeroLanding);
 	bool WantsHeroLanding() const { return bWantsHeroLanding != 0; }
 
+	/**
+	 * "지금 내리꽂자"는 의도(FLAG_Custom_3). 상승·정지 중에 소유 클라이언트가 좌클릭하면 선다.
+	 *
+	 * 정지 단계는 원래 HoverTime이 다 지나야 끝나는데, 이 플래그가 서 있으면 그 자리에서
+	 * 내리꽂는다. HoverTime은 그대로 두어 아무것도 누르지 않아도 언젠가는 떨어지게 한다.
+	 *
+	 * 랜딩 의도와 같은 이유로 압축 플래그다: 단계를 굴리는 것은 무브먼트이고, 서버는 무브에
+	 * 실려 온 플래그로 같은 계산을 해야 궤적이 어긋나지 않는다. 내리꽂기가 시작되면 내려간다.
+	 */
+	void SetWantsHeroDive(bool bNewWantsHeroDive) { bWantsHeroDive = bNewWantsHeroDive ? 1 : 0; }
+	bool WantsHeroDive() const { return bWantsHeroDive != 0; }
+
 	/** 시작 전에 양쪽이 같은 값을 넣어야 같은 궤적이 나온다. 단계 중에 바꿔도 다음 발동부터다. */
 	void SetHeroLandingParams(const FHeroLandingParams& Params) { HeroParams = Params; }
 	const FHeroLandingParams& GetHeroLandingParams() const { return HeroParams; }
@@ -131,33 +159,25 @@ public:
 	EHeroLandingPhase GetHeroLandingPhase() const { return HeroPhase; }
 
 	/**
-	 * 조기 낙하 의도(FLAG_Custom_3). 호버 중에 좌클릭하면 선다.
-	 *
-	 * RPC가 아니라 압축 플래그인 이유: 낙하 판단이 저장 무브로 리플레이되는 단계 기계 안에
-	 * 있다. RPC로 보내면 클라이언트가 이미 내리꽂는 동안 서버는 아직 호버를 재생하므로
-	 * 위치가 벌어지고 보정이 들어온다 — 스피드 스타가 GAS 속성을 못 쓰는 것과 같은 이유다.
+	 * 단계가 실제로 바뀔 때만. 이 값은 압축 플래그로 굴러가 소유자와 서버에만 있으므로,
+	 * AUnit이 여기서 받아 원격 클라이언트에 복제한다(대시와 같은 이유). 보정 후 리플레이는
+	 * 이미 지나간 시간을 다시 계산하는 것이라 알리지 않는다.
 	 */
-	void SetWantsHeroDive(bool bNewWantsHeroDive);
-	bool WantsHeroDive() const { return bWantsHeroDive != 0; }
-
-	/**
-	 * 호버를 얼마나 버텼는지(0~1). 내리꽂기가 시작되는 순간 굳는다.
-	 *
-	 * 여기 있는 이유는 서버가 착지할 때 같은 값을 알아야 하기 때문이다. 단계 기계가 양쪽에서
-	 * 같은 입력으로 도니 복제할 것이 없다. 그 전에는 지금까지 버틴 양이라 미리보기가 그대로 쓴다.
-	 */
-	UFUNCTION(BlueprintPure, Category = "HeroLanding")
-	float GetHeroCharge() const;
+	FOnHeroLandingPhaseChanged OnHeroLandingPhaseChanged;
 
 	/** 내리꽂기 단계에서 고정된 착지점. 그 전에는 ComputeAimTarget()이 지금 조준하는 곳이다. */
 	FVector GetHeroDiveTarget() const { return HeroDiveTarget; }
 
 	/**
-	 * 지금 컨트롤 회전이 가리키는 착지점. 눈높이에서 시선으로 트레이스하고, 안 맞으면 이륙
-	 * 높이의 수평면과 만나는 점을 쓰며, 이륙점 기준 수평 거리를 MaxAimDistance로 자른다.
+	 * 지금 컨트롤 회전이 가리키는 착지점. 내려설 수 있는 곳을 보고 있을 때만 참이다.
+	 *
+	 * 눈높이에서 시선으로 트레이스해 **걸을 수 있는 바닥**을 맞혔을 때만 인정한다. 벽, 급경사,
+	 * 사거리 밖, 아무것도 없는 허공은 전부 거짓이고, 그러면 착지점 표시도 뜨지 않고 좌클릭도
+	 * 듣지 않는다. 높이는 자르지 않으므로 지금 서 있는 곳보다 높은 바닥도 고를 수 있다.
+	 *
 	 * 서버는 무브에 실려 온 컨트롤 회전으로 같은 계산을 한다.
 	 */
-	FVector ComputeAimTarget() const;
+	bool ComputeAimTarget(FVector& OutTarget) const;
 
 	/**
 	 * 착지 알림(ACharacter::Landed)에서 유닛이 부른다. 내리꽂기 중이었으면 단계를 끝내고
@@ -199,22 +219,22 @@ private:
 	/** 히어로 랜딩 의도. 같은 규칙. */
 	uint8 bWantsHeroLanding : 1;
 
-	/** 조기 낙하 의도. 같은 규칙. 호버 단계에서만 뜻이 있다. */
-	uint8 bWantsHeroDive : 1;
-
 	/**
 	 * 플래그가 0인 무브를 본 뒤에만 다음 1이 상승을 시작한다. 착지 직후 아직 1인 무브가
 	 * 몇 개 더 오는데(클라이언트가 서버보다 늦게 착지한 경우), 그것으로 다시 뜨면 안 된다.
 	 */
 	uint8 bHeroLandingArmed : 1;
 
+	/** 정지 단계를 지금 끝내고 내리꽂겠다는 의도. 내리꽂기가 시작되면 스스로 내려간다. */
+	uint8 bWantsHeroDive : 1;
+
 	EHeroLandingPhase HeroPhase = EHeroLandingPhase::None;
 	float HeroPhaseTime = 0.0f;
 	FVector HeroTakeoff = FVector::ZeroVector;
 	FVector HeroDiveTarget = FVector::ZeroVector;
 
-	/** 내리꽂기가 시작될 때 굳은 충전량(0~1). 그 전에는 GetHeroCharge()가 시간으로 센다. */
-	float HeroCharge = 0.0f;
+	/** Approach 단계가 향하는 점. 착지점 바로 위 DiveApexClearance만큼 높은 곳이다. */
+	FVector HeroApproachPoint = FVector::ZeroVector;
 
 	FHeroLandingParams HeroParams;
 
@@ -227,8 +247,23 @@ private:
 	/** 입력으로 움직일 수 없는 상태인지(스턴, 히어로 랜딩 단계). 유닛이 답하고, 유닛이 아니면 단계만 본다. */
 	bool IsInputLocked() const;
 
+	/** 값이 실제로 바뀔 때만 알린다. 단계는 이 함수로만 바꾼다(리플레이 복원은 예외). */
+	void SetHeroPhase(EHeroLandingPhase NewPhase);
+
 	void StartHeroLanding();
 	void PhysHeroLanding(float DeltaTime, int32 Iterations);
+
+	/** 착지점이 위면 Approach로, 아래면 곧장 Dive로. 정지 단계가 끝날 때 한 번 부른다. */
+	void StartHeroDive(const FVector& Target, float DeltaTime, int32 Iterations);
+
+	/** 착지점 위까지 직선으로 건너간다. 도착하거나 막히면 수직 낙하로 넘어간다. */
+	void PhysHeroApproach(float DeltaTime, int32 Iterations);
+
+	/** 수직 낙하로 전환한다. 낙하 모드라 착지가 ProcessLanded → ACharacter::Landed로 온다. */
+	void StartHeroPlunge(float DeltaTime, int32 Iterations);
+
+	/** 캡슐 반높이(cm). 캡슐이 없으면 0. */
+	float GetHeroCapsuleHalfHeight() const;
 };
 
 /**
@@ -253,13 +288,13 @@ private:
 	uint8 bSavedWantsToDash : 1;
 	uint8 bSavedWantsSpeedBoost : 1;
 	uint8 bSavedWantsHeroLanding : 1;
-	uint8 bSavedWantsHeroDive : 1;
 	uint8 bSavedHeroLandingArmed : 1;
+	uint8 bSavedWantsHeroDive : 1;
 	EHeroLandingPhase SavedHeroPhase = EHeroLandingPhase::None;
 	float SavedHeroPhaseTime = 0.0f;
 	FVector SavedHeroTakeoff = FVector::ZeroVector;
 	FVector SavedHeroDiveTarget = FVector::ZeroVector;
-	float SavedHeroCharge = 0.0f;
+	FVector SavedHeroApproachPoint = FVector::ZeroVector;
 };
 
 class FNetworkPredictionData_Client_Unit : public FNetworkPredictionData_Client_Character

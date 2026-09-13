@@ -4,18 +4,16 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/HitResult.h"
 #include "Engine/World.h"
-#include "TimerManager.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/ProjectileMovementComponent.h"
-#include "NiagaraFunctionLibrary.h"
 
 #include "MeshScale.h"
 #include "Game/TeamTypes.h"
 #include "Game/Unit.h"
 #include "Paint/PaintSplat.h"
-#include "Weapons/PaintDeposit.h"
 #include "Weapons/PaintWeaponComponent.h"
 #include "Weapons/PaintballProfile.h"
+#include "Weapons/ProjectilePoolSubsystem.h"
 
 namespace
 {
@@ -32,10 +30,7 @@ namespace
 
 APaintProjectile::APaintProjectile()
 {
-	// A plain ball needs no tick of its own. Only a ball that paints as it flies turns it on, in
-	// Init, once the profile is known; bCanEverTick has to be set here for that to be possible.
-	PrimaryActorTick.bCanEverTick = true;
-	PrimaryActorTick.bStartWithTickEnabled = false;
+	PrimaryActorTick.bCanEverTick = false;
 	InitialLifeSpan = 5.0f;
 
 	Sphere = CreateDefaultSubobject<USphereComponent>(TEXT("Sphere"));
@@ -70,8 +65,7 @@ APaintProjectile::APaintProjectile()
 	Movement->bInitialVelocityInLocalSpace = false;
 }
 
-void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId, int32 InSeed, const FVector& Velocity, bool bInCosmetic,
-	float InDropAfterOverride)
+void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId, int32 InSeed, const FVector& Velocity, bool bInCosmetic)
 {
 	check(InProfile);
 	Profile = InProfile;
@@ -83,18 +77,6 @@ void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId,
 	Movement->MaxSpeed = 0.0f;
 	Movement->Velocity = Velocity;
 	Movement->ProjectileGravityScale = Profile->GravityScale;
-
-	// 사거리를 보이지 않는 선에서 지우는 대신, 날던 공이 힘을 잃고 떨어지는 것으로 보여준다.
-	const float DropAfter = InDropAfterOverride >= 0.0f ? InDropAfterOverride : Profile->DropAfter;
-	if (DropAfter > 0.0f)
-	{
-		GetWorldTimerManager().SetTimer(DropTimer, this, &APaintProjectile::ApplyDropGravity, DropAfter, /*bLoop=*/false);
-	}
-	else if (InDropAfterOverride == 0.0f)
-	{
-		// 0 은 “처음부터 떨어져라” 다. 타이머로는 표현할 수 없으므로 그 자리에서 무겁게 만든다.
-		ApplyDropGravity();
-	}
 
 	Sphere->SetSphereRadius(Profile->Radius);
 	ScaleMeshToRadius(Mesh, Profile->Radius);
@@ -118,11 +100,6 @@ void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId,
 			Body->IgnoreActorWhenMoving(this, true);
 		}
 	}
-
-	// Splats reach the other machines through the game state's log, so only the server's real ball
-	// may paint. A cosmetic ball ticking here would draw the same trail a second time.
-	LastTrailLocation = GetActorLocation();
-	SetActorTickEnabled(!bCosmetic && HasAuthority() && Profile->HasTrail());
 }
 
 UMaterialInterface* APaintProjectile::GetTeamMaterial(uint8 InPaintId) const
@@ -130,110 +107,54 @@ UMaterialInterface* APaintProjectile::GetTeamMaterial(uint8 InPaintId) const
 	return TeamMaterials.IsValidIndex(InPaintId) ? TeamMaterials[InPaintId].Get() : nullptr;
 }
 
-void APaintProjectile::EndPlay(const EEndPlayReason::Type Reason)
+void APaintProjectile::RestoreForReuse()
 {
-	// The shooter's ignore list would otherwise grow by one dead entry per shot fired.
+	SetActorHiddenInGame(false);
+	SetActorEnableCollision(true);
+	Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+
+	// 충돌로 멈춘 무브먼트는 UpdatedComponent를 놓아 버린 상태다. 다시 쥐여 주지 않으면
+	// 속도를 넣어도 움직이지 않는다.
+	if (Movement->UpdatedComponent != Sphere)
+	{
+		Movement->SetUpdatedComponent(Sphere);
+	}
+	Movement->Activate(/*bReset=*/true);
+
+	SetLifeSpan(InitialLifeSpan);
+}
+
+void APaintProjectile::Deactivate()
+{
+	// 쏜 사람의 무시 목록에서 이 공을 뺀다. 풀 반납에는 EndPlay가 없으므로 여기가 유일한 기회다.
 	if (UPrimitiveComponent* const Body = GetMovingBody(GetInstigator()))
 	{
 		Body->IgnoreActorWhenMoving(this, false);
 	}
+	Sphere->ClearMoveIgnoreActors();
+
+	Movement->StopMovementImmediately();
+	Movement->Deactivate();
+
+	SetActorEnableCollision(false);
+	SetActorHiddenInGame(true);
+	SetLifeSpan(0.0f);
+}
+
+void APaintProjectile::LifeSpanExpired()
+{
+	if (UProjectilePoolSubsystem* const Pool = UProjectilePoolSubsystem::Get(this))
+	{
+		Pool->Release(this);
+		return;
+	}
+	Super::LifeSpanExpired();
+}
+
+void APaintProjectile::EndPlay(const EEndPlayReason::Type Reason)
+{
+	Deactivate();
 	Super::EndPlay(Reason);
-}
-
-void APaintProjectile::Tick(float DeltaSeconds)
-{
-	Super::Tick(DeltaSeconds);
-
-	if (!Profile || TrailSplatCount >= Profile->MaxTrailSplats)
-	{
-		SetActorTickEnabled(false);
-		return;
-	}
-
-	// Measured along the path actually flown rather than from the muzzle, so a lobbed arc is
-	// sampled at even spacing along its curve instead of bunching up near the apex.
-	const FVector Location = GetActorLocation();
-	TrailDistance += FVector::Dist(LastTrailLocation, Location);
-	LastTrailLocation = Location;
-	if (TrailDistance < Profile->TrailSpacing)
-	{
-		return;
-	}
-
-	// One sample per frame at most: a ball moving several spacings in one frame would otherwise
-	// fire a burst of traces to catch up, which is exactly the cost the spacing exists to bound.
-	TrailDistance -= Profile->TrailSpacing;
-	TrailSplatCount += PaintTrailSample(Location, TrailSampleCount++);
-}
-
-void APaintProjectile::ApplyDropGravity()
-{
-	if (Movement && Profile)
-	{
-		// 컴포넌트가 매 프레임 읽는 값이라, 바꾸는 순간부터 다음 프레임에 바로 적용된다.
-		Movement->ProjectileGravityScale = Profile->DropGravityScale;
-	}
-}
-
-int32 APaintProjectile::PaintTrailSample(const FVector& Location, int32 SampleIndex)
-{
-	UWorld* const World = GetWorld();
-	const FVector Forward = Movement->Velocity.GetSafeNormal();
-	if (!World || Forward.IsNearlyZero())
-	{
-		return 0;
-	}
-
-	// The rays lie in the plane across the flight direction, so one ray count covers floor,
-	// ceiling and both sides however the ball is heading - no special case for "below".
-	FVector RayUp;
-	FVector RaySide;
-	Forward.FindBestAxisVectors(RayUp, RaySide);
-
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(PaintProjectileTrail), /*bTraceComplex=*/false, this);
-	Params.AddIgnoredActor(GetInstigator());
-
-	const int32 Rays = Profile->TrailRayCount;
-	const int32 Budget = Profile->MaxTrailSplats - TrailSplatCount;
-	// Turning the fan by a per-sample amount keeps successive samples from lining their rays up
-	// into a visible ladder. It comes from the seed, so a replay lands the marks in the same places.
-	const float Twist = 2.0f * UE_PI * static_cast<float>(HashCombineFast(static_cast<uint32>(Seed), static_cast<uint32>(SampleIndex)) & 0xFFFF) / 65536.0f;
-
-	int32 Painted = 0;
-	for (int32 Index = 0; Index < Rays && Painted < Budget; ++Index)
-	{
-		const float Angle = Twist + 2.0f * UE_PI * static_cast<float>(Index) / static_cast<float>(Rays);
-		const FVector Direction = RayUp * FMath::Cos(Angle) + RaySide * FMath::Sin(Angle);
-
-		FHitResult Hit;
-		if (!World->LineTraceSingleByChannel(Hit, Location, Location + Direction * Profile->TrailRadius, PaintballChannel, Params)
-			|| Hit.bStartPenetrating)
-		{
-			continue;
-		}
-
-		// A pawn is never painted by a trail: the mark would not stick to it, and ApplyHit would
-		// also strike it as a paint hit receiver once per sample.
-		if (Cast<APawn>(Hit.GetActor()))
-		{
-			continue;
-		}
-
-		if (Profile->bTrailSkipTransient && !FPaintDeposit::KeepsPaint(Hit))
-		{
-			continue;
-		}
-
-		// The incident velocity runs along the ray, so the brush stretches the stamp away from the
-		// path and the samples read as one stripe rather than a row of dots.
-		const int32 RaySeed = static_cast<int32>(HashCombineFast(
-			static_cast<uint32>(Seed), static_cast<uint32>(SampleIndex * Rays + Index + 1)));
-		if (Profile->TrailDeposit.ApplyHit(World, Hit, Direction * Movement->Velocity.Size(), PaintId, RaySeed))
-		{
-			++Painted;
-		}
-	}
-	return Painted;
 }
 
 void APaintProjectile::OnPawnOverlap(UPrimitiveComponent*, AActor* OtherActor, UPrimitiveComponent*, int32, bool bFromSweep, const FHitResult& SweepResult)
@@ -270,7 +191,9 @@ void APaintProjectile::OnPawnOverlap(UPrimitiveComponent*, AActor* OtherActor, U
 
 void APaintProjectile::OnHit(UPrimitiveComponent*, AActor*, UPrimitiveComponent*, FVector, const FHitResult& Hit)
 {
-	if (!IsValid(this) || IsActorBeingDestroyed())
+	// 풀에서 자고 있는 공에는 콜리전이 없지만, 반납 직전에 큐에 들어간 이벤트가 뒤늦게
+	// 도착할 수 있다. 숨어 있으면 이미 반납된 공이다.
+	if (!IsValid(this) || IsActorBeingDestroyed() || IsHidden())
 	{
 		return;
 	}
@@ -286,20 +209,10 @@ void APaintProjectile::OnHit(UPrimitiveComponent*, AActor*, UPrimitiveComponent*
 		Profile->Deposit.ApplyHit(GetWorld(), Hit, Velocity, PaintId, Seed);
 	}
 
-	// 연출용 공도 그린다: 착탄은 각 머신에서 제 공으로 일어나므로 이것이 그 화면의 한 번이다.
-	if (Profile && Profile->ImpactFX)
+	if (UProjectilePoolSubsystem* const Pool = UProjectilePoolSubsystem::Get(this))
 	{
-		UWorld* const World = GetWorld();
-		if (World && World->GetNetMode() != NM_DedicatedServer)
-		{
-			// MakeFromZ다. FVector::Rotation()은 넘긴 방향을 +X(앞)로 삼으므로 바닥 법선을 주면
-			// 이펙트가 90도 눕는다. 이펙트의 위쪽인 +Z를 법선에 맞춰야 바닥에 선 채로 나온다.
-			const FRotator Upright = FRotationMatrix::MakeFromZ(Hit.ImpactNormal).Rotator();
-			UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-				World, Profile->ImpactFX, Hit.ImpactPoint, Upright,
-				FVector(Profile->ImpactFXScale));
-		}
+		Pool->Release(this);
+		return;
 	}
-
 	Destroy();
 }

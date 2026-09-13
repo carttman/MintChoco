@@ -533,13 +533,10 @@ void AUnit::PostInitializeComponents()
 		PaintWeapon->OnPaintIdChanged.AddDynamic(this, &AUnit::HandlePaintIdChanged);
 		HandlePaintIdChanged(PaintWeapon->GetPaintId());
 		PaintWeapon->OnFired.AddDynamic(this, &AUnit::HandleWeaponFired);
-		// 지금은 차지가 보조 무기에만 있지만, 주 무기가 차지형으로 바뀌어도 그대로 돌게 둔다.
-		PaintWeapon->OnChargingChanged.AddDynamic(this, &AUnit::HandleChargingChanged);
 	}
 	if (SecondaryWeapon)
 	{
 		SecondaryWeapon->OnFired.AddDynamic(this, &AUnit::HandleWeaponFired);
-		SecondaryWeapon->OnChargingChanged.AddDynamic(this, &AUnit::HandleChargingChanged);
 	}
 
 	// 블루프린트가 캡슐·메시 충돌을 덮어썼어도 카메라 채널만은 여기서 다시 무시로 둔다.
@@ -556,7 +553,7 @@ void AUnit::PostInitializeComponents()
 	if (UUnitMovementComponent* Movement = GetUnitMovement())
 	{
 		Movement->OnDashStateChanged.AddUObject(this, &AUnit::HandleDashStateChanged);
-		Movement->OnSpeedBoostStateChanged.AddUObject(this, &AUnit::HandleSpeedBoostStateChanged);
+		Movement->OnHeroLandingPhaseChanged.AddUObject(this, &AUnit::HandleHeroLandingPhaseChanged);
 	}
 	else
 	{
@@ -689,25 +686,11 @@ void AUnit::UseItem()
 // 컴포넌트에 Release/Cancel로 오는데, 그쪽은 아무것도 하지 않으므로 따로 걸러내지 않는다.
 void AUnit::StartFire()
 {
-	// 조준 중인 아이템이 있으면 좌클릭은 그쪽으로 간다. 무기는 상태 태그로 이미
-	// 막혀 있지만, 클릭 자체를 소비해야 조준이 확정된다.
-	if (ItemSlot && ItemSlot->IsAiming())
+	// 효과 중인 아이템이 좌클릭을 먼저 가져간다. 꿀풍선은 조준을 확정해 던지고, 히어로 랜딩은
+	// 공중에 멈춰 있으면 그 자리에서 내리꽂는다. 가져갔으면 무기에는 닿지 않는다.
+	if (ItemSlot && ItemSlot->HandleFireInput())
 	{
-		ItemSlot->ConfirmAim();
 		return;
-	}
-
-	// 히어로 랜딩으로 공중에 멈춰 있으면 좌클릭이 조기 낙하다. 다른 조준 아이템과 달리
-	// ConfirmAim을 타지 않는다: 낙하 판단은 저장 무브로 리플레이되는 무브먼트 단계 기계
-	// 안에 있어서, RPC로 알리면 서버가 그 사이를 호버로 재생해 위치가 어긋난다. 그래서
-	// 의도만 압축 플래그에 실어 보낸다.
-	if (UUnitMovementComponent* const Movement = GetUnitMovement())
-	{
-		if (Movement->GetHeroLandingPhase() == EHeroLandingPhase::Hover)
-		{
-			Movement->SetWantsHeroDive(true);
-			return;
-		}
 	}
 
 	if (PaintWeapon && !(SecondaryWeapon && SecondaryWeapon->IsTriggerHeld()))
@@ -734,6 +717,12 @@ void AUnit::CancelFire()
 
 void AUnit::StartSecondaryFire()
 {
+	// 우클릭은 조준 취소가 먼저다.
+	if (ItemSlot && ItemSlot->HandleCancelInput())
+	{
+		return;
+	}
+
 	if (SecondaryWeapon && !(PaintWeapon && PaintWeapon->IsTriggerHeld()))
 	{
 		SecondaryWeapon->PullTrigger();
@@ -859,6 +848,26 @@ void AUnit::HandleDashStateChanged(bool bDashing)
 	UpdateDashEffects(bDashing);
 }
 
+void AUnit::HandleHeroLandingPhaseChanged(EHeroLandingPhase NewPhase)
+{
+	// 복제는 서버만 한다. 소유 클라이언트도 이 알림을 받지만 자기 값은 무브먼트에서 직접 읽는다.
+	if (HasAuthority())
+	{
+		ReplicatedHeroPhase = NewPhase;
+	}
+}
+
+EHeroLandingPhase AUnit::GetHeroLandingPhase() const
+{
+	// 이 머신이 단계 기계를 직접 돌리는 경우(소유자, 서버)에는 그 값이 가장 빠르고 정확하다.
+	if (IsLocallyControlled() || HasAuthority())
+	{
+		const UUnitMovementComponent* const Movement = GetUnitMovement();
+		return Movement ? Movement->GetHeroLandingPhase() : EHeroLandingPhase::None;
+	}
+	return ReplicatedHeroPhase;
+}
+
 void AUnit::OnRep_IsDashing()
 {
 	UpdateDashEffects(bIsDashing);
@@ -915,72 +924,6 @@ void AUnit::UpdateDashEffects(bool bDashing)
 			// 대시할 때마다 꺼진 컴포넌트가 메시에 하나씩 쌓인다.
 			true);
 	}
-}
-
-void AUnit::HandleSpeedBoostStateChanged(bool bBoosting)
-{
-	// 대시와 같다. 소유 클라이언트는 자기 예측으로 이미 알고 있어 복제에서 빠져 있으므로,
-	// 다른 클라이언트에게는 서버가 이 값을 복제해 알린다.
-	if (HasAuthority())
-	{
-		bIsSpeedBoosting = bBoosting;
-	}
-
-	UpdateSpeedBoostEffects(bBoosting);
-}
-
-void AUnit::OnRep_IsSpeedBoosting()
-{
-	UpdateSpeedBoostEffects(bIsSpeedBoosting);
-}
-
-void AUnit::UpdateSpeedBoostEffects(bool bBoosting)
-{
-	if (GetNetMode() == NM_DedicatedServer)
-	{
-		return;
-	}
-
-	if (!bBoosting)
-	{
-		if (SpeedBoostFXComponent)
-		{
-			// 이미 태어난 파티클은 수명대로 사라지도록 새 스폰만 멈춘다.
-			SpeedBoostFXComponent->Deactivate();
-			SpeedBoostFXComponent = nullptr;
-		}
-		return;
-	}
-
-	if (SpeedBoostFXComponent)
-	{
-		return;
-	}
-
-	const FUnitActionFeedback* const Feedback = UnitData ? UnitData->FindFeedback(EUnitAction::SpeedBoost) : nullptr;
-	if (!Feedback || !Feedback->FX)
-	{
-		return;
-	}
-
-	// 대시와 달리 몽타주는 틀지 않는다. 부스트는 몇 초 동안 달리는 상태라,
-	// 상체 몽타주를 얹으면 그동안의 달리기 애니메이션을 덮어쓴다.
-	if (Feedback->Sound)
-	{
-		UGameplayStatics::SpawnSoundAttached(Feedback->Sound, GetRootComponent());
-	}
-
-	// 붙여서 스폰하므로 발밑을 따라다닌다. 시스템이 무한 루프라면 부스트가 끝날 때까지
-	// 끊김 없이 계속 뿜고, Deactivate 이후 남은 파티클이 사라지면 스스로 정리된다.
-	SpeedBoostFXComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
-		Feedback->FX,
-		GetMesh(),
-		Feedback->FXSocket,
-		Feedback->FXOffset,
-		FRotator::ZeroRotator,
-		// SnapToTarget은 넘긴 오프셋을 버린다. FXOffset을 쓰려면 상대 오프셋을 지켜야 한다.
-		EAttachLocation::KeepRelativeOffset,
-		true);
 }
 
 void AUnit::PlayFeedbackMontage(const FUnitActionFeedback& Feedback)
@@ -1056,72 +999,6 @@ void AUnit::HandleWeaponFired(int32 Seed)
 	}
 }
 
-void AUnit::HandleChargingChanged(bool bCharging)
-{
-	if (GetNetMode() == NM_DedicatedServer)
-	{
-		return;
-	}
-
-	if (!bCharging)
-	{
-		// 쏘고 끝났든 취소됐든 총은 평소처럼 잠시 남았다가 들어간다. 실제로 한 발 나갔다면
-		// HandleWeaponFired 가 곧 타이머를 다시 걸어 준다.
-		StopChargePose();
-		ShowGunForFire();
-		return;
-	}
-
-	// 충전하는 동안 총은 계속 들려 있어야 한다. 유지 타이머를 걷어 두지 않으면 충전 도중에
-	// 총이 사라지고, 그러면 발사 지점이 다시 쉬는 손으로 돌아간다.
-	GetWorldTimerManager().ClearTimer(GunHideTimer);
-	bGunVisible = true;
-	UpdateGunVisibility();
-
-	// 상체 자세는 UpperBody 슬롯이 정한다. 평소에는 이 슬롯으로 팔 내린 기본 포즈가 흐르고,
-	// 발사할 때만 잠깐 발사 동작이 얹힌다. 충전은 놓을 때까지 이어지므로 그 사이 자세를
-	// 붙들어 둘 것이 필요하다.
-	StartChargePose();
-}
-
-void AUnit::StartChargePose()
-{
-	StopChargePose();
-
-	const FUnitActionFeedback* const Feedback = UnitData ? UnitData->FindFeedback(EUnitAction::Charge) : nullptr;
-	UAnimInstance* const AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
-	if (!Feedback || !Feedback->Animation || !AnimInstance)
-	{
-		// 충전 자세를 등록하지 않은 캐릭터는 지금까지처럼 기본 포즈로 충전한다.
-		return;
-	}
-
-	// 슬롯 몽타주에는 “무한” 이 없다. 어떤 충전보다도 길게 돌 만큼만 반복해 두고, 실제로는
-	// 방아쇠를 놓는 순간 StopChargePose 가 세운다.
-	constexpr int32 LoopCount = 120;
-	ChargePose = AnimInstance->PlaySlotAnimationAsDynamicMontage(
-		Feedback->Animation, Feedback->AnimationSlot,
-		Feedback->AnimationBlendIn, Feedback->AnimationBlendOut, /*InPlayRate=*/1.0f, LoopCount);
-}
-
-void AUnit::StopChargePose()
-{
-	UAnimMontage* const Pose = ChargePose.Get();
-	ChargePose.Reset();
-	if (!Pose)
-	{
-		return;
-	}
-
-	if (UAnimInstance* const AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
-	{
-		const FUnitActionFeedback* const Feedback = UnitData ? UnitData->FindFeedback(EUnitAction::Charge) : nullptr;
-		const float BlendOut = Feedback ? Feedback->AnimationBlendOut : 0.15f;
-		// 이 몽타주만 지목해서 세운다. 발사 동작이 이미 슬롯을 가져갔다면 아무 일도 일어나지 않는다.
-		AnimInstance->Montage_Stop(BlendOut, Pose);
-	}
-}
-
 void AUnit::ShowGunForFire()
 {
 	const float HoldTime = UnitData ? UnitData->GunVisibleHoldTime : 0.0f;
@@ -1162,7 +1039,7 @@ void AUnit::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 	// 소유자는 예측으로 이미 알고 있다. 보내면 자기가 아는 값을 한 번 더 받을 뿐이고,
 	// 지연 때문에 오히려 예측을 되돌리게 된다.
 	DOREPLIFETIME_CONDITION(AUnit, bIsDashing, COND_SkipOwner);
-	DOREPLIFETIME_CONDITION(AUnit, bIsSpeedBoosting, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(AUnit, ReplicatedHeroPhase, COND_SkipOwner);
 }
 
 void AUnit::SetUnitData(UUnitDataAsset* NewUnitData)

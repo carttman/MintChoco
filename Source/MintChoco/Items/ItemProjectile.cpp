@@ -154,6 +154,12 @@ AUnit* AItemProjectile::GetInstigatorUnit() const
 	return Cast<AUnit>(GetInstigator());
 }
 
+float AItemProjectile::GetCollisionRadius() const
+{
+	// CDO에서도 부르므로 스케일이 아니라 설정된 반지름을 읽는다.
+	return Sphere ? Sphere->GetUnscaledSphereRadius() : 0.0f;
+}
+
 void AItemProjectile::HandleWorldHit(const FHitResult& Hit)
 {
 	Detonate();

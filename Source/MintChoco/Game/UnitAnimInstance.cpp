@@ -6,6 +6,7 @@
 #include "GameFramework/Controller.h"
 
 #include "Game/Unit.h"
+#include "Items/ItemSlotComponent.h"
 #include "Weapons/PaintWeaponComponent.h"
 
 // ---------------------------------------------------------------- FUnitAnimMath
@@ -101,20 +102,18 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	{
 		bIsDashing = Unit->IsDashing();
 		bIsStunned = Unit->IsStunned();
-		const UUnitMovementComponent* const UnitMovement = Unit->GetUnitMovement();
-		HeroLandingPhase = UnitMovement ? UnitMovement->GetHeroLandingPhase() : EHeroLandingPhase::None;
+		// 유닛에게 묻는다: 원격 폰의 단계는 무브먼트가 아니라 복제된 값에서 온다.
+		HeroLandingPhase = Unit->GetHeroLandingPhase();
 		bIsFiring = Unit->GetPaintWeapon() && Unit->GetPaintWeapon()->IsTriggerHeld();
+
+		const UItemSlotComponent* const Slot = Unit->GetItemSlot();
+		ItemPose = Slot ? Slot->GetItemPose() : nullptr;
+		bHasItemPose = ItemPose != nullptr;
+		bHasUpperBodyItemPose = bHasItemPose && Slot->GetItemPoseBlend() == EItemPoseBlend::UpperBody;
+		bHasFullBodyItemPose = bHasItemPose && !bHasUpperBodyItemPose;
 
 		const UWorld* const World = GetWorld();
 		bRecentlyFired = World && FUnitAnimMath::IsFireHoldActive(World->GetTimeSeconds(), LastFiredTime, FireHoldTime);
-
-		// 무기가 스스로 “자세를 들라” 고 말한다. bIsFiring 을 읽는 것과 같은 방식이라 복제나
-		// 델리게이트가 더 필요 없다: 충전 상태는 이미 복제되므로 구경하는 머신에서도 같다.
-		bIsAiming = false;
-		for (const UPaintWeaponComponent* const Weapon : { Unit->GetPaintWeapon(), Unit->GetSecondaryWeapon() })
-		{
-			bIsAiming |= Weapon && Weapon->IsAiming();
-		}
 	}
 	else
 	{
@@ -123,11 +122,11 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		HeroLandingPhase = EHeroLandingPhase::None;
 		bIsFiring = false;
 		bRecentlyFired = false;
-		bIsAiming = false;
+		ItemPose = nullptr;
+		bHasItemPose = false;
+		bHasFullBodyItemPose = false;
+		bHasUpperBodyItemPose = false;
 	}
-
-	// 애님 그래프가 볼 값은 이것 하나다. 쏘기 전 · 충전 중 · 쏜 뒤를 모두 합쳐 둔다.
-	bWeaponPoseHeld = bIsAiming || bRecentlyFired;
 }
 
 void UUnitAnimInstance::BindWeapons(AUnit* NewUnit)
