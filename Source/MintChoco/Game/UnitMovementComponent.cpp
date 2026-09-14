@@ -270,6 +270,31 @@ void UUnitMovementComponent::AbortHeroLanding()
 	}
 }
 
+void UUnitMovementComponent::Launch(const FVector& LaunchVelocity)
+{
+	switch (HeroPhase)
+	{
+	case EHeroLandingPhase::Rise:
+	case EHeroLandingPhase::Hover:
+	case EHeroLandingPhase::Approach:
+	case EHeroLandingPhase::Dive:
+		// 공중에서는 무시한다. 단계를 걷어내고 던져지게 두면 착지가 오지 않아 단계 전환이
+		// 통째로 사라지므로(내리꽂기 → 착지 → 경직), 그 전환을 보는 쪽도 함께 멈춘다.
+		return;
+
+	case EHeroLandingPhase::Recover:
+		// 내려선 뒤다. 던져지는 것 자체는 말이 되지만, 경직을 안고 가면 입력이 잠긴 채로
+		// 떠오른다. 여기서 풀어 주면 그 뒤는 평소의 낙하다.
+		AbortHeroLanding();
+		break;
+
+	default:
+		break;
+	}
+
+	Super::Launch(LaunchVelocity);
+}
+
 bool UUnitMovementComponent::FinishHeroLandingDive()
 {
 	if (HeroPhase != EHeroLandingPhase::Dive)

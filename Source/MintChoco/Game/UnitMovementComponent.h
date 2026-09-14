@@ -135,6 +135,22 @@ public:
 	virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
 	virtual void PhysCustom(float DeltaTime, int32 Iterations) override;
 
+	/**
+	 * 밖에서 던져진 속도(점프대). 히어로 랜딩으로 공중에 있는 동안에는 받지 않는다.
+	 *
+	 * 히어로 랜딩은 레일 위를 달린다: 상승과 건너감은 단계 기계가 위치를 직접 쓰고, 내리꽂기는
+	 * 중력을 끈 직선이다. 그 위에 속도를 얹으면 표시해 둔 착지점이 어그러지고, 특히 내리꽂는
+	 * 중에 위로 던져지면 중력이 0인 채 영원히 올라간다 — 단계를 푸는 것이 착지인데 그 착지가
+	 * 오지 않기 때문이다(점프대를 착지점으로 고르면 실제로 그랬다).
+	 *
+	 * 그래서 조준한 곳에 내려선다는 약속이 발판보다 우선한다. 점프대 쪽이 아니라 여기서 막는
+	 * 이유는, 레벨에 놓인 발판이 C++ 액터가 아니라 Launch Character를 부르는 블루프린트이기
+	 * 때문이다. 던지는 쪽을 하나하나 고치는 대신 받는 쪽에서 한 번 정한다.
+	 *
+	 * 착지 경직 중이라면 받아들이되 경직을 먼저 푼다: 입력이 잠긴 채로 떠오르면 안 된다.
+	 */
+	virtual void Launch(const FVector& LaunchVelocity) override;
+
 	/** ShouldFaceControlRotation이 참일 때만 엔진의 컨트롤 회전 추종을 돌린다. 거짓이면 몸통을 건드리지 않는다. */
 	virtual void PhysicsRotation(float DeltaTime) override;
 
