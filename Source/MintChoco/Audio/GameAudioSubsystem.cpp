@@ -125,6 +125,29 @@ bool UGameAudioSubsystem::CanPlay() const
 	return !IsRunningDedicatedServer();
 }
 
+USoundAttenuation* UGameAudioSubsystem::GetDefaultAttenuation()
+{
+	const UGameAudioSettings& Settings = UGameAudioSettings::Get();
+	if (USoundAttenuation* const Asset = Settings.DefaultAttenuation.LoadSynchronous())
+	{
+		return Asset;
+	}
+
+	// 에셋이 없으면 코드가 만든다. 트랜지언트라 저장되지 않고, 서브시스템과 같이 산다.
+	if (!FallbackAttenuation)
+	{
+		FallbackAttenuation = NewObject<USoundAttenuation>(this, TEXT("FallbackAttenuation"), RF_Transient);
+		FSoundAttenuationSettings& Att = FallbackAttenuation->Attenuation;
+		Att.bAttenuate = true;
+		Att.bSpatialize = true;
+		Att.DistanceAlgorithm = EAttenuationDistanceModel::NaturalSound;
+		Att.AttenuationShape = EAttenuationShape::Sphere;
+		Att.AttenuationShapeExtents = FVector(FMath::Max(Settings.FallbackInnerRadius, 0.0f));
+		Att.FalloffDistance = FMath::Max(Settings.FallbackFalloffDistance, 1.0f);
+	}
+	return FallbackAttenuation;
+}
+
 const FSoundEvent* UGameAudioSubsystem::ResolveEvent(const FGameplayTag& Tag, const USoundBank* Override) const
 {
 	// 개체별 뱅크가 먼저다. 오버라이드에는 바꿀 항목만 들어 있으므로, 없으면 기본 뱅크로 내려간다.
@@ -185,9 +208,7 @@ void UGameAudioSubsystem::PlayEventAtLocation(const FGameplayTag& Tag, const FVe
 		return;
 	}
 
-	USoundAttenuation* const Attenuation = Event->Attenuation
-		? Event->Attenuation.Get()
-		: UGameAudioSettings::Get().DefaultAttenuation.LoadSynchronous();
+	USoundAttenuation* const Attenuation = Event->Attenuation ? Event->Attenuation.Get() : GetDefaultAttenuation();
 
 	UGameplayStatics::PlaySoundAtLocation(
 		this, Event->Sound, Location, FRotator::ZeroRotator,
@@ -207,9 +228,7 @@ UAudioComponent* UGameAudioSubsystem::PlayEventAttached(const FGameplayTag& Tag,
 		return nullptr;
 	}
 
-	USoundAttenuation* const Attenuation = Event->Attenuation
-		? Event->Attenuation.Get()
-		: UGameAudioSettings::Get().DefaultAttenuation.LoadSynchronous();
+	USoundAttenuation* const Attenuation = Event->Attenuation ? Event->Attenuation.Get() : GetDefaultAttenuation();
 
 	return UGameplayStatics::SpawnSoundAttached(
 		Event->Sound, AttachTo, Socket, FVector::ZeroVector, FRotator::ZeroRotator,
