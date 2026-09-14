@@ -29,8 +29,10 @@ Every item here cost real debugging time once. Read before any MCP write.
   `describe_toolset` returns every tool's argument schema.
 - There is no console-command or editor-python route: `ProgrammaticToolset` only orchestrates
   registered tools, and `EditorAppToolset.SearchCVars` only reads. `ProgrammaticToolset` runs
-  `execute_tool_script` with a `run()` that returns a dict; `execute_tool` and `call_tool` need
-  the full dotted toolset path, and `ObjectTools` takes `instance` + `properties` / `values`
+  `execute_tool_script` with a `run()` that returns a dict; inside the script the call is
+  `execute_tool('<full.toolset.path>.<tool>', json.dumps({...}))` — one dotted string naming
+  the tool and the arguments as a JSON **string** (a dict, kwargs, or a separate tool-name
+  argument all raise TypeError). `ObjectTools` takes `instance` + `properties` / `values`
   (a JSON string). `try/except` inside a script does not reliably catch `execute_tool` failures.
   `time.sleep` inside a script lets the engine tick (Lumen settles), but a long script loses the
   MCP session and its result: 14 viewport captures did, 6 plus a 30 s sleep did not.
@@ -41,6 +43,14 @@ Every item here cost real debugging time once. Read before any MCP write.
   unless the editor and the test instance start together: whichever binds first keeps port
   8000, and an editor that lost it has no MCP until relaunched. Run the headless test before
   launching the editor, not alongside it.
+- Packaging fails with `UATHelper: Error: LogHttpListener: Error: HttpListener unable to bind to
+  127.0.0.1:8000` and `Cook failed` even though the cook log ends with `CookCommandlet ... result 0`:
+  the cook commandlet is a second editor instance and a commandlet exits 1 whenever any
+  Error-level line was logged (`LaunchEngineLoop.cpp`, `GWarn->GetNumErrors() > 0`). It only tries
+  to bind because Editor Preferences → Plugins → Model Context Protocol → **Auto Start Server** is
+  on (`bAutoStartServer=True` in `Saved/Config/WindowsEditor/EditorPerProjectUserSettings.ini`),
+  and the open editor already owns the port. Turn Auto Start off and start the server with the
+  `-ExecCmds` line above (or the console command), or close the editor before packaging.
 
 ## Writes that crash the editor
 
