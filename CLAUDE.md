@@ -39,7 +39,8 @@ in the MPC updates every material live; no recompile, no restart.
   function with a constant 0/1, so `Albedo/Roughness/Specular/SSSMFP/WetCoat` no longer exist
   as layer parameters (old `MI_PaintStyle_*` overrides of them are dead). MIDs set `TeamId`
   from `Splat.PaintId` (`APaintSideSplat`); the HUD bar and Niagara `User.TintColor` take
-  `TeamLook::GetColor(PaintId)`.
+  `TeamLook::GetColor(PaintId)` (splat, burst, muzzle flash and charge hold:
+  `UPaintWeaponComponent::TintTeamFX`).
 - MCP: `MaterialTools.create_parameter_collection`; append MPC entries one per
   `set_properties` call on `VectorParameters` (GUIDs are created automatically). A
   `MaterialExpressionCollectionParameter` needs `Collection` written first and
@@ -47,6 +48,12 @@ in the MPC updates every material live; no recompile, no restart.
   invisible to ObjectTools); a clean material compile proves the id landed. Single-input pins
   (Saturate, ComponentMask, FunctionOutput) are addressed as `"None"`. MPC default values are
   live in the session without a restart.
+- Niagara over MCP (`NiagaraToolsets.NiagaraToolset_System`): `AddUserVariables` creates
+  `User.TintColor`, then `SetStackInputData` on `InitializeParticle` / `Color` with a
+  `NiagaraExt_StackInputData_Linked` value binds it; every `emitterRef` / `stackInputRef` needs
+  all six fields (`rendererIndex: -1`, `inputNameStack: ["Color"]`). Read one input with
+  `GetStackInputData` rather than `GetEmitterTopology`, whose dump is enormous. Check
+  `GetSystemCompileState` (`bHasErrors`) and `GetStackIssues`, then `save_assets`.
 - Test: `MintChoco.Game.TeamLook.*` (collection entries, fallback, per-team instances).
 
 ## Unreal MCP pitfalls

@@ -53,6 +53,6 @@ namespace TeamLook
 	/** 팀 색을 쓰는 모든 마스터 머티리얼이 선언하는 스칼라 파라미터. MI 와 MID 가 팀 id 를 넣는다. */
 	inline const FName TeamIdParameter(TEXT("TeamId"));
 
-	/** NS_PaintSplat / NS_HoneyBalloonBurst 의 유저 파라미터. */
+	/** 팀 색을 받는 나이아가라 시스템의 유저 파라미터: 착탄, 파열, 총구 화염, 차징 홀드. */
 	inline const FName NiagaraTintParameter(TEXT("User.TintColor"));
 }

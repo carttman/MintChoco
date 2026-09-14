@@ -3,6 +3,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Game/GameGameState.h"
+#include "Game/TeamLook.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
@@ -397,12 +398,15 @@ void UPaintWeaponComponent::StartChargeFX()
 			// Deactivate leaves the last particles to finish and then cleans itself up; false would
 			// pile a dead component on the mesh for every charge.
 			/*bAutoDestroy=*/true, ENCPoolMethod::None);
-		return;
+	}
+	else
+	{
+		const FTransform Muzzle = GetMuzzleTransform();
+		ChargeFXComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			GetWorld(), Profile->ChargeFX, Muzzle.GetLocation(), Muzzle.Rotator(), Scale);
 	}
 
-	const FTransform Muzzle = GetMuzzleTransform();
-	ChargeFXComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-		GetWorld(), Profile->ChargeFX, Muzzle.GetLocation(), Muzzle.Rotator(), Scale);
+	TintTeamFX(ChargeFXComponent);
 }
 
 void UPaintWeaponComponent::StopChargeFX()
@@ -688,14 +692,22 @@ void UPaintWeaponComponent::PlayMuzzleFX(float ChargeFraction)
 	FName AttachSocket = NAME_None;
 	if (USceneComponent* const Attachment = GetMuzzleAttachment(AttachSocket))
 	{
-		UNiagaraFunctionLibrary::SpawnSystemAttached(
+		TintTeamFX(UNiagaraFunctionLibrary::SpawnSystemAttached(
 			Profile->MuzzleFX, Attachment, AttachSocket, FVector::ZeroVector, FRotator::ZeroRotator,
-			Scale, EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true, ENCPoolMethod::None);
+			Scale, EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true, ENCPoolMethod::None));
 		return;
 	}
 
 	// Socketless: the muzzle hangs off the view, so the flash is left where the shot left from.
 	const FTransform Muzzle = GetMuzzleTransform();
-	UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-		World, Profile->MuzzleFX, Muzzle.GetLocation(), Muzzle.Rotator(), Scale);
+	TintTeamFX(UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+		World, Profile->MuzzleFX, Muzzle.GetLocation(), Muzzle.Rotator(), Scale));
+}
+
+void UPaintWeaponComponent::TintTeamFX(UNiagaraComponent* FX) const
+{
+	if (FX)
+	{
+		FX->SetVariableLinearColor(TeamLook::NiagaraTintParameter, TeamLook::GetColor(PaintId, GetWorld()));
+	}
 }

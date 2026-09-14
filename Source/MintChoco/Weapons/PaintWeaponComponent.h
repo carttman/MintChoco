@@ -252,6 +252,9 @@ private:
 	void StartChargeFX();
 	void StopChargeFX();
 
+	/** Writes this weapon's team colour into a spawned FX's User.TintColor. Null is ignored. */
+	void TintTeamFX(UNiagaraComponent* FX) const;
+
 	/** 충전 상태가 바뀌었다. 이펙트를 켜고 끄고, 캐릭터가 자세를 잡도록 알린다. */
 	void ApplyChargingVisuals(bool bNewCharging);
 
