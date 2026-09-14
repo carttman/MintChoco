@@ -7,6 +7,7 @@
 
 #include "Game/Unit.h"
 #include "Items/ItemSlotComponent.h"
+#include "MintChoco.h"
 #include "Weapons/PaintWeaponComponent.h"
 
 // ---------------------------------------------------------------- FUnitAnimMath
@@ -42,13 +43,34 @@ void UUnitAnimInstance::NativeInitializeAnimation()
 	Super::NativeInitializeAnimation();
 	Unit = Cast<AUnit>(TryGetPawnOwner());
 	bAimPitchInitialized = false;
+
+	// 상태 기계는 클래스에 구워져 있어 인스턴스마다 한 번만 찾으면 된다.
+	LocomotionMachineIndex = GetStateMachineIndex(LocomotionMachineName);
+	UE_CLOG(LocomotionMachineIndex == INDEX_NONE, LogMintChoco, Warning,
+		TEXT("%s: 상태 기계 '%s'가 없어 대시 보드가 나오지 않습니다. LocomotionMachineName을 확인하세요."),
+		*GetNameSafe(GetClass()), *LocomotionMachineName.ToString());
 }
 
 void UUnitAnimInstance::NativeUninitializeAnimation()
 {
-	// 메시가 애님 인스턴스를 바꾸거나 폰이 사라질 때. 무기 델리게이트에 죽은 바인딩을 남기지 않는다.
+	// 메시가 애님 인스턴스를 바꾸거나 폰이 사라질 때. 보드는 이 인스턴스가 켠 것이므로 끄고,
+	// 무기 델리게이트에 죽은 바인딩을 남기지 않는다.
+	if (AUnit* const Bound = BoundUnit.Get())
+	{
+		Bound->SetBoardShown(false);
+	}
 	BindWeapons(nullptr);
 	Super::NativeUninitializeAnimation();
+}
+
+bool UUnitAnimInstance::IsInDashState() const
+{
+	if (LocomotionMachineIndex == INDEX_NONE)
+	{
+		return false;
+	}
+	// 전이가 시작되는 순간 현재 상태가 목표 상태로 바뀌므로, 블렌드 중에도 대시로 친다.
+	return GetCurrentStateName(LocomotionMachineIndex).ToString().StartsWith(DashStatePrefix);
 }
 
 void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
@@ -102,6 +124,11 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	{
 		bIsDashing = Unit->IsDashing();
 		bIsStunned = Unit->IsStunned();
+
+		// 보드는 키가 아니라 동작을 따른다. 이 머신이 그리는 상태 기계를 보므로 화면과 어긋나지 않는다.
+		bDashAnimationActive = IsInDashState();
+		Unit->SetBoardShown(bDashAnimationActive);
+
 		// 유닛에게 묻는다: 원격 폰의 단계는 무브먼트가 아니라 복제된 값에서 온다.
 		HeroLandingPhase = Unit->GetHeroLandingPhase();
 		bIsHeroLanding = HeroLandingPhase != EHeroLandingPhase::None;
@@ -138,6 +165,7 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	{
 		bIsDashing = false;
 		bIsStunned = false;
+		bDashAnimationActive = false;
 		HeroLandingPhase = EHeroLandingPhase::None;
 		bIsHeroLanding = false;
 		bIsFiring = false;
@@ -150,7 +178,8 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	}
 
 	// 애님 그래프가 볼 값은 이것 하나다. 쏘기 전 · 충전 중 · 쏜 뒤를 모두 합쳐 둔다.
-	bWeaponPoseHeld = bIsAiming || bRecentlyFired;
+	// 대시(보드) 중에는 방아쇠가 막히므로 쏜 직후의 여운도 보드 자세를 덮지 않는다.
+	bWeaponPoseHeld = (bIsAiming || bRecentlyFired) && !bIsDashing;
 }
 
 void UUnitAnimInstance::BindWeapons(AUnit* NewUnit)
