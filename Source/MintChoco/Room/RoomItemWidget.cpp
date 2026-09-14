@@ -5,6 +5,9 @@
 #include "Components/TextBlock.h"
 #include "Components/Button.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
+
 
 // void URoomItemWidget::SetInfo(FBlueprintSessionResult InSessionResult)
 // {
@@ -48,6 +51,8 @@ void URoomItemWidget::RefreshUI()
 
 void URoomItemWidget::OnTryJoinSession()
 {
+	UGameAudioSubsystem::Play2D(this, AudioTags::Audio_UI_Join);
+
 	auto* OSS = GetGameInstance()->GetSubsystem<UOnlineSessionsSubsystem>();
 	if (OSS)
 	{

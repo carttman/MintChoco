@@ -14,6 +14,7 @@
 
 #include "Audio/GameAudioSettings.h"
 #include "Audio/SoundBank.h"
+#include "Game/GameGameState.h"
 #include "MintChoco.h"
 
 void UGameAudioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
@@ -43,6 +44,26 @@ void UGameAudioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 void UGameAudioSubsystem::HandlePostLoadMap(UWorld* LoadedWorld)
 {
 	ApplyVolumeSettings();
+
+	// 경기 단계가 있는 맵은 AGameGameState::OnRep_MatchPhase가 곡을 고른다. 나머지(타이틀, 룸,
+	// 로비)는 전부 로비 곡이다. 같은 곡이면 PlayMusic이 아무것도 하지 않으므로 그 사이를 오가도
+	// 끊기지 않는다. 게임 상태는 클라이언트에 조금 늦게 올 수 있어 클래스가 아니라 인스턴스를 본다:
+	// 아직 없으면 로비 곡이 잠깐 흐르다가 단계 복제가 덮는다.
+	if (!LoadedWorld || LoadedWorld->GetGameState<AGameGameState>())
+	{
+		return;
+	}
+	const FGameplayTag& Lobby = UGameAudioSettings::Get().LobbyMusic;
+	if (Lobby.IsValid())
+	{
+		PlayMusic(Lobby);
+	}
+}
+
+bool UGameAudioSubsystem::HasEvent(const FGameplayTag& Tag, const USoundBank* Override) const
+{
+	const FSoundEvent* const Event = ResolveEvent(Tag, Override);
+	return Event && Event->Sound;
 }
 
 void UGameAudioSubsystem::Deinitialize()

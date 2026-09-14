@@ -3,6 +3,9 @@
 #include "Components/TextBlock.h"
 #include "Engine/World.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
+
 // ---------------------------------------------------------------- FGameHudMath
 
 int32 FGameHudMath::CeilSeconds(float Seconds)
@@ -99,6 +102,20 @@ void UGameHudWidget::UpdateTimer(const AGameGameState& State, float Remaining)
 	Txt_Timer->SetText(FText::AsNumber(FGameHudMath::CeilSeconds(Remaining)));
 	const bool bWarning = FGameHudMath::IsTimerWarning(State.GetMatchPhase(), Remaining, TimerWarningSeconds);
 	Txt_Timer->SetColorAndOpacity(FSlateColor(bWarning ? TimerWarningColor : TimerNormalColor));
+
+	// 경고선을 넘는 순간 한 번: 경고음, 그리고 뱅크에 막판 곡이 있으면 그쪽으로 갈아탄다.
+	if (bWarning && !bWasWarning)
+	{
+		UGameAudioSubsystem::Play2D(this, AudioTags::Audio_Match_TimerWarning);
+		if (UGameAudioSubsystem* const Audio = UGameAudioSubsystem::Get(this))
+		{
+			if (Audio->HasEvent(AudioTags::Audio_Music_FinalRush))
+			{
+				Audio->PlayMusic(AudioTags::Audio_Music_FinalRush);
+			}
+		}
+	}
+	bWasWarning = bWarning;
 }
 
 void UGameHudWidget::UpdateCenter(const AGameGameState& State, float Remaining, double Now)
@@ -113,25 +130,35 @@ void UGameHudWidget::UpdateCenter(const AGameGameState& State, float Remaining, 
 
 	FText Text;
 	FLinearColor Color = CountdownNormalColor;
+	int32 Number = 0;
 	switch (Kind)
 	{
 	case EGameHudCenter::Waiting:
 		Text = WaitingText;
 		break;
 	case EGameHudCenter::Countdown:
-		Text = FText::AsNumber(FGameHudMath::CeilSeconds(State.GetCountdownRemaining()));
+		Number = FGameHudMath::CeilSeconds(State.GetCountdownRemaining());
+		Text = FText::AsNumber(Number);
 		break;
 	case EGameHudCenter::Start:
 		Text = StartText;
 		break;
 	case EGameHudCenter::FinalCountdown:
-		Text = FText::AsNumber(FGameHudMath::CeilSeconds(Remaining));
+		Number = FGameHudMath::CeilSeconds(Remaining);
+		Text = FText::AsNumber(Number);
 		Color = FinalCountdownColor;
 		break;
 	case EGameHudCenter::None:
 	default:
 		break;
 	}
+
+	// 초읽기는 숫자가 바뀌는 프레임에 한 번. 3·2·1과 마지막 10초가 같은 소리를 쓴다.
+	if (Number > 0 && Number != LastCountdownNumber)
+	{
+		UGameAudioSubsystem::Play2D(this, AudioTags::Audio_Match_CountdownTick);
+	}
+	LastCountdownNumber = Number;
 
 	if (Text.IsEmpty())
 	{

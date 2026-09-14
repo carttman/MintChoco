@@ -8,6 +8,7 @@
 
 class APawn;
 class UNiagaraSystem;
+class USoundBank;
 
 /** How long one trigger pull lasts. Part of the profile, so one asset says when it fires as well as what flies. */
 UENUM(BlueprintType)
@@ -204,6 +205,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX",
 		meta = (ClampMin = "0.01", EditCondition = "FireMode == EPaintFireMode::Charged"))
 	float ChargeFXScale = 1.0f;
+
+	/**
+	 * Sounds this weapon plays differently (Audio.Weapon.*: Fire, Empty, ChargeLoop, ChargeReady).
+	 * Holds only the tags to change; a tag missing here falls through to the project bank
+	 * (UGameAudioSettings::Bank). Unset means every sound comes from the project bank.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX")
+	TObjectPtr<USoundBank> Sounds;
 
 	/**
 	 * Uniform scale one shot's muzzle FX spawns at. Charged walks between the ends of

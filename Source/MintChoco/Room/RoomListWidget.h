@@ -34,8 +34,12 @@ protected:
 	// void RefreshUI();
 
 private:
+	/** 새로고침 버튼. 클릭음을 내고 FindRooms를 부른다. */
 	UFUNCTION()
 	void OnMyFindRoom();
+
+	/** 목록을 비우고 검색을 시작한다. 목록에 처음 들어올 때는 버튼 없이 이것만 부른다. */
+	void FindRooms();
 
 	UFUNCTION()
 	void AddItemWidget(const struct FMySessionInfo& SessionInfo);

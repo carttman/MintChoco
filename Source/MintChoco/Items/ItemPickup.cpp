@@ -10,6 +10,8 @@
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Game/Unit.h"
 #include "Items/ItemLabelWidget.h"
 #include "Items/ItemProfile.h"
@@ -124,6 +126,13 @@ void AItemPickup::BeginPlay()
 	ApplyProfile();
 	ApplyState();
 
+	// 예고음은 태어날 때 한 번. ApplyState는 여러 번 불리므로(BeginPlay, OnRep) 거기 두지 않는다.
+	// 액터가 복제되어 머신마다 BeginPlay를 지나므로 각자 한 번씩이다.
+	if (State == EItemPickupState::Announced)
+	{
+		UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_Item_Announce, GetActorLocation());
+	}
+
 	if (HasAuthority())
 	{
 		if (WarningTime > 0.0f)
@@ -192,10 +201,8 @@ void AItemPickup::OnRep_Collected()
 	if (bCollected)
 	{
 		SetActorHiddenInGame(true);
-		if (Profile && Profile->PickupSound)
-		{
-			UGameplayStatics::PlaySoundAtLocation(this, Profile->PickupSound, GetActorLocation());
-		}
+		// 서버는 OnTriggerBeginOverlap이 직접 부르고 클라이언트는 복제로 온다: 머신마다 한 번.
+		UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_Item_Pickup, GetActorLocation(), Profile ? Profile->Sounds.Get() : nullptr);
 	}
 }
 

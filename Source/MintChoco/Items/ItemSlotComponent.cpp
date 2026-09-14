@@ -18,6 +18,8 @@
 #include "NiagaraComponentPool.h"
 #include "NiagaraFunctionLibrary.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Game/Unit.h"
 #include "Game/UnitMovementComponent.h"
 #include "Ink/InkBottleComponent.h"
@@ -330,10 +332,7 @@ void UItemSlotComponent::PlayUseFeedback(const UItemProfile& Item)
 	const ACharacter* const Character = Cast<ACharacter>(GetOwner());
 	USceneComponent* const AttachTo = Character && Character->GetMesh() ? Character->GetMesh() : GetOwner()->GetRootComponent();
 
-	if (Item.ActivateSound)
-	{
-		UGameplayStatics::SpawnSoundAttached(Item.ActivateSound, AttachTo);
-	}
+	UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Item_Activate, AttachTo, NAME_None, Item.Sounds);
 
 	// 즉발 아이템에는 끌 시점이 없으므로 스스로 정리되게 둔다(지속형은 태그가 내려갈 때 끈다).
 	if (Item.ActivateFX)
@@ -445,6 +444,13 @@ void UItemSlotComponent::HandleTagChanged(const FGameplayTag Tag, int32 NewCount
 			EffectItem = nullptr;
 		}
 		StopEffectFeedback(Tag);
+		// 만료음. 태그가 내려가는 것을 모든 머신이 보므로 각자 낸다. 프로필은 위에서 태그로 찾은 것이다.
+		if (GetNetMode() != NM_DedicatedServer)
+		{
+			const ACharacter* const Character = Cast<ACharacter>(GetOwner());
+			USceneComponent* const AttachTo = Character && Character->GetMesh() ? Character->GetMesh() : GetOwner()->GetRootComponent();
+			UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Item_Expire, AttachTo, NAME_None, Item->Sounds);
+		}
 	}
 }
 
@@ -476,10 +482,7 @@ void UItemSlotComponent::StartEffectFeedback(const UItemProfile& Item, const FGa
 	const ACharacter* const Character = Cast<ACharacter>(GetOwner());
 	USceneComponent* const AttachTo = Character && Character->GetMesh() ? Character->GetMesh() : GetOwner()->GetRootComponent();
 
-	if (Item.ActivateSound)
-	{
-		UGameplayStatics::SpawnSoundAttached(Item.ActivateSound, AttachTo);
-	}
+	UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Item_Activate, AttachTo, NAME_None, Item.Sounds);
 
 	// 갱신(같은 아이템 재사용)은 태그 수가 1에서 1로 머물러 여기까지 오지 않는다. 그래도
 	// 이미 켜진 것이 있으면 겹치지 않게 그대로 둔다.

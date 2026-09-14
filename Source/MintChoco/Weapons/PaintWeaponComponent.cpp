@@ -2,6 +2,9 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
+#include "Components/AudioComponent.h"
 #include "Game/GameGameState.h"
 #include "Game/TeamLook.h"
 #include "Game/Unit.h"
@@ -111,6 +114,10 @@ void UPaintWeaponComponent::EndPlay(const EEndPlayReason::Type Reason)
 	// here as well: a pawn destroyed mid-charge would otherwise leave it running on the mesh.
 	CancelTrigger();
 	StopChargeFX();
+	if (UWorld* const World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ChargeReadyTimer);
+	}
 	Super::EndPlay(Reason);
 }
 
@@ -379,10 +386,21 @@ void UPaintWeaponComponent::ApplyChargingVisuals(bool bNewCharging)
 	if (bNewCharging)
 	{
 		StartChargeFX();
+		// The ready cue rings when a full charge would be reached. The watchers only know when the
+		// hold started, so each machine measures from its own copy of that moment.
+		const float ChargeTime = GetEffectiveChargeTime();
+		if (UWorld* const World = GetWorld(); World && ChargeTime > 0.0f)
+		{
+			World->GetTimerManager().SetTimer(ChargeReadyTimer, this, &UPaintWeaponComponent::PlayChargeReadyCue, ChargeTime, /*bLoop=*/false);
+		}
 	}
 	else
 	{
 		StopChargeFX();
+		if (UWorld* const World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(ChargeReadyTimer);
+		}
 	}
 
 	// 캐릭터가 총을 들고 자세를 잡는 것은 연출만의 일이 아니다: 발사 지점이 그 순간의
@@ -392,7 +410,24 @@ void UPaintWeaponComponent::ApplyChargingVisuals(bool bNewCharging)
 
 void UPaintWeaponComponent::StartChargeFX()
 {
-	if (ChargeFXComponent || !Profile || !Profile->ChargeFX || !GetWorld())
+	if (!Profile || !GetWorld())
+	{
+		return;
+	}
+
+	// The loop rides the muzzle like the FX; without a socket it sits on the owner. Stopped in StopChargeFX.
+	if (!ChargeAudioComponent)
+	{
+		FName AudioSocket = NAME_None;
+		USceneComponent* AudioAttachment = GetMuzzleAttachment(AudioSocket);
+		if (!AudioAttachment && GetOwner())
+		{
+			AudioAttachment = GetOwner()->GetRootComponent();
+		}
+		ChargeAudioComponent = UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Weapon_ChargeLoop, AudioAttachment, AudioSocket, Profile->Sounds);
+	}
+
+	if (ChargeFXComponent || !Profile->ChargeFX)
 	{
 		return;
 	}
@@ -425,6 +460,60 @@ void UPaintWeaponComponent::StopChargeFX()
 		ChargeFXComponent->Deactivate();
 		ChargeFXComponent = nullptr;
 	}
+	if (ChargeAudioComponent)
+	{
+		ChargeAudioComponent->Stop();
+		ChargeAudioComponent = nullptr;
+	}
+}
+
+void UPaintWeaponComponent::PlayChargeReadyCue()
+{
+	if (!Profile)
+	{
+		return;
+	}
+	FName Socket = NAME_None;
+	USceneComponent* Attachment = GetMuzzleAttachment(Socket);
+	if (!Attachment && GetOwner())
+	{
+		Attachment = GetOwner()->GetRootComponent();
+	}
+	UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Weapon_ChargeReady, Attachment, Socket, Profile->Sounds);
+}
+
+void UPaintWeaponComponent::PlayFireSound()
+{
+	UWorld* const World = GetWorld();
+	if (!Profile || !World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	// Attached, like the flash: a shot fired on the move should not leave its sound behind.
+	FName Socket = NAME_None;
+	USceneComponent* Attachment = GetMuzzleAttachment(Socket);
+	if (!Attachment && GetOwner())
+	{
+		Attachment = GetOwner()->GetRootComponent();
+	}
+	UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Weapon_Fire, Attachment, Socket, Profile->Sounds);
+}
+
+void UPaintWeaponComponent::PlayEmptyCue()
+{
+	const UWorld* const World = GetWorld();
+	const APawn* const Pawn = GetOwnerPawn();
+	if (!World || !Profile || !Pawn || !Pawn->IsLocallyControlled())
+	{
+		return;
+	}
+	const double Now = World->GetTimeSeconds();
+	if (Now - LastEmptyCueTime < EmptyCueInterval)
+	{
+		return;
+	}
+	LastEmptyCueTime = Now;
+	UGameAudioSubsystem::Play2D(this, AudioTags::Audio_Weapon_Empty, Profile->Sounds);
 }
 
 void UPaintWeaponComponent::SetSeedOverride(bool bInUseFixedSeed, int32 InFixedSeed)
@@ -471,8 +560,15 @@ void UPaintWeaponComponent::SpendShot()
 
 bool UPaintWeaponComponent::FireOnce()
 {
-	if (!bTriggerHeld || !Profile || !GetWorld() || !CanAffordShot())
+	if (!bTriggerHeld || !Profile || !GetWorld())
 	{
+		return false;
+	}
+	// A dry tank is the one refusal the shooter should hear. The server's copy of this check
+	// (ServerFire) stays silent: the owner already heard its own.
+	if (!CanAffordShot())
+	{
+		PlayEmptyCue();
 		return false;
 	}
 
@@ -521,6 +617,7 @@ bool UPaintWeaponComponent::FireOnce()
 	}
 
 	PlayMuzzleFX(ChargeFraction);
+	PlayFireSound();
 	LastShotTime = GetWorld()->GetTimeSeconds();
 	OnFired.Broadcast(Seed);
 	return true;
@@ -550,6 +647,7 @@ void UPaintWeaponComponent::ServerFire_Implementation(int32 Seed, FVector_NetQua
 		SpendShot();
 		MulticastShotFired(Shot);
 		PlayMuzzleFX(Context.ChargeFraction);
+		PlayFireSound();
 		OnFired.Broadcast(Seed);
 	}
 }
@@ -568,6 +666,7 @@ void UPaintWeaponComponent::MulticastShotFired_Implementation(const FPaintShot& 
 	}
 	// Feedback on the machines that only watch: the owner and the server raised theirs when they fired.
 	PlayMuzzleFX(Shot.Charge / 255.0f);
+	PlayFireSound();
 	OnFired.Broadcast(Shot.Seed);
 }
 

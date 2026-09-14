@@ -11,6 +11,8 @@
 #include "NiagaraFunctionLibrary.h"
 
 #include "MeshScale.h"
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Game/TeamLook.h"
 #include "Game/TeamTypes.h"
 #include "Game/Unit.h"
@@ -336,6 +338,8 @@ void APaintProjectile::OnHit(UPrimitiveComponent*, AActor*, UPrimitiveComponent*
 	}
 
 	// 연출용 공도 그린다: 착탄은 각 머신에서 제 공으로 일어나므로 이것이 그 화면의 한 번이다.
+	// 소리도 같은 이유로 여기서 한 번. 한 발의 산탄이 한꺼번에 닿으므로 뱅크의 동시발성 제한이 자른다.
+	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_Weapon_Impact, Hit.ImpactPoint);
 	if (Profile && Profile->ImpactFX)
 	{
 		UWorld* const World = GetWorld();

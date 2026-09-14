@@ -1,9 +1,14 @@
 #include "Game/GameGameState.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSettings.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "Game/GameGameMode.h"
+#include "Game/GamePlayerState.h"
 #include "Game/PaintBar.h"
+#include "GameFramework/PlayerController.h"
 #include "Game/TeamLook.h"
 #include "Game/TeamTypes.h"
 #include "MintChoco.h"
@@ -107,6 +112,21 @@ void AGameGameState::SetMatchPhase(EMatchPhase NewPhase)
 void AGameGameState::OnRep_MatchPhase()
 {
 	UE_LOG(LogMintChoco, Log, TEXT("경기 단계: %s"), *UEnum::GetDisplayValueAsText(MatchPhase).ToString());
+
+	// 소리와 음악은 복제된 단계를 보고 머신마다 각자 낸다(리슨 호스트는 SetMatchPhase가 여기로 보낸다).
+	if (MatchPhase == EMatchPhase::Playing)
+	{
+		UGameAudioSubsystem::Play2D(this, AudioTags::Audio_Match_Start);
+	}
+	if (UGameAudioSubsystem* const Audio = UGameAudioSubsystem::Get(this))
+	{
+		// 등록되지 않은 단계는 하던 곡을 이어간다.
+		if (const FGameplayTag* const Track = UGameAudioSettings::Get().MusicByPhase.Find(MatchPhase))
+		{
+			Audio->PlayMusic(*Track);
+		}
+	}
+
 	BP_OnMatchPhaseChanged(MatchPhase);
 }
 
@@ -184,6 +204,22 @@ void AGameGameState::OnRep_MatchEnded()
 void AGameGameState::HandleMatchEnded()
 {
 	DrawCoverageDebug();
+
+	// 승패는 보는 사람의 팀에 달렸다. 로컬 플레이어의 PlayerState가 팀을 안다; 없으면(관전, 데디) 무승부 취급.
+	int32 LocalTeam = Teams::None;
+	if (const UWorld* const World = GetWorld())
+	{
+		const APlayerController* const Controller = World->GetFirstPlayerController();
+		const AGamePlayerState* const Player = Controller ? Controller->GetPlayerState<AGamePlayerState>() : nullptr;
+		if (Player)
+		{
+			LocalTeam = Player->GetTeam();
+		}
+	}
+	const FGameplayTag& Result = !Teams::IsValidId(WinningTeam) ? AudioTags::Audio_Match_End_Draw
+		: WinningTeam == LocalTeam ? AudioTags::Audio_Match_End_Win
+		: AudioTags::Audio_Match_End_Lose;
+	UGameAudioSubsystem::Play2D(this, Result);
 
 	BP_OnMatchEnded(WinningTeam);
 }

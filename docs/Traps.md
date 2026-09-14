@@ -156,6 +156,34 @@ last `FinalCountdownSeconds`).
 | The countdown never starts | A PlayerState never reported ready: it needs a local PlayerController, a valid pawn, and `UScreenFadeSubsystem::IsCovered()` false. `LogMintChoco` prints `준비 완료` per player and a warning when `ReadyTimeout` fires. |
 | Players can move during the countdown | The phase is read from the world's `AGameGameState`; a map using another GameState class locks nothing. |
 
+## Audio
+
+Three layers, all in `Source/MintChoco/Audio/`: native tags (`AudioTags::Audio_*`,
+`AudioGameplayTags.h`), a bank (`USoundBank`: tag → `FSoundEvent` with sound, attenuation,
+concurrency, volume, pitch range, 2D flag; the project bank is `Content/Audio/DA_SoundBank`, set in
+`UGameAudioSettings::Bank`), and one playback door (`UGameAudioSubsystem`, a GameInstance
+subsystem: `PlayAt` / `Play2D` / `PlayAttached` statics, `PlayMusic` / `StopMusic`). Code only
+names a tag; a tag with no bank entry or no sound plays nothing and logs nothing. Per-thing sounds
+are small override banks (`UUnitDataAsset::Sounds`, `UPaintWeaponProfile::Sounds`,
+`UItemProfile::Sounds`) resolved override → project bank, so an override holds only the tags it
+changes. A dedicated server never plays (`CanPlay`). Music: `MusicByPhase` in
+`DefaultGame.ini` is applied from `AGameGameState::OnRep_MatchPhase`; maps without an
+`AGameGameState` get `LobbyMusic` from `HandlePostLoadMap`; the timer warning edge in
+`UGameHudWidget` switches to `Audio.Music.FinalRush` only if the bank has it (`HasEvent`).
+`MintChoco.Audio.Bank` checks required tags, sounds, attenuation and pitch once the bank is non-empty.
+
+| Symptom | Check first |
+|---|---|
+| A sound plays twice on one machine, or on the server only | Sounds are never sent by RPC. Each machine plays from its own cosmetic hook: weapon fire next to `PlayMuzzleFX` (owner in `FireOnce`, server in `ServerFire`, watchers in `MulticastShotFired`), impact in `APaintProjectile::OnHit` (each machine's own ball), stun/super armor from the replicated tag callbacks, item pickup/announce from `AItemPickup` RepNotify + the server's direct call, balloon from server call + `OnRep_*`, burst from `APaintBurst::BeginPlay` (replicated actor). Adding a multicast on top doubles it. |
+| Nobody else hears a landing or a jump pad | `AUnit::Landed` and `AJumpPad` run on the owner and the server only (proxies do not simulate landing / are skipped on purpose); there is no replicated signal, so bystanders hear nothing. Same for knockback (`Audio.Unit.Knockback` is declared but unbound: `LaunchCharacter` is server-only). |
+| Splats or pellets drown everything | `Audio.World.Splat` fires once per `UPaintSubsystem::ApplySplat` and `Audio.Weapon.Impact` once per ball; a volley lands dozens in one frame. The cap is the bank entry's `Concurrency` (`SCC_Dense`), not the code. |
+| The empty-tank click repeats every frame | `PlayEmptyCue` is owner-local (`IsLocallyControlled`) and throttled by `EmptyCueInterval`; `FireOnce` is called per tick for Continuous and per shot timer for Automatic. |
+| Charge-ready rings at the wrong time for other players | Watchers have no press to measure; each machine arms its own `ChargeReadyTimer` from the charge it saw start (`ApplyChargingVisuals`) for `GetEffectiveChargeTime()`. The loop (`ChargeAudioComponent`) stops in `StopChargeFX`. |
+| Music stops instead of switching | `PlayMusic` on a tag with no sound calls `StopMusic`; ask `HasEvent` first when a switch is optional (FinalRush). Same tag twice is a no-op, which is what keeps Title→Room→Lobby continuous. |
+| Win/lose sound is wrong on a client | `HandleMatchEnded` derives the local team from the first local PlayerController's `AGamePlayerState`; no PlayerState (spectator) plays the draw sound. |
+| UMG buttons are silent | Only the C++-bound handlers (room list refresh/join/create) play through the bank. Blueprint-only buttons use the UMG button style's Pressed/Hovered sound (volume via `SC_UI`) or call `PlayEvent2D(Audio.UI.Click)` on the subsystem. |
+| Footsteps never play | `UAnimNotify_Footstep` must be placed in the run sequences (`FootSocket` per notify); nothing in code triggers footsteps. |
+
 ## Screen fade (map transitions)
 
 `UScreenFadeSubsystem` (`Source/MintChoco/Screen/`) owns the cover widget across maps. Every

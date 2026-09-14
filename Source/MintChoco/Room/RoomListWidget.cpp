@@ -9,6 +9,9 @@
 #include "Components/WrapBox.h"
 #include "components/Button.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
+
 
 void URoomListWidget::NativeConstruct()
 {
@@ -30,7 +33,7 @@ void URoomListWidget::NativeConstruct()
 	}
 
 	// 방 목록에 들어오면 새로고침을 누르지 않아도 한 번 찾는다.
-	OnMyFindRoom();
+	FindRooms();
 }
 
 void URoomListWidget::NativeDestruct()
@@ -98,6 +101,12 @@ void URoomListWidget::NativeDestruct()
 
 void URoomListWidget::OnMyFindRoom()
 {
+	UGameAudioSubsystem::Play2D(this, AudioTags::Audio_UI_Click);
+	FindRooms();
+}
+
+void URoomListWidget::FindRooms()
+{
 	Rooms.Empty();
 	RoomList->ClearChildren();
 	//Btn_Refresh->SetIsEnabled(false);
@@ -111,6 +120,12 @@ void URoomListWidget::OnMyFindRoom()
 
 void URoomListWidget::AddItemWidget(const struct FMySessionInfo& SessionInfo)
 {
+	// 검색 결과는 방마다 한 번씩 오므로, 첫 방에서만 울린다.
+	if (Rooms.IsEmpty())
+	{
+		UGameAudioSubsystem::Play2D(this, AudioTags::Audio_UI_RoomFound);
+	}
+
 	URoomItemWidget* ItemWidget = CreateWidget<URoomItemWidget>(this, RoomItemWidgetClass);
 	ItemWidget->SetInfo(SessionInfo);
 	RoomList->AddChildToWrapBox(ItemWidget);

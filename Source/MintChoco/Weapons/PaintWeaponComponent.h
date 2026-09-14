@@ -11,6 +11,7 @@
 #include "PaintWeaponComponent.generated.h"
 
 class APawn;
+class UAudioComponent;
 class UInkTankComponent;
 class UNiagaraComponent;
 class USceneComponent;
@@ -247,6 +248,18 @@ private:
 	/** Plays the profile's muzzle FX once on this machine. Charge only matters in Charged. */
 	void PlayMuzzleFX(float ChargeFraction);
 
+	/** Plays Audio.Weapon.Fire at the muzzle, once per accepted shot on this machine (next to PlayMuzzleFX). */
+	void PlayFireSound();
+
+	/**
+	 * The owner asked for a shot its tank cannot pay for. Only the machine that pulled the trigger
+	 * hears it, and at most once per EmptyCueInterval: Continuous and Automatic ask every tick.
+	 */
+	void PlayEmptyCue();
+
+	/** Audio.Weapon.ChargeReady, fired by the timer ApplyChargingVisuals armed for the charge time. */
+	void PlayChargeReadyCue();
+
 	/** Records the hold locally, relays it to the machines that only watch, and drives the FX here. */
 	void SetCharging(bool bNewCharging);
 	void StartChargeFX();
@@ -332,6 +345,22 @@ private:
 	/** The hold FX loops, so it has to be switched off by hand rather than expiring. */
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> ChargeFXComponent;
+
+	/** The hold sound (Audio.Weapon.ChargeLoop) loops the same way; stopped with the FX. */
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> ChargeAudioComponent;
+
+	/**
+	 * Rings Audio.Weapon.ChargeReady when the charge would be full. Every machine arms its own
+	 * from the hold it saw start; the watchers have no press to measure, so theirs is an estimate.
+	 */
+	FTimerHandle ChargeReadyTimer;
+
+	/** World time the empty cue last played. Starts far in the past so the first refusal is heard. */
+	double LastEmptyCueTime = -UE_BIG_NUMBER;
+
+	/** Seconds between two empty cues while the trigger stays held on a dry tank. */
+	static constexpr float EmptyCueInterval = 0.25f;
 
 	/** Charge fraction of the shot FireOnce is about to fire. ReleaseTrigger samples it before the cancel clears the hold. */
 	float PendingChargeFraction = 1.0f;

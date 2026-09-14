@@ -78,6 +78,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Audio")
 	void ApplyVolumeSettings();
 
+	/**
+	 * 태그에 실제 소리가 붙어 있는지. PlayMusic은 곡이 없는 태그를 받으면 하던 곡을 끄므로,
+	 * "있을 때만 갈아타는" 호출부(막판 곡)는 먼저 이것을 묻는다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Audio")
+	bool HasEvent(const FGameplayTag& Tag, const USoundBank* Override = nullptr) const;
+
 private:
 	/** 오버라이드 뱅크 → 기본 뱅크 순으로 찾는다. 어느 쪽에도 없으면 nullptr. */
 	const FSoundEvent* ResolveEvent(const FGameplayTag& Tag, const USoundBank* Override) const;
@@ -89,7 +96,10 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<const USoundBank> LoadedBank;
 
-	/** 새 맵이 올라온 뒤 믹스를 얹는다. Initialize 시점에는 쓸 만한 월드가 없다. */
+	/**
+	 * 새 맵이 올라온 뒤 믹스를 얹고, 경기 단계가 없는 맵(타이틀·룸·로비)이면 로비 곡을 튼다.
+	 * 게임 맵의 곡은 AGameGameState의 단계 복제가 정한다. Initialize 시점에는 쓸 만한 월드가 없다.
+	 */
 	void HandlePostLoadMap(UWorld* LoadedWorld);
 
 	/** 지금 흐르는 곡. 맵 전환을 넘기려고 서브시스템이 직접 들고 있다. */
