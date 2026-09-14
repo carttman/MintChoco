@@ -110,6 +110,12 @@ private:
 	EMatchPhase LastPhase = EMatchPhase::WaitingForPlayers;
 	bool bSawPhase = false;
 
+	/** 마지막으로 중앙에 띄운 초. 숫자가 바뀌는 프레임에만 초읽기 소리가 난다. 0은 "숫자 아님". */
+	int32 LastCountdownNumber = 0;
+
+	/** 지난 프레임의 경고 여부. 0→1 에지에서 경고음과 막판 곡. */
+	bool bWasWarning = false;
+
 	void UpdateTimer(const AGameGameState& State, float Remaining);
 	void UpdateCenter(const AGameGameState& State, float Remaining, double Now);
 };

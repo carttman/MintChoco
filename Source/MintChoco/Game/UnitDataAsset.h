@@ -11,7 +11,7 @@ class UAnimMontage;
 class UAnimSequenceBase;
 class UNiagaraSystem;
 class USkeletalMesh;
-class USoundBase;
+class USoundBank;
 class UStaticMesh;
 
 /**
@@ -85,9 +85,6 @@ struct FUnitActionFeedback
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback", meta = (ForceUnits = "cm"))
 	FVector FXOffset = FVector::ZeroVector;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
-	TObjectPtr<USoundBase> Sound;
 };
 
 /**
@@ -121,6 +118,13 @@ public:
 	TObjectPtr<UStaticMesh> GunMesh;
 
 	/**
+	 * 대시(이동 가속) 동안 발밑에 보이는 보드. 비어 있으면 보드 없이 달린다. 메시의 Board 소켓에
+	 * 붙으므로 위치·회전은 소켓에서 맞춘다. 총과 같은 방식으로 평소에는 숨어 있다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Visual")
+	TObjectPtr<UStaticMesh> BoardMesh;
+
+	/**
 	 * 마지막 발사 후 총을 보여 두는 시간(초). 애님 블루프린트의 FireHoldTime과 같은
 	 * 값으로 두어야 상체 조준 자세와 총이 함께 사라진다.
 	 */
@@ -129,6 +133,13 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
 	TMap<EUnitAction, FUnitActionFeedback> ActionFeedback;
+
+	/**
+	 * 이 캐릭터만 다르게 낼 소리(Audio.Unit.* : 대시, 착지, 발소리, 스턴). 바꿀 태그만 넣는다;
+	 * 없는 태그는 프로젝트 기본 뱅크(UGameAudioSettings::Bank)로 내려간다. 비어 있으면 전부 기본.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
+	TObjectPtr<USoundBank> Sounds;
 
 	/** 등록되지 않은 동작이면 nullptr. 호출부는 이 함수만 쓰고 맵을 직접 뒤지지 않는다. */
 	const FUnitActionFeedback* FindFeedback(EUnitAction Action) const;

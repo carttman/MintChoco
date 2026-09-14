@@ -6,6 +6,7 @@
 #include "Animation/AnimMontage.h"
 #include "Animation/AnimSequenceBase.h"
 #include "Animation/Skeleton.h"
+#include "Components/AudioComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
@@ -18,6 +19,8 @@
 #include "NiagaraComponentPool.h"
 #include "NiagaraFunctionLibrary.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Game/Unit.h"
 #include "Game/UnitMovementComponent.h"
 #include "Ink/InkBottleComponent.h"
@@ -53,6 +56,8 @@ void UItemSlotComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		AbilitySystem->RegisterGenericGameplayTagEvent().Remove(TagEventHandle);
 	}
 	TagEventHandle.Reset();
+
+	StopAllAnimationSounds(0.0f);
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -259,6 +264,64 @@ const UItemProfile* UItemSlotComponent::GetPoseItem() const
 	return (bAiming && HeldItem) ? ToRawPtr(HeldItem) : ToRawPtr(EffectItem);
 }
 
+const UItemProfile* UItemSlotComponent::GetAnimationItem() const
+{
+	const UItemProfile* const PoseItem = GetPoseItem();
+	return PoseItem ? PoseItem : ToRawPtr(LastFeedbackItem);
+}
+
+void UItemSlotComponent::PlayAnimationSound(const FGameplayTag& Tag, FName Socket)
+{
+	if (GetNetMode() == NM_DedicatedServer || !Tag.IsValid())
+	{
+		return;
+	}
+
+	// 같은 태그가 울리는 중이면 갈아 끼운다. 구간이 시작마다 다시 오므로(클립이 한 바퀴 더 돌 때)
+	// 그대로 두면 소리가 겹쳐 쌓인다.
+	StopAnimationSound(Tag, 0.0f);
+
+	const ACharacter* const Character = Cast<ACharacter>(GetOwner());
+	USceneComponent* const AttachTo = Character && Character->GetMesh() ? Character->GetMesh() : GetOwner()->GetRootComponent();
+	if (!AttachTo)
+	{
+		return;
+	}
+
+	const FName AttachSocket = Socket != NAME_None && AttachTo->DoesSocketExist(Socket) ? Socket : NAME_None;
+	const UItemProfile* const Item = GetAnimationItem();
+	if (UAudioComponent* const Sound = UGameAudioSubsystem::PlayAttached(Tag, AttachTo, AttachSocket, Item ? Item->Sounds.Get() : nullptr))
+	{
+		AnimationSounds.Add(Tag, Sound);
+	}
+}
+
+void UItemSlotComponent::StopAnimationSound(const FGameplayTag& Tag, float FadeOut)
+{
+	TObjectPtr<UAudioComponent> Sound;
+	if (AnimationSounds.RemoveAndCopyValue(Tag, Sound) && Sound)
+	{
+		if (FadeOut > 0.0f)
+		{
+			Sound->FadeOut(FadeOut, 0.0f);
+		}
+		else
+		{
+			Sound->Stop();
+		}
+	}
+}
+
+void UItemSlotComponent::StopAllAnimationSounds(float FadeOut)
+{
+	TArray<FGameplayTag> Tags;
+	AnimationSounds.GenerateKeyArray(Tags);
+	for (const FGameplayTag& Tag : Tags)
+	{
+		StopAnimationSound(Tag, FadeOut);
+	}
+}
+
 UAnimSequenceBase* UItemSlotComponent::GetItemPose() const
 {
 	if (PoseOverride)
@@ -325,14 +388,16 @@ void UItemSlotComponent::PlayUseFeedback(const UItemProfile& Item)
 		return;
 	}
 
+	LastFeedbackItem = &Item;
 	PlayUseAnimation(Item);
 
 	const ACharacter* const Character = Cast<ACharacter>(GetOwner());
 	USceneComponent* const AttachTo = Character && Character->GetMesh() ? Character->GetMesh() : GetOwner()->GetRootComponent();
 
-	if (Item.ActivateSound)
+	// 발동음을 애니메이션 노티파이에 맡긴 아이템은 여기서 내지 않는다(UAnimNotify_ItemSound).
+	if (!Item.bActivateSoundFromAnimation)
 	{
-		UGameplayStatics::SpawnSoundAttached(Item.ActivateSound, AttachTo);
+		UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Item_Activate, AttachTo, NAME_None, Item.Sounds);
 	}
 
 	// 즉발 아이템에는 끌 시점이 없으므로 스스로 정리되게 둔다(지속형은 태그가 내려갈 때 끈다).
@@ -445,6 +510,13 @@ void UItemSlotComponent::HandleTagChanged(const FGameplayTag Tag, int32 NewCount
 			EffectItem = nullptr;
 		}
 		StopEffectFeedback(Tag);
+		// 만료음. 태그가 내려가는 것을 모든 머신이 보므로 각자 낸다. 프로필은 위에서 태그로 찾은 것이다.
+		if (GetNetMode() != NM_DedicatedServer)
+		{
+			const ACharacter* const Character = Cast<ACharacter>(GetOwner());
+			USceneComponent* const AttachTo = Character && Character->GetMesh() ? Character->GetMesh() : GetOwner()->GetRootComponent();
+			UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Item_Expire, AttachTo, NAME_None, Item->Sounds);
+		}
 	}
 }
 
@@ -471,14 +543,16 @@ void UItemSlotComponent::StartEffectFeedback(const UItemProfile& Item, const FGa
 		return;
 	}
 
+	LastFeedbackItem = &Item;
 	PlayUseAnimation(Item);
 
 	const ACharacter* const Character = Cast<ACharacter>(GetOwner());
 	USceneComponent* const AttachTo = Character && Character->GetMesh() ? Character->GetMesh() : GetOwner()->GetRootComponent();
 
-	if (Item.ActivateSound)
+	// 발동음을 애니메이션 노티파이에 맡긴 아이템은 여기서 내지 않는다(UAnimNotify_ItemSound).
+	if (!Item.bActivateSoundFromAnimation)
 	{
-		UGameplayStatics::SpawnSoundAttached(Item.ActivateSound, AttachTo);
+		UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Item_Activate, AttachTo, NAME_None, Item.Sounds);
 	}
 
 	// 갱신(같은 아이템 재사용)은 태그 수가 1에서 1로 머물러 여기까지 오지 않는다. 그래도
@@ -503,6 +577,10 @@ void UItemSlotComponent::StopEffectFeedback(const FGameplayTag& Tag)
 	{
 		FX->Deactivate();
 	}
+
+	// 효과가 끝나면(스턴으로 끊긴 경우 포함) 자세 클립도 내려가므로 구간 소리는 노티파이가 끄지만,
+	// 블렌드 아웃 중에 다른 자세로 덮이는 등 NotifyEnd가 늦거나 빠지는 경우를 여기서 막는다.
+	StopAllAnimationSounds(0.1f);
 }
 
 void UItemSlotComponent::MulticastSpinnerShot_Implementation(const UPaintGunProfile* Volley, const FPaintShot& Shot)

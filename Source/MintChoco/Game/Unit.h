@@ -171,12 +171,21 @@ public:
 	UUnitMovementComponent* GetUnitMovement() const;
 
 	/**
-	 * 대시 중인지. 애님 블루프린트가 이 값으로 스프린트 상태를 고른다.
+	 * 대시 중인지. 애님 블루프린트가 이 값으로 보드 상태(시작·루프·끝)를 고르고, 무기가
+	 * 방아쇠를 막는 조건으로 쓴다.
 	 *
-	 * 소유 클라이언트는 예측된 값을 즉시 보고, 나머지 클라이언트는 복제로 받는다.
+	 * 소유 클라이언트와 서버는 무브먼트 알림(HandleDashStateChanged)에서 바로 쓰고, 나머지
+	 * 클라이언트는 서버 값을 복제로 받는다.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Unit|Dash")
 	bool IsDashing() const { return bIsDashing; }
+
+	/**
+	 * 보드를 보일지. 애님 인스턴스가 대시 동작(Dash_* 상태)이 실제로 도는 동안 참으로 세운다.
+	 * 대시 키가 아니라 동작을 따르므로, 키만 누르고 동작이 시작되지 않는 경우(제자리, 공중)에는
+	 * 보드가 나오지 않는다. 카메라 페이드는 UpdateBoardVisibility가 따로 합친다.
+	 */
+	void SetBoardShown(bool bShown);
 
 	/**
 	 * 히어로 랜딩 단계. 애님 블루프린트가 이 값으로 준비·시작 자세를 고른다.
@@ -314,6 +323,15 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UStaticMeshComponent> GunMesh;
 
+	/**
+	 * 대시 중 발밑의 보드. 평소에는 숨어 있고 대시 **동작**이 시작되면 보이며 끝나면 숨는다.
+	 * 스폰하지 않고 켜고 끄므로 복제가 필요 없다: 각 머신의 애님 인스턴스가 자기 화면의 상태
+	 * 기계를 보고 SetBoardShown으로 세우므로, 그 머신이 그리는 동작과 항상 일치한다.
+	 * 어떤 메시인지는 UnitData가 정한다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Unit|Dash")
+	TObjectPtr<UStaticMeshComponent> BoardMesh;
+
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void StartFire();
@@ -399,8 +417,14 @@ private:
 	/** 보임 의도와 카메라 페이드를 합쳐 실제 가시성을 정한다. */
 	void UpdateGunVisibility();
 
+	/** 대시 동작이 돌고 있고 카메라 페이드가 아닐 때만 보드가 보인다. */
+	void UpdateBoardVisibility();
+
 	/** 발사 연출이 요구하는 총의 상태. 실제로 보이는지는 카메라 페이드까지 봐야 안다. */
 	bool bGunVisible = false;
+
+	/** 애님 인스턴스가 세우는 보드 상태. 실제로 보이는지는 카메라 페이드까지 봐야 안다. */
+	bool bBoardShown = false;
 
 	/** 총을 숨기는 타이머. 발사마다 다시 걸려 마지막 한 발에서만 만료된다. */
 	FTimerHandle GunHideTimer;

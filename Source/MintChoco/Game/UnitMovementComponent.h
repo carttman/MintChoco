@@ -79,9 +79,16 @@ struct MINTCHOCO_API FHeroLandingParams
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HeroLanding", meta = (ClampMin = "0", ForceUnits = "s"))
 	float LandingRecoverTime = 0.5f;
 
-	/** 조준 트레이스 길이(cm). 이보다 먼 곳을 보면 이륙 높이의 수평면과 만나는 점을 쓴다. */
+	/** 조준 트레이스 길이(cm). 시선이 이 안에서 아무것도 맞히지 못하면 그 끝점의 수평 위치를 후보로 쓴다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HeroLanding", meta = (ClampMin = "100", ForceUnits = "cm"))
 	float AimTraceDistance = 4000.0f;
+
+	/**
+	 * 시선이 바닥을 곧장 맞히지 못했을 때(허공, 벽, 사거리 밖) 사거리 끝 지점 아래로 바닥을 찾는
+	 * 깊이(cm). 이륙 높이에서 이만큼 아래까지 본다. 그 안에 설 수 있는 바닥이 없으면 착지점이 없다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HeroLanding", meta = (ClampMin = "0", ForceUnits = "cm"))
+	float GroundSearchDepth = 2000.0f;
 };
 
 /**
@@ -208,11 +215,14 @@ public:
 	FVector GetHeroDiveTarget() const { return HeroDiveTarget; }
 
 	/**
-	 * 지금 컨트롤 회전이 가리키는 착지점. 내려설 수 있는 곳을 보고 있을 때만 참이다.
+	 * 지금 컨트롤 회전이 가리키는 착지점. 설 수 있는 바닥을 찾았을 때 참이다.
 	 *
-	 * 눈높이에서 시선으로 트레이스해 **걸을 수 있는 바닥**을 맞혔을 때만 인정한다. 벽, 급경사,
-	 * 사거리 밖, 아무것도 없는 허공은 전부 거짓이고, 그러면 착지점 표시도 뜨지 않고 좌클릭도
-	 * 듣지 않는다. 높이는 자르지 않으므로 지금 서 있는 곳보다 높은 바닥도 고를 수 있다.
+	 * 눈높이에서 시선으로 트레이스해 **걸을 수 있는 바닥**을 사거리 안에서 맞히면 그 점이다.
+	 * 그렇지 않으면 시선 방향의 사거리 끝(허공·너무 먼 바닥) 또는 벽 바로 앞을 수평 후보로
+	 * 잡고, 그 자리 위에서 아래로 바닥을 찾아(GroundSearchDepth) 그 바닥에 선다. 그래서 하늘을
+	 * 보거나 사거리 밖을 봐도 사거리 끝의 바닥이 착지점이 되고 표시도 거기에 뜬다. 그 아래에도
+	 * 설 수 있는 바닥이 없을 때(낭떠러지)만 거짓이고, 그러면 표시가 감춰지고 좌클릭도 듣지 않는다.
+	 * 높이는 자르지 않으므로 지금 서 있는 곳보다 높은 바닥도 고를 수 있다.
 	 *
 	 * 서버는 무브에 실려 온 컨트롤 회전으로 같은 계산을 한다.
 	 */

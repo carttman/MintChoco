@@ -6,6 +6,8 @@
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -135,6 +137,14 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	GunMesh->SetGenerateOverlapEvents(false);
 	GunMesh->SetCanEverAffectNavigation(false);
 	GunMesh->SetVisibility(false);
+
+	// 보드도 같은 규칙. Board 소켓은 ApplyUnitData가 메시를 정한 뒤 붙인다.
+	BoardMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoardMesh"));
+	BoardMesh->SetupAttachment(GetMesh());
+	BoardMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BoardMesh->SetGenerateOverlapEvents(false);
+	BoardMesh->SetCanEverAffectNavigation(false);
+	BoardMesh->SetVisibility(false);
 
 	// 테두리 껍데기. 캐릭터 메시와 같은 메시를 쓰고 포즈는 리더 포즈로 따라가므로 애니메이션을
 	// 두 번 돌리지 않는다. 그림자는 원본이 이미 드리우므로 끈다.
@@ -295,6 +305,7 @@ void AUnit::SetCameraFaded(bool bFaded)
 		}
 		bCameraFaded = true;
 		UpdateGunVisibility();
+		UpdateBoardVisibility();
 		UpdateSuperArmorOutline();
 		return;
 	}
@@ -306,6 +317,7 @@ void AUnit::SetCameraFaded(bool bFaded)
 	CameraFadeOriginalMaterials.Reset();
 	bCameraFaded = false;
 	UpdateGunVisibility();
+	UpdateBoardVisibility();
 	UpdateSuperArmorOutline();
 }
 
@@ -365,6 +377,9 @@ bool AUnit::CanJumpInternal_Implementation() const
 void AUnit::Landed(const FHitResult& Hit)
 {
 	Super::Landed(Hit);
+
+	// 착지는 낙하를 계산하는 머신(소유자와 서버)에만 온다. 다른 플레이어의 착지음은 그래서 없다.
+	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_Unit_Land, Hit.ImpactPoint, UnitData ? UnitData->Sounds.Get() : nullptr);
 
 	// 히어로 랜딩의 내리꽂기가 끝났다. 단계 정리는 무브먼트 컴포넌트가, 효과는 어빌리티가 맡는다.
 	if (UUnitMovementComponent* const Movement = GetUnitMovement())
@@ -465,12 +480,19 @@ void AUnit::HandleStunTagChanged(const FGameplayTag Tag, int32 NewCount)
 			SecondaryWeapon->CancelTrigger();
 		}
 	}
+	// 태그는 모든 머신에 복제되므로 소리도 각자 낸다. 데디케이티드 서버는 서브시스템이 스스로 거른다.
+	UGameAudioSubsystem::PlayAttached(
+		bStunned ? AudioTags::Audio_Unit_Stun_Begin : AudioTags::Audio_Unit_Stun_End,
+		GetRootComponent(), NAME_None, UnitData ? UnitData->Sounds.Get() : nullptr);
 	BP_OnStunned(bStunned);
 }
 
 void AUnit::HandleSuperArmorTagChanged(const FGameplayTag Tag, int32 NewCount)
 {
 	UpdateSuperArmorOutline();
+	UGameAudioSubsystem::PlayAttached(
+		NewCount > 0 ? AudioTags::Audio_Unit_SuperArmor_Begin : AudioTags::Audio_Unit_SuperArmor_End,
+		GetRootComponent(), NAME_None, UnitData ? UnitData->Sounds.Get() : nullptr);
 }
 
 void AUnit::UpdateSuperArmorOutline()
@@ -870,11 +892,23 @@ void AUnit::SetDashInput(bool bWantsToDash)
 
 void AUnit::HandleDashStateChanged(bool bDashing)
 {
-	// 서버만 다른 클라이언트에게 알릴 수 있다. 소유 클라이언트는 자기 예측으로
-	// 이미 알고 있으므로 복제에서 제외되어 있다.
-	if (HasAuthority())
+	// 이 알림은 무브먼트 플래그가 실제로 바뀐 머신(소유 클라이언트와 서버)에서만 온다. 소유
+	// 클라이언트는 복제에서 제외되어 있으므로(COND_SkipOwner) 여기서 직접 써야 자기 화면의
+	// IsDashing()이 예측값을 본다. 서버가 쓴 값은 나머지 클라이언트에게만 복제된다.
+	bIsDashing = bDashing;
+
+	// 보드를 타는 동안은 쏘지 못한다. 누르고 있던 방아쇠는 놓고, 충전 중이던 차지샷은 발사 없이
+	// 취소된다. 서버도 이 알림을 받으므로 ServerFire의 IsTriggerBlocked와 어긋나지 않는다.
+	if (bDashing)
 	{
-		bIsDashing = bDashing;
+		if (PaintWeapon)
+		{
+			PaintWeapon->CancelTrigger();
+		}
+		if (SecondaryWeapon)
+		{
+			SecondaryWeapon->CancelTrigger();
+		}
 	}
 
 	UpdateDashEffects(bDashing);
@@ -923,6 +957,9 @@ void AUnit::UpdateDashEffects(bool bDashing)
 		return;
 	}
 
+	// 보드는 여기서 다루지 않는다. 대시 키가 아니라 대시 동작(애님 상태 기계)을 따르므로
+	// 애님 인스턴스가 SetBoardShown으로 세운다.
+
 	if (!bDashing)
 	{
 		if (DashTrailComponent)
@@ -947,11 +984,7 @@ void AUnit::UpdateDashEffects(bool bDashing)
 
 	// 몽타주와 소리는 진입 순간의 일회성 연출이라 공용 경로를 그대로 쓴다.
 	PlayFeedbackMontage(*Feedback);
-
-	if (Feedback->Sound)
-	{
-		UGameplayStatics::SpawnSoundAttached(Feedback->Sound, GetRootComponent());
-	}
+	UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Unit_Dash, GetRootComponent(), NAME_None, UnitData->Sounds);
 
 	// 트레일만 따로 붙잡는다. 지속되는 이펙트라 끝날 때 직접 꺼야 하기 때문이다.
 	if (Feedback->FX)
@@ -1012,10 +1045,7 @@ void AUnit::HandleWeaponFired(int32 Seed)
 
 	PlayFeedbackMontage(*Feedback);
 
-	if (Feedback->Sound)
-	{
-		UGameplayStatics::SpawnSoundAttached(Feedback->Sound, GetRootComponent());
-	}
+	// 발사음은 무기 컴포넌트가 총구에서 낸다(Audio.Weapon.Fire, 무기 프로필의 Sounds).
 
 	// 총구 화염 같은 일회성 이펙트. 총에 Muzzle 소켓이 있으면 총구에서, 없으면 캐릭터 메시의
 	// FXSocket에서 튼다. 둘 다 없으면 폰 위치에. 소켓 회전을 그대로 따르므로 총구 소켓의
@@ -1145,6 +1175,25 @@ void AUnit::UpdateGunVisibility()
 	}
 }
 
+void AUnit::SetBoardShown(bool bShown)
+{
+	if (bBoardShown == bShown)
+	{
+		return;
+	}
+	bBoardShown = bShown;
+	UpdateBoardVisibility();
+}
+
+void AUnit::UpdateBoardVisibility()
+{
+	if (BoardMesh)
+	{
+		// 총과 같은 이유로 카메라 페이드 중에는 감춘다.
+		BoardMesh->SetVisibility(bBoardShown && !bCameraFaded);
+	}
+}
+
 void AUnit::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -1237,6 +1286,14 @@ void AUnit::ApplyUnitData()
 				Weapon->SetMuzzleSource(GunMesh, GunMuzzleSocketName);
 			}
 		}
+	}
+
+	// 보드도 그 캐릭터의 것으로. Board 소켓이 없는 메시면 발밑이 아니라 메시 원점에 남는다.
+	if (BoardMesh)
+	{
+		BoardMesh->SetStaticMesh(UnitData->BoardMesh);
+		BoardMesh->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("Board"));
+		UpdateBoardVisibility();
 	}
 
 	// 메시가 교체되면 오버레이도 새 메시에 다시 걸어야 한다.

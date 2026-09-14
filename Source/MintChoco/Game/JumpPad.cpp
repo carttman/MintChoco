@@ -3,6 +3,8 @@
 
 #include "Game/JumpPad.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -51,4 +53,7 @@ void AJumpPad::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, A
 	}
 
 	Unit->LaunchCharacter(FVector(0.0f, 0.0f, LaunchZSpeed), /*bXYOverride=*/false, /*bZOverride=*/true);
+
+	// 발사하는 머신(밟은 본인과 서버)에서만 울린다. 구경꾼 클라이언트에는 발사 신호가 오지 않는다.
+	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_JumpPad, GetActorLocation());
 }

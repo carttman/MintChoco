@@ -493,29 +493,57 @@ bool UUnitMovementComponent::ComputeAimTarget(FVector& OutTarget) const
 
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(HeroLandingAim), /*bTraceComplex=*/false, CharacterOwner);
 	FHitResult Hit;
-	if (!World->LineTraceSingleByChannel(Hit, Origin, Origin + Direction * HeroParams.AimTraceDistance, ECC_Visibility, Params))
+	const bool bHit = World->LineTraceSingleByChannel(Hit, Origin, Origin + Direction * HeroParams.AimTraceDistance, ECC_Visibility, Params);
+
+	// 수평 후보. 걸을 수 있는 바닥을 맞혔으면 그 점, 벽·급경사면 그 바로 앞, 아무것도 없으면
+	// 시선의 사거리 끝. 캐릭터가 실제로 설 수 있는지를 묻는 것이므로 판정은 무브먼트의 경사 기준과 같다.
+	const bool bDirectFloor = bHit && IsWalkable(Hit);
+	FVector Candidate;
+	if (bDirectFloor)
 	{
-		// 사거리 안에 아무것도 없다. 허공에는 내려설 수 없다.
-		return false;
+		Candidate = Hit.ImpactPoint;
+	}
+	else if (bHit)
+	{
+		// 벽 안에 서지 않도록 캡슐 반지름만큼 물러선다.
+		const float Radius = CharacterOwner->GetCapsuleComponent() ? CharacterOwner->GetCapsuleComponent()->GetScaledCapsuleRadius() : 0.0f;
+		Candidate = Hit.ImpactPoint - Direction * Radius;
+	}
+	else
+	{
+		Candidate = Origin + Direction * HeroParams.AimTraceDistance;
 	}
 
-	// 걸을 수 있는 바닥만 착지점이다. 벽과 급경사는 여기서 걸러지고, 그러면 표시도 뜨지 않는다.
-	// 캐릭터가 실제로 설 수 있는지를 묻는 것이므로 판정은 무브먼트의 경사 기준과 같다.
-	if (!IsWalkable(Hit))
-	{
-		return false;
-	}
-
-	// 이륙점 기준 수평 사거리. 넘으면 착지점이 없는 것으로 친다: 갈 수 없는 곳에 표시를
-	// 그려 두면 눌러도 안 되는 이유를 알 수 없다. 높이는 자르지 않는다 — 높은 곳도 착지점이다.
-	FVector Offset = Hit.ImpactPoint - HeroTakeoff;
+	// 이륙점 기준 수평 사거리로 자른다. 갈 수 없는 곳을 보고 있어도 표시는 갈 수 있는 끝에
+	// 그려지고, 그곳에 떨어진다. 높이는 자르지 않는다 — 높은 곳도 착지점이다.
+	FVector Offset = Candidate - HeroTakeoff;
 	Offset.Z = 0.0f;
-	if (Offset.SizeSquared() > FMath::Square(HeroParams.MaxAimDistance))
+	const bool bClamped = Offset.SizeSquared() > FMath::Square(HeroParams.MaxAimDistance);
+	if (bClamped)
 	{
+		Offset = Offset.GetSafeNormal() * HeroParams.MaxAimDistance;
+	}
+
+	if (bDirectFloor && !bClamped)
+	{
+		OutTarget = Hit.ImpactPoint;
+		return true;
+	}
+
+	// 후보 자리 위에서 아래로 바닥을 찾는다. 시작점은 지금 높이나 상승 정점 중 높은 쪽 위라,
+	// 정점보다 높은 지붕은 무시되고 그 아래 바닥이 잡힌다.
+	const FVector Column = HeroTakeoff + Offset;
+	const float Top = FMath::Max(UpdatedComponent->GetComponentLocation().Z, HeroTakeoff.Z + HeroParams.RiseHeight) + GetHeroCapsuleHalfHeight();
+	const float Bottom = HeroTakeoff.Z - HeroParams.GroundSearchDepth;
+	FHitResult Ground;
+	if (!World->LineTraceSingleByChannel(Ground, FVector(Column.X, Column.Y, Top), FVector(Column.X, Column.Y, Bottom), ECC_Visibility, Params)
+		|| !IsWalkable(Ground))
+	{
+		// 그 아래에 설 수 있는 바닥이 없다(낭떠러지, 벽의 윗면이 급경사). 착지점이 없다.
 		return false;
 	}
 
-	OutTarget = Hit.ImpactPoint;
+	OutTarget = Ground.ImpactPoint;
 	return true;
 }
 

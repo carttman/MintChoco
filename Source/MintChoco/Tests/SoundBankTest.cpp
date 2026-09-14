@@ -21,25 +21,41 @@ namespace
 		return {
 			AudioTags::Audio_Weapon_Fire,
 			AudioTags::Audio_Weapon_Empty,
+			AudioTags::Audio_Weapon_ChargeLoop,
+			AudioTags::Audio_Weapon_ChargeReady,
 			AudioTags::Audio_Weapon_Impact,
 			AudioTags::Audio_Unit_Dash,
 			AudioTags::Audio_Unit_Land,
 			AudioTags::Audio_Unit_Footstep,
 			AudioTags::Audio_Unit_Stun_Begin,
+			AudioTags::Audio_Unit_Stun_End,
 			AudioTags::Audio_Unit_SuperArmor_Begin,
+			AudioTags::Audio_Unit_SuperArmor_End,
 			AudioTags::Audio_Item_Announce,
 			AudioTags::Audio_Item_Pickup,
 			AudioTags::Audio_Item_Activate,
+			AudioTags::Audio_Item_Expire,
 			AudioTags::Audio_World_Burst,
 			AudioTags::Audio_World_Splat,
 			AudioTags::Audio_World_Balloon_Hit,
 			AudioTags::Audio_World_Balloon_Pop,
+			AudioTags::Audio_World_Balloon_Inflate,
+			AudioTags::Audio_World_JumpPad,
 			AudioTags::Audio_Match_CountdownTick,
 			AudioTags::Audio_Match_Start,
+			AudioTags::Audio_Match_TimerWarning,
 			AudioTags::Audio_Match_End_Win,
 			AudioTags::Audio_Match_End_Lose,
+			AudioTags::Audio_Match_End_Draw,
 			AudioTags::Audio_UI_Click,
 			AudioTags::Audio_UI_Error,
+			AudioTags::Audio_UI_RoomFound,
+			AudioTags::Audio_UI_Join,
+			AudioTags::Audio_Music_Lobby,
+			AudioTags::Audio_Music_Waiting,
+			AudioTags::Audio_Music_Countdown,
+			AudioTags::Audio_Music_Playing,
+			AudioTags::Audio_Music_Ended,
 		};
 	}
 }
@@ -76,8 +92,6 @@ bool FSoundBankTest::RunTest(const FString& Parameters)
 		return true;
 	}
 
-	const bool bHasDefaultAttenuation = !Settings.DefaultAttenuation.IsNull();
-
 	// 코드가 부르는 태그가 표에 있고, 실제로 소리가 붙어 있는가.
 	for (const FGameplayTag& Tag : RequiredTags())
 	{
@@ -102,15 +116,11 @@ bool FSoundBankTest::RunTest(const FString& Parameters)
 		TestTrue(*FString::Printf(TEXT("%s: 볼륨이 0보다 크다"), *Tag.ToString()), Event->VolumeMultiplier > 0.0f);
 		TestTrue(*FString::Printf(TEXT("%s: 피치 범위가 뒤집히지 않았다"), *Tag.ToString()),
 			Event->PitchRange.X > 0.0f && Event->PitchRange.X <= Event->PitchRange.Y);
-
-		// 3D 이벤트에 감쇠가 없으면 거리와 무관하게 같은 크기로 들린다. 이벤트나 설정 어느
-		// 쪽이든 하나는 있어야 한다.
-		if (!Event->b2D)
-		{
-			TestTrue(*FString::Printf(TEXT("%s: 3D 이벤트에 감쇠가 있다"), *Tag.ToString()),
-				Event->Attenuation != nullptr || bHasDefaultAttenuation);
-		}
+		// 감쇠는 검사하지 않는다: 이벤트에도 설정에도 없으면 서브시스템이 설정값으로 만든다
+		// (UGameAudioSubsystem::GetDefaultAttenuation). 그 값이 0이면 그것이 오류다.
 	}
+
+	TestTrue(TEXT("코드 기본 감쇠의 거리가 양수다"), Settings.FallbackFalloffDistance > 0.0f);
 
 	// 음악 표가 가리키는 곡도 뱅크에 있어야 한다.
 	for (const TPair<EMatchPhase, FGameplayTag>& Pair : Settings.MusicByPhase)

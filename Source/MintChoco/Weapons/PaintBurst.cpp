@@ -5,6 +5,8 @@
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Game/TeamLook.h"
 #include "Weapons/PaintballProfile.h"
 
@@ -114,7 +116,15 @@ void APaintBurst::Burst()
 void APaintBurst::SpawnBurstFX()
 {
 	UWorld* const World = GetWorld();
-	if (!Params.BurstFX || !World || World->GetNetMode() == NM_DedicatedServer)
+	if (!World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	// 액터가 복제되어 머신마다 한 번 BeginPlay를 지나므로 소리도 여기서 한 번이다.
+	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_Burst, GetActorLocation());
+
+	if (!Params.BurstFX)
 	{
 		return;
 	}
