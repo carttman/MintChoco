@@ -95,6 +95,15 @@ protected:
 	bool bIsStunned = false;
 
 	/**
+	 * 로코모션 상태 기계가 대시 상태(이름이 DashStatePrefix로 시작하는 Dash_Start/Loop/End)에
+	 * 있는지. bIsDashing이 "키를 누르고 있다"라면 이것은 "보드 동작이 실제로 돌고 있다"이다.
+	 * 전이가 시작되는 프레임부터 참이라 보드(AUnit::SetBoardShown)가 동작과 함께 나타나고
+	 * 끝 동작이 끝나야 사라진다. 한 프레임 전 상태를 읽는다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|State")
+	bool bDashAnimationActive = false;
+
+	/**
 	 * 히어로 랜딩 단계. None이면 평소.
 	 *
 	 * 준비(Rise·Hover), 건너가기(Approach), 내리꽂기(Dive), 착지 경직(Recover) 자세를 여기서
@@ -180,7 +189,8 @@ protected:
 	 *
 	 * bIsAiming(쏘기 전 · 충전 중)과 bRecentlyFired(쏜 뒤 FireHoldTime)를 합친 것이다.
 	 * 그래서 자세는 방아쇠를 당기는 순간 올라가 충전 내내 유지되고, 쏜 뒤에도 잠시 남았다가
-	 * 내려온다 — 총이 사라지는 시점(GunVisibleHoldTime)과도 맞는다.
+	 * 내려온다 — 총이 사라지는 시점(GunVisibleHoldTime)과도 맞는다. 대시 중에는 항상 거짓이다:
+	 * 보드 위에서는 쏘지 못하므로 여운이 보드 자세를 덮을 이유가 없다.
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Unit|Aim")
 	bool bWeaponPoseHeld = false;
@@ -203,6 +213,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning", meta = (ClampMin = "0", ForceUnits = "s"))
 	float FireHoldTime = 0.5f;
 
+	/** 대시 상태를 찾을 상태 기계의 이름. 애님 그래프의 상태 기계 노드 이름과 같아야 한다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning")
+	FName LocomotionMachineName = TEXT("Locomotion");
+
+	/** 이 접두사로 시작하는 상태가 대시 동작이다(Dash_Start, Dash_Loop, Dash_End). */
+	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning")
+	FString DashStatePrefix = TEXT("Dash");
+
 private:
 	/** 소유 폰. 유닛이 아니면 이동·공중 값만 채우고 상태는 기본값으로 둔다. */
 	UPROPERTY(Transient)
@@ -223,4 +241,10 @@ private:
 
 	/** 이 머신에서 마지막 발사를 본 월드 시각. 음수면 아직 없다. */
 	double LastFiredTime = -1.0;
+
+	/** LocomotionMachineName의 상태 기계 인덱스. 초기화 때 한 번 찾는다. 없으면 INDEX_NONE. */
+	int32 LocomotionMachineIndex = INDEX_NONE;
+
+	/** 현재 로코모션 상태가 대시 상태인지. */
+	bool IsInDashState() const;
 };

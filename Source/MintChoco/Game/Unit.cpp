@@ -136,6 +136,14 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	GunMesh->SetCanEverAffectNavigation(false);
 	GunMesh->SetVisibility(false);
 
+	// 보드도 같은 규칙. Board 소켓은 ApplyUnitData가 메시를 정한 뒤 붙인다.
+	BoardMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoardMesh"));
+	BoardMesh->SetupAttachment(GetMesh());
+	BoardMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BoardMesh->SetGenerateOverlapEvents(false);
+	BoardMesh->SetCanEverAffectNavigation(false);
+	BoardMesh->SetVisibility(false);
+
 	// 테두리 껍데기. 캐릭터 메시와 같은 메시를 쓰고 포즈는 리더 포즈로 따라가므로 애니메이션을
 	// 두 번 돌리지 않는다. 그림자는 원본이 이미 드리우므로 끈다.
 	OutlineMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("OutlineMesh"));
@@ -295,6 +303,7 @@ void AUnit::SetCameraFaded(bool bFaded)
 		}
 		bCameraFaded = true;
 		UpdateGunVisibility();
+		UpdateBoardVisibility();
 		UpdateSuperArmorOutline();
 		return;
 	}
@@ -306,6 +315,7 @@ void AUnit::SetCameraFaded(bool bFaded)
 	CameraFadeOriginalMaterials.Reset();
 	bCameraFaded = false;
 	UpdateGunVisibility();
+	UpdateBoardVisibility();
 	UpdateSuperArmorOutline();
 }
 
@@ -853,11 +863,23 @@ void AUnit::SetDashInput(bool bWantsToDash)
 
 void AUnit::HandleDashStateChanged(bool bDashing)
 {
-	// 서버만 다른 클라이언트에게 알릴 수 있다. 소유 클라이언트는 자기 예측으로
-	// 이미 알고 있으므로 복제에서 제외되어 있다.
-	if (HasAuthority())
+	// 이 알림은 무브먼트 플래그가 실제로 바뀐 머신(소유 클라이언트와 서버)에서만 온다. 소유
+	// 클라이언트는 복제에서 제외되어 있으므로(COND_SkipOwner) 여기서 직접 써야 자기 화면의
+	// IsDashing()이 예측값을 본다. 서버가 쓴 값은 나머지 클라이언트에게만 복제된다.
+	bIsDashing = bDashing;
+
+	// 보드를 타는 동안은 쏘지 못한다. 누르고 있던 방아쇠는 놓고, 충전 중이던 차지샷은 발사 없이
+	// 취소된다. 서버도 이 알림을 받으므로 ServerFire의 IsTriggerBlocked와 어긋나지 않는다.
+	if (bDashing)
 	{
-		bIsDashing = bDashing;
+		if (PaintWeapon)
+		{
+			PaintWeapon->CancelTrigger();
+		}
+		if (SecondaryWeapon)
+		{
+			SecondaryWeapon->CancelTrigger();
+		}
 	}
 
 	UpdateDashEffects(bDashing);
@@ -905,6 +927,9 @@ void AUnit::UpdateDashEffects(bool bDashing)
 	{
 		return;
 	}
+
+	// 보드는 여기서 다루지 않는다. 대시 키가 아니라 대시 동작(애님 상태 기계)을 따르므로
+	// 애님 인스턴스가 SetBoardShown으로 세운다.
 
 	if (!bDashing)
 	{
@@ -1122,6 +1147,25 @@ void AUnit::UpdateGunVisibility()
 	}
 }
 
+void AUnit::SetBoardShown(bool bShown)
+{
+	if (bBoardShown == bShown)
+	{
+		return;
+	}
+	bBoardShown = bShown;
+	UpdateBoardVisibility();
+}
+
+void AUnit::UpdateBoardVisibility()
+{
+	if (BoardMesh)
+	{
+		// 총과 같은 이유로 카메라 페이드 중에는 감춘다.
+		BoardMesh->SetVisibility(bBoardShown && !bCameraFaded);
+	}
+}
+
 void AUnit::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -1214,6 +1258,14 @@ void AUnit::ApplyUnitData()
 				Weapon->SetMuzzleSource(GunMesh, GunMuzzleSocketName);
 			}
 		}
+	}
+
+	// 보드도 그 캐릭터의 것으로. Board 소켓이 없는 메시면 발밑이 아니라 메시 원점에 남는다.
+	if (BoardMesh)
+	{
+		BoardMesh->SetStaticMesh(UnitData->BoardMesh);
+		BoardMesh->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("Board"));
+		UpdateBoardVisibility();
 	}
 
 	// 메시가 교체되면 오버레이도 새 메시에 다시 걸어야 한다.

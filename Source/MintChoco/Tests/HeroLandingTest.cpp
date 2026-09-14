@@ -308,8 +308,9 @@ bool FHeroLandingSimulatedProxyTest::RunTest(const FString& Parameters)
 }
 
 /**
- * 착지점은 "내려설 수 있는 바닥"일 때만 나온다. 벽·허공·사거리 밖은 착지점이 없고, 그러면
- * 착지점 표시도 뜨지 않고 좌클릭도 듣지 않는다.
+ * 착지점은 시선이 맞힌 바닥이거나, 그것이 없으면 시선 방향 사거리 끝(또는 벽 앞)의 바닥이다.
+ * 벽·허공·사거리 밖을 봐도 갈 수 있는 끝에 착지점이 잡히고, 그 아래에도 바닥이 없을 때만
+ * 착지점이 없어 표시가 감춰지고 좌클릭도 듣지 않는다.
  */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FHeroLandingAimTargetTest,
@@ -346,20 +347,40 @@ bool FHeroLandingAimTargetTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("착지점은 바닥 위에 있다"), FMath::IsNearlyEqual(Target.Z, 0.0f, 1.0f));
 	}
 
-	// 벽: 시선이 맞히긴 하지만 설 수 없는 면이다.
+	// 벽: 시선이 맞히긴 하지만 설 수 없는 면이다. 벽 바로 앞의 바닥이 착지점이 된다.
 	LookAlong(*Movement, FRotator(0.0f, 0.0f, 0.0f));
-	TestFalse(TEXT("벽을 보면 착지점이 없다"), Movement->ComputeAimTarget(Target));
+	if (TestTrue(TEXT("벽을 보면 벽 앞 바닥이 착지점이다"), Movement->ComputeAimTarget(Target)))
+	{
+		TestTrue(TEXT("벽 앞 착지점은 바닥 높이다"), FMath::IsNearlyEqual(Target.Z, 0.0f, 1.0f));
+		TestTrue(TEXT("벽 앞 착지점은 벽 앞에 있다"), Target.X > 0.0f && Target.X < 500.0f);
+	}
 
-	// 허공: 사거리 안에 아무것도 없다.
+	// 허공: 시선이 아무것도 맞히지 못하면 시선 방향 사거리 끝의 바닥이 착지점이다.
 	LookAlong(*Movement, FRotator(80.0f, 180.0f, 0.0f));
-	TestFalse(TEXT("하늘을 보면 착지점이 없다"), Movement->ComputeAimTarget(Target));
+	if (TestTrue(TEXT("하늘을 보면 시선 쪽 바닥이 착지점이다"), Movement->ComputeAimTarget(Target)))
+	{
+		TestTrue(TEXT("하늘 착지점은 바닥 높이다"), FMath::IsNearlyEqual(Target.Z, 0.0f, 1.0f));
+		TestTrue(TEXT("하늘 착지점은 시선의 수평 방향(-X)에 있다"), Target.X < -100.0f);
+	}
 
-	// 바닥이긴 하지만 수평 사거리 밖. 못 가는 곳에 표시를 그리지 않는다.
+	// 바닥이긴 하지만 수평 사거리 밖. 사거리 끝으로 잘라 그 바닥에 선다.
 	FHeroLandingParams Short = Movement->GetHeroLandingParams();
 	Short.MaxAimDistance = 100.0f;
 	Movement->SetHeroLandingParams(Short);
 	LookAlong(*Movement, FRotator(-60.0f, 180.0f, 0.0f));
-	TestFalse(TEXT("사거리 밖 바닥은 착지점이 아니다"), Movement->ComputeAimTarget(Target));
+	if (TestTrue(TEXT("사거리 밖 바닥을 보면 사거리 끝이 착지점이다"), Movement->ComputeAimTarget(Target)))
+	{
+		TestTrue(TEXT("잘린 착지점은 바닥 높이다"), FMath::IsNearlyEqual(Target.Z, 0.0f, 1.0f));
+		TestTrue(TEXT("잘린 착지점은 사거리 끝에 있다"), FMath::IsNearlyEqual(FVector(Target.X, Target.Y, 0.0f).Size(), 100.0f, 1.0f));
+	}
+
+	// 낭떠러지: 사거리 끝 아래에 바닥이 없다. 바닥은 ±4000까지만 있으므로 그 너머를 본다.
+	FHeroLandingParams Far = Movement->GetHeroLandingParams();
+	Far.MaxAimDistance = 6000.0f;
+	Far.AimTraceDistance = 6000.0f;
+	Movement->SetHeroLandingParams(Far);
+	LookAlong(*Movement, FRotator(0.0f, 180.0f, 0.0f));
+	TestFalse(TEXT("사거리 끝 아래에 바닥이 없으면 착지점이 없다"), Movement->ComputeAimTarget(Target));
 
 	// 착지점이 없으면 좌클릭 요청은 그 자리에서 버려진다. 남겨 두면 나중에 뜬금없이 꽂힌다.
 	Movement->SetWantsHeroDive(true);

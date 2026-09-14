@@ -4,6 +4,7 @@
 #include "AbilitySystemComponent.h"
 #include "Game/GameGameState.h"
 #include "Game/TeamLook.h"
+#include "Game/Unit.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
@@ -39,6 +40,14 @@ bool UPaintWeaponComponent::IsTriggerBlocked() const
 	// Nobody fires before the match starts (ready wait, countdown). A world without the game
 	// state (the sample map) is always allowed.
 	if (!AGameGameState::IsPlayerInputAllowed(GetWorld()))
+	{
+		return true;
+	}
+	// A unit on the dash board cannot fire. The owner sees its predicted dash, the server the
+	// flag from the move, so PullTrigger and ServerFire agree; the dash start also cancels a
+	// trigger that was already held (AUnit::HandleDashStateChanged).
+	const AUnit* const Unit = Cast<AUnit>(GetOwnerPawn());
+	if (Unit && Unit->IsDashing())
 	{
 		return true;
 	}
