@@ -1,7 +1,13 @@
 #include "Game/GameHudWidget.h"
 
+#include "Blueprint/WidgetTree.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
 #include "Engine/World.h"
+
+#include "MintChoco.h"
+#include "Weapons/PaintCrosshairHostWidget.h"
 
 // ---------------------------------------------------------------- FGameHudMath
 
@@ -53,6 +59,26 @@ void UGameHudWidget::NativeConstruct()
 	{
 		CountdownNormalColor = CountdownColor;
 		Txt_Countdown->SetVisibility(ESlateVisibility::Collapsed);
+	}
+
+	// 블루프린트가 크로스헤어 자리를 놓지 않았으면 코드가 놓는다. 풀스크린이어야 위젯 중앙이 화면
+	// 중앙이고 월드→위젯 투영이 그대로 로컬 좌표가 된다.
+	if (!CrosshairHost && WidgetTree)
+	{
+		UCanvasPanel* const Canvas = Cast<UCanvasPanel>(WidgetTree->RootWidget);
+		if (!Canvas)
+		{
+			UE_LOG(LogMintChoco, Warning, TEXT("%s: root is not a CanvasPanel, no crosshair was added."), *GetName());
+			return;
+		}
+		CrosshairHost = WidgetTree->ConstructWidget<UPaintCrosshairHostWidget>(UPaintCrosshairHostWidget::StaticClass(), TEXT("CrosshairHost"));
+		if (UCanvasPanelSlot* const CrosshairSlot = Canvas->AddChildToCanvas(CrosshairHost))
+		{
+			CrosshairSlot->SetAnchors(FAnchors(0.0f, 0.0f, 1.0f, 1.0f));
+			CrosshairSlot->SetOffsets(FMargin(0.0f));
+			// 중앙 카운트다운 글자 아래에 깔린다.
+			CrosshairSlot->SetZOrder(-1);
+		}
 	}
 }
 

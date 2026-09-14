@@ -7,6 +7,7 @@
 
 #include "GameHudWidget.generated.h"
 
+class UPaintCrosshairHostWidget;
 class UTextBlock;
 
 /** 화면 중앙에 무엇을 띄울지. 순수 계산의 결과라 테스트가 월드 없이 검사한다. */
@@ -60,6 +61,14 @@ protected:
 	/** 화면 정중앙의 큰 글자: 대기 안내, 3·2·1, START!, 마지막 10초. */
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Txt_Countdown;
+
+	/**
+	 * 크로스헤어 자리. 블루프린트에 이 이름의 UPaintCrosshairHostWidget 이 있으면 그것을 쓰고,
+	 * 없으면 NativeConstruct 가 루트 캔버스에 풀스크린으로 하나 붙인다(에디터 작업 없이 바로 뜬다).
+	 * 어떤 크로스헤어가 뜨는지는 호스트가 활성 무기의 프로필을 보고 정한다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UPaintCrosshairHostWidget> CrosshairHost;
 
 	/** 남은 시간이 이 값(초) 이하가 되면 타이머가 TimerWarningColor로 바뀐다. */
 	UPROPERTY(EditDefaultsOnly, Category = "Match HUD", meta = (ClampMin = "0", ForceUnits = "s"))

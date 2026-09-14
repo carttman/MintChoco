@@ -14,6 +14,9 @@ class UStaticMeshComponent;
 /** Object channel "Paintball" from DefaultEngine.ini: what a ball is, so that balls can be told to ignore each other. */
 inline constexpr ECollisionChannel PaintballChannel = ECC_GameTraceChannel1;
 
+/** How long a ball flies before it dies in the air. The crosshair's impact prediction simulates this long too. */
+inline constexpr float PaintballLifeSpanSeconds = 5.0f;
+
 /**
  * A paintball in flight. It carries the profile that launched it and paints with its real impact
  * velocity, which is the one thing a hitscan has to fake. The visual mesh and the team body

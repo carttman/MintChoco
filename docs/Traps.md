@@ -137,6 +137,30 @@ last `OnFired`), and never while input is locked. Idle look-around leaves the bo
 | A remote pawn's body lags or pops | Simulated proxies never run `PhysicsRotation`; their yaw is the replicated rotation smoothed by the engine. Tune on the owner and the listen host, not the proxy. |
 | Tuning the turn | `RotationRate.Yaw` on the movement component (720 = 180° in 0.25 s) and `AUnit::FaceAimHoldSeconds` (0.5, keep equal to the anim `FireHoldTime` so the gun pose and the body release together). Test: `MintChoco.Game.Facing.*`. |
 
+## HUD (crosshair, charge ring, paint bar)
+
+Game HUD visuals are drawn procedurally in `NativePaint` (`FSlateDrawElement::MakeLines` /
+`MakeBox` with a `RoundedBox` brush), never from textures: `UPaintChargeWidget`,
+`UPaintBarWidget`, the crosshairs. `WBP_GameHUD` (parent `UGameHudWidget`, created by
+`BP_GamePlayerController`) hosts them; a widget the Blueprint does not place,
+`UGameHudWidget::NativeConstruct` adds to the root canvas full-screen.
+
+Crosshairs: `UPaintCrosshairHostWidget` picks the active weapon every tick (the secondary while
+its trigger is held or it is aiming, else the primary), resolves `UPaintWeaponProfile::
+CrosshairClass` (unset → the host's default, `UPaintBracketCrosshairWidget`), keeps one instance
+per class and cross-fades between them. `UPaintCrosshairWidget` (abstract) owns the shared state
+(firing blend, impact marker, presence fade) and draws the marker; a subclass draws its look in
+`PaintReticle`. `UPaintScopeCrosshairWidget` is the charged secondary's (set on `DA_Weapon_Sniper`).
+
+| Symptom | Check first |
+|---|---|
+| The crosshair's impact marker sits in the wrong place, or drifts with window size | The host and every crosshair assume a full-screen canvas slot (anchors 0,0-1,1, offsets 0): the centre is `LocalSize / 2` and `UWidgetLayoutLibrary::ProjectWorldLocationToWidgetPosition` is used as a local coordinate. Placed in a smaller slot, both are off. |
+| A weapon shows the wrong crosshair, or the secondary's never appears | `CrosshairClass` on the profile asset; an abstract class is refused (warning once, then nothing). The secondary's shows only while `IsTriggerHeld() \|\| IsAiming()` on it - a Charged profile sets aiming from press to release. |
+| A crosshair keeps ticking or reacting after it was swapped out | The host collapses an instance only once `IsFadedOut()`; a collapsed widget does not tick, so the host re-shows it before `SetShown(true)`. Do not toggle visibility on the crosshair yourself. |
+| No impact marker on a weapon | Only `UPaintGunProfile` implements `PredictImpact` (centre pellet, no spread, both gravity phases, `PaintballLifeSpanSeconds`). Hitscan and stroke land on the crosshair, so they return false on purpose. The marker also needs the impact to fall short of the aim point along the view by `MarkerShortfallCm` (50): a wall hit dead-on shows none. |
+| The marker jitters at range while running | The muzzle socket rides the animation; `MarkerInterpSpeed` smooths the screen position. Raise `MarkerShortfallCm` if it flickers at the threshold. |
+| Checking the look without playing | `mc.CrosshairPreview 0/1/2` (idle / firing / marker at a fixed offset), `mc.ChargeRingPreview 0..1`. Negative restores the real state. |
+
 ## Paint hit receivers (balloon)
 
 `FPaintDeposit::HitPower` is the game-balance number a contact carries (sniper `Impact` 100,

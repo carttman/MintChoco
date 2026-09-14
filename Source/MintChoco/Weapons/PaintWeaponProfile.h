@@ -8,6 +8,7 @@
 
 class APawn;
 class UNiagaraSystem;
+class UPaintCrosshairWidget;
 
 /** How long one trigger pull lasts. Part of the profile, so one asset says when it fires as well as what flies. */
 UENUM(BlueprintType)
@@ -114,6 +115,13 @@ public:
 
 	/** Replays the visible side of a shot another machine accepted. Nothing here may paint. */
 	virtual void PlayCosmetic(UWorld& World, APawn* Instigator, const FPaintShot& Shot) const {}
+
+	/**
+	 * Where the next shot from this context would land, for the crosshair's impact marker. Returns
+	 * false when the profile has nothing to predict: a hitscan or a stroke lands where the
+	 * crosshair rests. Never launches or paints; the context arrives without authority.
+	 */
+	virtual bool PredictImpact(const FPaintFireContext& Context, FVector& OutAimPoint, FVector& OutImpact) const { return false; }
 
 	/** Warns once, at equip time, about asset references that would otherwise fail as "nothing happens". */
 	virtual void LogUnsetReferences(const UObject* Owner) const {}
@@ -223,6 +231,13 @@ public:
 			: FMath::Clamp((ChargeFraction - Minimum) / (1.0f - Minimum), 0.0f, 1.0f);
 		return MuzzleFXScale * FMath::Lerp(static_cast<float>(MuzzleFXChargeScale.X), static_cast<float>(MuzzleFXChargeScale.Y), Alpha);
 	}
+
+	/**
+	 * The crosshair drawn while this weapon is the one the player is using (the primary, or the
+	 * secondary while its trigger is held). Unset falls back to the HUD's default, the bracket.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HUD")
+	TSubclassOf<UPaintCrosshairWidget> CrosshairClass;
 
 private:
 	/** Percent of a full ink tank one accepted shot spends. Read it through GetInkCostPerShot. */

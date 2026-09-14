@@ -613,6 +613,21 @@ FTransform UPaintWeaponComponent::GetMuzzleTransform() const
 	return ComputeMuzzleTransform(ViewOrigin, ViewDirection);
 }
 
+bool UPaintWeaponComponent::PredictNextImpact(FVector& OutViewOrigin, FVector& OutViewDirection, FVector& OutAimPoint, FVector& OutImpact) const
+{
+	if (!Profile || !GetWorld())
+	{
+		return false;
+	}
+	GetOwnerView(OutViewOrigin, OutViewDirection);
+
+	FPaintFireContext Context;
+	BuildContext(Context, OutViewOrigin, OutViewDirection, 1.0f);
+	Context.Seed = NextSeed;
+	Context.bAuthority = false;
+	return Profile->PredictImpact(Context, OutAimPoint, OutImpact);
+}
+
 
 void UPaintWeaponComponent::SetMuzzleSource(USceneComponent* Component, FName SocketName)
 {

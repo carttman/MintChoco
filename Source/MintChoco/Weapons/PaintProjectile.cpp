@@ -39,7 +39,7 @@ APaintProjectile::APaintProjectile()
 	// Init, once the profile is known; bCanEverTick has to be set here for that to be possible.
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
-	InitialLifeSpan = 5.0f;
+	InitialLifeSpan = PaintballLifeSpanSeconds;
 
 	Sphere = CreateDefaultSubobject<USphereComponent>(TEXT("Sphere"));
 	SetRootComponent(Sphere);

@@ -100,6 +100,14 @@ public:
 	FTransform GetMuzzleTransform() const;
 
 	/**
+	 * Where the next shot would land, from the owner's current view and muzzle, for the crosshair.
+	 * The view it was computed with comes back too, so the caller can tell whether the impact
+	 * falls short of the aim point. False when there is no profile or the profile does not predict.
+	 * Owner-side only: nothing is launched or spent.
+	 */
+	bool PredictNextImpact(FVector& OutViewOrigin, FVector& OutViewDirection, FVector& OutAimPoint, FVector& OutImpact) const;
+
+	/**
 	 * Where to look for the muzzle socket when the owner carries a weapon mesh of its own. Barrel
 	 * lengths differ per character, so the socket belongs on that mesh rather than on a skeleton
 	 * several characters share. A missing component or socket falls back to MuzzleSocketName on
