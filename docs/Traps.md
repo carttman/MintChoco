@@ -106,6 +106,7 @@ subclass per item (only so stacks stay separate; duration is SetByCaller, the st
 
 | Symptom | Check first |
 |---|---|
+| The item box sits still, or bobs while still announced / after pickup | `AItemPickup::Tick` is cosmetic and local (never replicated): it moves the `Mesh` component's *relative* transform around the base the BP set (`BobAmplitude` / `BobFrequency` / `SpinRateDeg`, `FItemPickupMotion`), so the `Trigger` sphere and the label never move. `UpdateMotionEnabled` turns the tick on only while `Active` and not `bCollected`; the base transform is read once in `BeginPlay`, so a BP that moves `Mesh` later fights the tick. |
 | Speed Star rubber-bands on a client | The speed must ride the compressed move flag (`FLAG_Custom_1`, `bWantsSpeedBoost`), never a GAS attribute: `GameplayPrediction.h` says GE prediction and movement prediction are not time-correlated, so a GE-driven speed is simulated at the old speed on the server until the activation RPC lands. |
 | An item ability ends after one RTT on the client | `WaitGameplayEffectRemoved` on the client's predicted handle fires when the prediction key catches up. The client ends on `WaitDelay(Duration)`; only the server waits for GE removal. |
 | Using the same item twice runs two spinners | `bRetriggerInstancedAbility` must be true and the slot must reuse the existing spec (clear `RemoveAfterActivation`) instead of granting a second one. |

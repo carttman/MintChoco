@@ -20,6 +20,16 @@ enum class EItemPickupState : uint8
 	Active
 };
 
+/** 박스 메시의 흔들림. 월드 없이 테스트한다. */
+struct MINTCHOCO_API FItemPickupMotion
+{
+	/** 상하 오프셋(cm): Amplitude × sin(2π·FrequencyHz·Time). 진폭이나 주파수가 0이면 0. */
+	static float BobOffset(float Time, float Amplitude, float FrequencyHz);
+
+	/** 누적 요(도), -180~180으로 정규화. 시간에서 바로 구하므로 dt 오차가 쌓이지 않는다. */
+	static float SpinYaw(float Time, float RateDegPerSecond);
+};
+
 /**
  * 맵에 놓인 아이템. 서버가 스폰하고 복제한다.
  *
@@ -36,6 +46,7 @@ public:
 	AItemPickup();
 
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaTime) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	/** 서버 전용. SpawnActorDeferred 뒤, FinishSpawning 전에 부른다. */
@@ -98,6 +109,21 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Label", meta = (ForceUnits = "cm"))
 	float LabelHeight = 150.0f;
 
+	/**
+	 * 활성 상태의 박스 메시 연출. 복제하지 않고 머신마다 돌린다: 메시의 상대 위치를 위아래로 흔들고
+	 * 상대 요를 계속 돌린다. BP가 정한 상대 트랜스폼이 기준이고, 습득 판정(Trigger)은 움직이지 않는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Motion", meta = (ClampMin = "0", ForceUnits = "cm"))
+	float BobAmplitude = 10.0f;
+
+	/** 상하 왕복 횟수(초당). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Motion", meta = (ClampMin = "0", ForceUnits = "Hz"))
+	float BobFrequency = 1.0f;
+
+	/** 요 회전 속도(도/초). 양수가 위에서 봤을 때 시계 방향(오른쪽). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Motion", meta = (ForceUnits = "deg/s"))
+	float SpinRateDeg = 90.0f;
+
 	UFUNCTION()
 	void OnRep_Profile();
 
@@ -112,6 +138,9 @@ private:
 	void ApplyState();
 	void Activate();
 
+	/** 활성이고 아직 아무도 가져가지 않았을 때만 틱(연출)이 돈다. */
+	void UpdateMotionEnabled();
+
 	UFUNCTION()
 	void OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
 		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
@@ -120,4 +149,9 @@ private:
 	TWeakObjectPtr<AItemSpawnPoint> SpawnPoint;
 
 	FTimerHandle ActivateTimer;
+
+	/** 연출 시계(초)와 BP가 정한 메시의 기준 상대 트랜스폼. BeginPlay에서 읽는다. */
+	float MotionTime = 0.0f;
+	FVector MeshBaseLocation = FVector::ZeroVector;
+	FRotator MeshBaseRotation = FRotator::ZeroRotator;
 };
