@@ -127,6 +127,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Paint|Weapon")
 	bool IsAiming() const { return bAiming; }
 
+	/** Charged 방아쇠를 누르고 있는 중인지. 복제 값이라 서버와 관전 머신도 같은 답을 본다. */
+	UFUNCTION(BlueprintPure, Category = "Paint|Weapon")
+	bool IsCharging() const { return bCharging; }
+
 	/** Raised on every machine whose copy of the paint id changed. The owner's ink bottle recolours from here. */
 	UPROPERTY(BlueprintAssignable, Category = "Paint|Weapon")
 	FPaintWeaponPaintIdSignature OnPaintIdChanged;

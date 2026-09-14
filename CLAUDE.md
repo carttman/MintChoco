@@ -97,6 +97,9 @@ Tangent); `CustomizedUVs` and WPO are vertex-frequency. Everything else: `docs/T
   never a GAS attribute.
 - Weapon hits reach any `IPaintHitReceiver` (`ABalloon`) through `FPaintDeposit::ApplyHit`
   before the surface test; `HitPower` is the balance number.
+- Facing: the body yaw follows the camera only while moving or firing
+  (`UUnitMovementComponent::PhysicsRotation` gate, `RotationRate.Yaw` 720, `AUnit::FaceAimHoldSeconds`);
+  idle look-around leaves the body alone. Never turn `bUseControllerRotationYaw` back on.
 - Match flow: `AGameGameState::MatchPhase` WaitingForPlayers → Countdown → Playing → Ended;
   input is locked until Playing through `IsPlayerInputAllowed`.
 - Screen fade: every travel goes through `UScreenFadeSubsystem::*TravelWithFade`; a direct

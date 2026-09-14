@@ -21,6 +21,26 @@ UUnitMovementComponent::UUnitMovementComponent()
 	bWantsHeroLanding = 0;
 	bHeroLandingArmed = 1;
 	bWantsHeroDive = 0;
+
+	// 엔진의 컨트롤 회전 추종을 켜 두고 PhysicsRotation에서 게이트로 막는다.
+	bUseControllerDesiredRotation = true;
+	bOrientRotationToMovement = false;
+	// 등각속도라 180도는 0.25초, 90도는 0.125초.
+	RotationRate = FRotator(0.0f, 720.0f, 0.0f);
+}
+
+void UUnitMovementComponent::PhysicsRotation(float DeltaTime)
+{
+	if (!ShouldFaceControlRotation()) return;
+
+	Super::PhysicsRotation(DeltaTime);
+}
+
+bool UUnitMovementComponent::ShouldFaceControlRotation() const
+{
+	if (IsInputLocked()) return false;
+
+	return !Acceleration.IsNearlyZero() || IsAimHeld();
 }
 
 // 스턴·히어로 랜딩이면 0, 부스트 중이면 고정 속도, 대시 중이면 기본 속도에 배율을 곱한 값, 아니면 기본 속도.
@@ -119,6 +139,12 @@ void UUnitMovementComponent::SetSimulatedHeroLandingPhase(EHeroLandingPhase NewP
 	{
 		HeroPhase = NewPhase;
 	}
+}
+
+bool UUnitMovementComponent::IsAimHeld() const
+{
+	const AUnit* const Unit = Cast<AUnit>(CharacterOwner);
+	return Unit && Unit->WantsToFaceAim();
 }
 
 bool UUnitMovementComponent::IsInputLocked() const

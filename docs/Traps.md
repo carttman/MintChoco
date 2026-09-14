@@ -120,6 +120,23 @@ subclass per item (only so stacks stay separate; duration is SetByCaller, the st
 | A bee dies to its own team, or stops dead when a ball touches it | Balls hit the bee's child `Shell` (Paintball Block only); the root sphere ignores Paintball so the projectile movement never gets a blocking hit from a ball. `ReceivePaintHit` ignores the bee's own paint id. |
 | The bee zig-zags or bobs while chasing, or dives into the floor | Steer heading and altitude separately (`FBeeSteering::TurnTowardsSplit`): the obstacle probe only looks along the *flat* heading (the floor is never an obstacle), altitude is a proportional term (`VerticalComponent`) capped by ground clearance (`MaxDescent`), and a chosen avoidance direction is kept for 0.3 s. Turning the full 3D direction on the shortest arc swings through straight-down when the heading change is large, and a threshold-based hover push flips sign every tick. Measured in PIE by placing `BP_Bee` in the level (it picks the nearest unit and the settings profile on its own) and sampling `get_actor_transform`. |
 
+## Unit facing (body yaw vs camera)
+
+`AUnit` has `bUseControllerRotationYaw` off. The camera boom follows control rotation on its own
+(`bUsePawnControlRotation`), movement input and the shot direction are camera-relative, and the
+body yaw is turned by `UUnitMovementComponent::PhysicsRotation`: it runs the engine's
+`bUseControllerDesiredRotation` path (`RotationRate.Yaw` 720°/s, constant angular speed) only
+while `ShouldFaceControlRotation()` is true, i.e. `Acceleration` is non-zero or
+`AUnit::WantsToFaceAim()` (trigger held, aiming, charging, or within `FaceAimHoldSeconds` of the
+last `OnFired`), and never while input is locked. Idle look-around leaves the body alone.
+
+| Symptom | Check first |
+|---|---|
+| The body snaps to the camera every frame, even idle | `bUseControllerRotationYaw` must stay false on `AUnit` and must not be overridden in `BP_Unit`; the boom, not the pawn, carries the control rotation. |
+| The body never turns, or turns only on one machine | The gate must only read what both sides have: the move's `Acceleration` and control rotation, and weapon state the server also holds (`bCharging` is replicated, `OnFired` fires on the server in `ServerFire`). `bTriggerHeld` / `bAiming` are owner-only and are just an early yes there. `LastFireTime` is written before the dedicated-server early return in `HandleWeaponFired`. |
+| A remote pawn's body lags or pops | Simulated proxies never run `PhysicsRotation`; their yaw is the replicated rotation smoothed by the engine. Tune on the owner and the listen host, not the proxy. |
+| Tuning the turn | `RotationRate.Yaw` on the movement component (720 = 180° in 0.25 s) and `AUnit::FaceAimHoldSeconds` (0.5, keep equal to the anim `FireHoldTime` so the gun pose and the body release together). Test: `MintChoco.Game.Facing.*`. |
+
 ## Paint hit receivers (balloon)
 
 `FPaintDeposit::HitPower` is the game-balance number a contact carries (sniper `Impact` 100,

@@ -98,6 +98,11 @@ struct MINTCHOCO_API FHeroLandingParams
  * 히어로 랜딩도 같은 이유로 여기 있다. 어빌리티가 SetMovementMode나 Velocity를 직접 쓰면
  * 서버는 클라이언트의 모드를 받아들이지 않고, 보정 뒤 리플레이가 그 값을 덮어쓴다. 대신
  * 의도(FLAG_Custom_2)와 단계 상태를 저장 무브에 실어 양쪽이 같은 단계 기계를 돌린다.
+ *
+ * 몸통 Yaw도 여기서 돌린다. 둘러볼 때는 그대로 두고, 이동 입력이 있거나 쏘는 동안에만
+ * 컨트롤 Yaw를 향해 RotationRate로 돈다(bUseControllerDesiredRotation 경로를 게이트로 감쌈).
+ * 게이트에 압축 플래그는 없다: 가속과 컨트롤 회전은 무브에 이미 실려 오고, 발사 상태는
+ * 복제된 충전 플래그와 발사 알림으로 서버도 알기 때문에 양쪽이 같은 답을 낸다.
  */
 UCLASS()
 class MINTCHOCO_API UUnitMovementComponent : public UCharacterMovementComponent
@@ -122,6 +127,15 @@ public:
 	virtual FNetworkPredictionData_Client* GetPredictionData_Client() const override;
 	virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
 	virtual void PhysCustom(float DeltaTime, int32 Iterations) override;
+
+	/** ShouldFaceControlRotation이 참일 때만 엔진의 컨트롤 회전 추종을 돌린다. 거짓이면 몸통을 건드리지 않는다. */
+	virtual void PhysicsRotation(float DeltaTime) override;
+
+	/**
+	 * 이번 무브에서 몸통이 컨트롤 Yaw를 향해 돌아야 하는지: 이동 가속이 있거나 유닛이 조준 중이고,
+	 * 입력이 잠기지 않았을 때(스턴·히어로 랜딩 중에는 돌지 않는다).
+	 */
+	bool ShouldFaceControlRotation() const;
 
 	/**
 	 * 로컬 입력이 부른다. 서버에는 다음 무브의 압축 플래그에 실려 전달되므로
@@ -283,6 +297,9 @@ private:
 
 	/** 입력으로 움직일 수 없는 상태인지(스턴, 히어로 랜딩 단계). 유닛이 답하고, 유닛이 아니면 단계만 본다. */
 	bool IsInputLocked() const;
+
+	/** 유닛이 쏘거나 충전 중이라 조준 방향을 봐야 하는지. 유닛이 아니면 거짓. */
+	bool IsAimHeld() const;
 
 	/**
 	 * 이 컴포넌트가 시뮬레이션 프록시(남의 화면에 보이는 남의 캐릭터)의 것인지.
