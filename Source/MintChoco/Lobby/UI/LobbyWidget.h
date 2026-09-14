@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Blueprint/UserWidget.h"
+#include "UI/MenuWidget.h"
 #include "LobbyWidget.generated.h"
 
 class UVerticalBox;
@@ -15,7 +15,7 @@ class ALobbyPlayerState;
  *
  */
 UCLASS()
-class MINTCHOCO_API ULobbyWidget : public UUserWidget
+class MINTCHOCO_API ULobbyWidget : public UMenuWidget
 {
 	GENERATED_BODY()
 

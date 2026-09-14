@@ -11,6 +11,7 @@
 #include "Sound/SoundBase.h"
 #include "Sound/SoundClass.h"
 #include "Sound/SoundMix.h"
+#include "TimerManager.h"
 
 #include "Audio/GameAudioSettings.h"
 #include "Audio/SoundBank.h"
@@ -39,17 +40,41 @@ void UGameAudioSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 	// 스탠드얼론에서는 버려질 DummyWorld가 현재 월드로 잡혀 있어서, 그 월드에 얹은 믹스는
 	// 아무 데도 닿지 않는다. 맵이 올라온 뒤에 한다(ScreenFadeSubsystem과 같은 이유).
 	PostLoadMapHandle = FCoreUObjectDelegates::PostLoadMapWithWorld.AddUObject(this, &UGameAudioSubsystem::HandlePostLoadMap);
+	// PIE는 첫 맵을 LoadMap 없이 복제해서 띄우므로 PostLoadMapWithWorld가 오지 않는다. 스탠드얼론도
+	// Browse 뒤에 이 신호를 주므로 양쪽 모두에서 첫 맵의 곡이 여기서 잡힌다.
+	GameInstanceStartedHandle = FWorldDelegates::OnStartGameInstance.AddUObject(this, &UGameAudioSubsystem::HandleGameInstanceStarted);
 }
 
 void UGameAudioSubsystem::HandlePostLoadMap(UWorld* LoadedWorld)
 {
 	ApplyVolumeSettings();
+	UpdateMapMusic(LoadedWorld);
+}
 
+void UGameAudioSubsystem::HandleGameInstanceStarted(UGameInstance* StartedInstance)
+{
+	UWorld* const World = StartedInstance == GetGameInstance() ? StartedInstance->GetWorld() : nullptr;
+	if (!World)
+	{
+		return;
+	}
+	// PIE는 이 신호를 게임모드를 세우기 전에 보낸다(StartPlayInEditorGameInstance 첫머리). 지금
+	// 게임 상태를 물으면 게임 맵도 없다고 나와 로비 곡이 먼저 흐른다. 한 틱 뒤에는 BeginPlay까지 끝나
+	// 있다. PIE 클라이언트는 그 사이 서버 맵으로 넘어가 이 타이머가 사라지고 PostLoadMap이 대신 온다.
+	World->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		ApplyVolumeSettings();
+		UpdateMapMusic(GetGameInstance() ? GetGameInstance()->GetWorld() : nullptr);
+	}));
+}
+
+void UGameAudioSubsystem::UpdateMapMusic(UWorld* World)
+{
 	// 경기 단계가 있는 맵은 AGameGameState::OnRep_MatchPhase가 곡을 고른다. 나머지(타이틀, 룸,
 	// 로비)는 전부 로비 곡이다. 같은 곡이면 PlayMusic이 아무것도 하지 않으므로 그 사이를 오가도
 	// 끊기지 않는다. 게임 상태는 클라이언트에 조금 늦게 올 수 있어 클래스가 아니라 인스턴스를 본다:
 	// 아직 없으면 로비 곡이 잠깐 흐르다가 단계 복제가 덮는다.
-	if (!LoadedWorld || LoadedWorld->GetGameState<AGameGameState>())
+	if (!World || World->GetGameState<AGameGameState>())
 	{
 		return;
 	}
@@ -72,6 +97,11 @@ void UGameAudioSubsystem::Deinitialize()
 	{
 		FCoreUObjectDelegates::PostLoadMapWithWorld.Remove(PostLoadMapHandle);
 		PostLoadMapHandle.Reset();
+	}
+	if (GameInstanceStartedHandle.IsValid())
+	{
+		FWorldDelegates::OnStartGameInstance.Remove(GameInstanceStartedHandle);
+		GameInstanceStartedHandle.Reset();
 	}
 
 	if (MusicComponent)
@@ -185,7 +215,12 @@ void UGameAudioSubsystem::PlayEvent2D(const FGameplayTag& Tag, const USoundBank*
 		return;
 	}
 
-	UGameplayStatics::PlaySound2D(this, Event->Sound, Event->VolumeMultiplier, PickPitch(*Event), 0.0f, Event->Concurrency);
+	// 맵 전환을 넘긴다: 타이틀의 "시작" 버튼처럼 클릭 즉시 OpenLevel을 부르는 곳에서는 이 월드의
+	// 오디오 컴포넌트가 다음 프레임에 월드와 함께 죽어 소리가 나기도 전에 끊긴다. 2D 소리는
+	// 위치가 없으니 트랜지언트 패키지에 두고 전환을 넘겨도 잃을 것이 없다(음악과 같은 방식).
+	UGameplayStatics::SpawnSound2D(
+		this, Event->Sound, Event->VolumeMultiplier, PickPitch(*Event), 0.0f, Event->Concurrency,
+		/*bPersistAcrossLevelTransition=*/true, /*bAutoDestroy=*/true);
 }
 
 void UGameAudioSubsystem::PlayEventAtLocation(const FGameplayTag& Tag, const FVector& Location, const USoundBank* Override)

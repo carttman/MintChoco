@@ -120,8 +120,10 @@ void AGameGameState::OnRep_MatchPhase()
 	}
 	if (UGameAudioSubsystem* const Audio = UGameAudioSubsystem::Get(this))
 	{
-		// 등록되지 않은 단계는 하던 곡을 이어간다.
-		if (const FGameplayTag* const Track = UGameAudioSettings::Get().MusicByPhase.Find(MatchPhase))
+		// 등록되지 않은 단계와 뱅크에 곡이 없는 태그는 하던 곡을 이어간다. PlayMusic에 빈 태그를
+		// 넘기면 곡이 꺼지므로 먼저 묻는다.
+		const FGameplayTag* const Track = UGameAudioSettings::Get().MusicByPhase.Find(MatchPhase);
+		if (Track && Audio->HasEvent(*Track))
 		{
 			Audio->PlayMusic(*Track);
 		}

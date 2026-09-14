@@ -108,10 +108,22 @@ private:
 	TObjectPtr<USoundAttenuation> FallbackAttenuation;
 
 	/**
-	 * 새 맵이 올라온 뒤 믹스를 얹고, 경기 단계가 없는 맵(타이틀·룸·로비)이면 로비 곡을 튼다.
-	 * 게임 맵의 곡은 AGameGameState의 단계 복제가 정한다. Initialize 시점에는 쓸 만한 월드가 없다.
+	 * 새 맵이 올라온 뒤 믹스를 얹고 그 맵의 곡을 정한다. Initialize 시점에는 쓸 만한 월드가 없다.
+	 * PIE의 첫 맵은 이 델리게이트를 지나지 않으므로(에디터가 LoadMap 없이 월드를 복제한다)
+	 * HandleGameInstanceStarted가 같은 일을 한 번 더 한다.
 	 */
 	void HandlePostLoadMap(UWorld* LoadedWorld);
+
+	/** 게임 인스턴스가 플레이를 시작했다(PIE와 스탠드얼론 모두). 첫 맵의 곡은 여기서 잡힌다. */
+	void HandleGameInstanceStarted(UGameInstance* StartedInstance);
+
+	/**
+	 * 경기 단계가 없는 맵(타이틀·룸·로비)이면 로비 곡을 튼다. 게임 맵의 곡은 AGameGameState의
+	 * 단계 복제가 정한다. 같은 곡이면 아무것도 하지 않으므로 여러 번 불려도 된다.
+	 */
+	void UpdateMapMusic(UWorld* World);
+
+	FDelegateHandle GameInstanceStartedHandle;
 
 	/** 지금 흐르는 곡. 맵 전환을 넘기려고 서브시스템이 직접 들고 있다. */
 	UPROPERTY(Transient)

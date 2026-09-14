@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "OnlineSessionsSubsystem.h"
-#include "Blueprint/UserWidget.h"
+#include "UI/MenuWidget.h"
 #include "RoomListWidget.generated.h"
 
 class UWrapBox;
@@ -19,7 +19,7 @@ class URoomItemWidget;
  * 서브시스템의 OnSearchLockComplete 하나에서 오므로, 검색을 누가 시작했든 표시가 맞는다.
  */
 UCLASS()
-class MINTCHOCO_API URoomListWidget : public UUserWidget
+class MINTCHOCO_API URoomListWidget : public UMenuWidget
 {
 	GENERATED_BODY()
 
@@ -34,7 +34,7 @@ protected:
 	// void RefreshUI();
 
 private:
-	/** 새로고침 버튼. 클릭음을 내고 FindRooms를 부른다. */
+	/** 새로고침 버튼. 클릭음은 부모(UMenuWidget)가 붙인다. */
 	UFUNCTION()
 	void OnMyFindRoom();
 

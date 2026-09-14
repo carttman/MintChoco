@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "FindSessionsCallbackProxy.h"
 #include "OnlineSessionsSubsystem.h"
-#include "Blueprint/UserWidget.h"
+#include "UI/MenuWidget.h"
 #include "RoomItemWidget.generated.h"
 
 class UTextBlock;
@@ -15,12 +15,15 @@ class UButton;
  *
  */
 UCLASS()
-class MINTCHOCO_API URoomItemWidget : public UUserWidget
+class MINTCHOCO_API URoomItemWidget : public UMenuWidget
 {
 	GENERATED_BODY()
 private:
 
 	virtual void NativeConstruct() override;
+
+	/** 참가 버튼은 자기 소리(Audio.UI.Join)를 내므로 자동 클릭음에서 뺀다. */
+	virtual bool ShouldAutoSound(const UButton* Button) const override { return Button != Btn_Join.Get(); }
 public:
 	// UFUNCTION(BlueprintCallable)
 	// void SetInfo(FBlueprintSessionResult InSessionResult);

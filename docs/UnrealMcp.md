@@ -72,7 +72,13 @@ Every item here cost real debugging time once. Read before any MCP write.
   work in one call. To replace element 0 and shrink, first rotate in place, then drop the tail.
   The shrink call must spell out every field the read returned on each survivor
   (`PlayerMappableKeySettings: "None"` included); an omitted field counts as a change and the
-  removal is rejected as ambiguous. Inside a `ProgrammaticToolset` script, one `execute_tool`
+  removal is rejected as ambiguous.
+- Map property (`TMap<FGameplayTag, FStruct>`, e.g. `USoundBank::Events`): filling an **empty**
+  map accepts plain tag-string keys (`"Audio.UI.Click": {...}`) and writes the whole map in one
+  call. Editing values afterwards must reuse the keys exactly as the read returned them
+  (`"(TagName=\"Audio.UI.Click\")"`); plain keys on a non-empty map are rejected as "keys swapped
+  without size change". Read, edit the values in place, write the full map back.
+  Inside a `ProgrammaticToolset` script, one `execute_tool`
   call per step obeys these rules while still batching the round-trips.
 - A `TSoftObjectPtr` array reads back as plain path strings, but an appended element is stored
   as a `{refPath}` object: re-read the array before every append and pass the elements exactly

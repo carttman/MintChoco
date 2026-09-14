@@ -86,6 +86,14 @@ public:
 	TObjectPtr<USoundBank> Sounds;
 
 	/**
+	 * 발동음(Audio.Item.Activate)을 효과 시작 순간이 아니라 애니메이션의 노티파이
+	 * (UAnimNotify_ItemSound)에서 낸다. 켜면 슬롯은 발동음을 건너뛰므로, 사용 동작이나 자세
+	 * 시퀀스에 노티파이를 놓아야 소리가 난다. 특정 프레임(스피너의 회전 시작)에 맞출 때 쓴다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity")
+	bool bActivateSoundFromAnimation = false;
+
+	/**
 	 * 효과 지속시간(초). 같은 아이템을 효과 중에 다시 쓰면 이 값으로 다시 시작한다.
 	 * 0이면 즉발이다: GE도 상태 태그도 없이 어빌리티가 발동 직후 끝나고, 효과는 스폰된 액터가 이어받는다.
 	 */

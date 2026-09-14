@@ -14,6 +14,7 @@
 
 class UAbilitySystemComponent;
 class UAnimSequenceBase;
+class UAudioComponent;
 class UItemProfile;
 class UNiagaraComponent;
 class UNiagaraSystem;
@@ -48,6 +49,23 @@ public:
 	/** 들고 있는 아이템. 없으면 nullptr. 모든 머신에 복제된다. */
 	UFUNCTION(BlueprintPure, Category = "Item")
 	UItemProfile* GetHeldItem() const { return HeldItem; }
+
+	/**
+	 * 애니메이션 노티파이(UAnimNotify_ItemSound)가 소리 낼 아이템. 자세를 정하는 아이템(조준 중이면
+	 * 슬롯의 것, 효과 중이면 그것)이 먼저고, 없으면 마지막으로 연출을 시작한 아이템(즉발 아이템의
+	 * 사용 동작은 효과가 없어 이쪽으로 온다). 아무것도 없으면 nullptr.
+	 */
+	const UItemProfile* GetAnimationItem() const;
+
+	/**
+	 * 애니메이션 구간 노티파이(UAnimNotifyState_ItemSound)가 부른다. 태그의 소리를 캐릭터 메시에
+	 * 붙여 틀고 들고 있는다. 같은 태그가 이미 울리고 있으면 그것을 끄고 새로 튼다. 뱅크는
+	 * GetAnimationItem의 것이다.
+	 */
+	void PlayAnimationSound(const FGameplayTag& Tag, FName Socket);
+
+	/** PlayAnimationSound로 튼 소리를 끈다. 없으면 아무 일도 없다. */
+	void StopAnimationSound(const FGameplayTag& Tag, float FadeOut);
 
 	/** 서버 전용. 아이템을 슬롯에 넣는다. 들고 있던 것은 버려진다(효과 중인 것은 끝까지 돈다). */
 	UFUNCTION(BlueprintCallable, Category = "Item")
@@ -230,6 +248,13 @@ private:
 	TObjectPtr<UItemProfile> EffectItem;
 
 	/**
+	 * 이 머신에서 마지막으로 연출(사용 동작·발동음)을 시작한 아이템. 즉발 아이템은 효과가 없어
+	 * EffectItem에 남지 않으므로, 사용 동작 안의 노티파이가 어느 뱅크를 쓸지 이걸로 안다.
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<const UItemProfile> LastFeedbackItem;
+
+	/**
 	 * 어빌리티가 효과 중에 갈아 끼운 자세. 프로필의 값보다 우선한다. 효과 하나 안에서 구간마다
 	 * 자세가 바뀌는 아이템(스위트 스피너)이 쓴다. 소유자는 자기 어빌리티로 이미 알고 있다.
 	 */
@@ -245,6 +270,16 @@ private:
 	/** 상태 태그별로 켜 둔 이펙트. 태그가 내려가면 끈다. */
 	UPROPERTY(Transient)
 	TMap<FGameplayTag, TObjectPtr<UNiagaraComponent>> EffectComponents;
+
+	/**
+	 * 애니메이션 구간 노티파이가 틀어 둔 소리. 오디오 태그별 하나. 구간이 끝나면 노티파이가 끄고,
+	 * 효과가 끝나거나(조기 종료 포함) 컴포넌트가 사라지면 여기서 전부 끈다.
+	 */
+	UPROPERTY(Transient)
+	TMap<FGameplayTag, TObjectPtr<UAudioComponent>> AnimationSounds;
+
+	/** AnimationSounds를 전부 끈다. */
+	void StopAllAnimationSounds(float FadeOut);
 
 	FDelegateHandle TagEventHandle;
 	FTimerHandle InkBlinkTimer;

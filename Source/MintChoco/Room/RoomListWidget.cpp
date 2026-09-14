@@ -101,7 +101,6 @@ void URoomListWidget::NativeDestruct()
 
 void URoomListWidget::OnMyFindRoom()
 {
-	UGameAudioSubsystem::Play2D(this, AudioTags::Audio_UI_Click);
 	FindRooms();
 }
 
