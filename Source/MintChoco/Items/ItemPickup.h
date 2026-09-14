@@ -83,12 +83,15 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	TObjectPtr<UStaticMeshComponent> Laser;
 
-	/** 아이템 위에 뜨는 이름표(스크린 공간). 활성 상태에서만 보인다. */
+	/** 아이템 위에 뜨는 디버그 이름표(스크린 공간). PIE에서 bShowLabel이 켜져 있고 활성 상태일 때만 보인다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Label")
 	TObjectPtr<UWidgetComponent> Label;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Label")
-	bool bShowLabel = true;
+#if WITH_EDITORONLY_DATA
+	/** PIE에서 이름표를 띄운다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Item|Label")
+	bool bShowLabel = false;
+#endif
 
 	/** 이름표 위젯. 기본은 트리를 직접 짜는 UItemLabelWidget이고, UMG 서브클래스로 바꿀 수 있다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Label")
@@ -111,6 +114,8 @@ private:
 	void ApplyProfile();
 	void ApplyState();
 	void Activate();
+	void UpdateLabel();
+	bool IsLabelEnabled() const;
 
 	UFUNCTION()
 	void OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,

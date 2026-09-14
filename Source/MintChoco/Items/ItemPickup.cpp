@@ -93,9 +93,7 @@ void AItemPickup::BeginPlay()
 
 	if (Label)
 	{
-		Label->SetWidgetClass(bShowLabel ? LabelWidgetClass : nullptr);
 		Label->SetRelativeLocation(FVector(0.0f, 0.0f, LabelHeight));
-		Label->InitWidget();
 	}
 
 	ApplyProfile();
@@ -158,16 +156,42 @@ void AItemPickup::OnRep_Collected()
 
 void AItemPickup::ApplyProfile()
 {
-	// 박스는 종류와 무관하게 같은 모양(BP_ItemPickup의 Egg 메시)이다. 종류는 이름표와 HUD로만 구분한다.
-	if (!Label || !Profile) return;
-
-    if (UItemLabelWidget* const Widget = Cast<UItemLabelWidget>(Label->GetUserWidgetObject()))
-	{
-		const FText Name = Profile->DisplayName.IsEmpty() ? FText::FromString(Profile->GetName()) : Profile->DisplayName;
-		Widget->SetLabel(Name);
-	}
+	// 박스는 종류와 무관하게 같은 모양(BP_ItemPickup의 Egg 메시)이다. 종류는 HUD로 구분하고 이름표는 디버그용이다.
 	// 프로필이 상태보다 늦게 복제돼도 이름표가 켜진다.
-	Label->SetVisibility(State == EItemPickupState::Active && bShowLabel);
+	UpdateLabel();
+}
+
+void AItemPickup::UpdateLabel()
+{
+	if (!Label) return;
+
+	const bool bVisible = IsLabelEnabled() && State == EItemPickupState::Active && Profile != nullptr;
+	if (bVisible && !Label->GetUserWidgetObject())
+	{
+		// 위젯은 처음 보일 때 만든다. 에디터 밖에서는 끝까지 만들지 않는다.
+		Label->SetWidgetClass(LabelWidgetClass);
+		Label->InitWidget();
+	}
+
+	if (Profile)
+	{
+		if (UItemLabelWidget* const Widget = Cast<UItemLabelWidget>(Label->GetUserWidgetObject()))
+		{
+			const FText Name = Profile->DisplayName.IsEmpty() ? FText::FromString(Profile->GetName()) : Profile->DisplayName;
+			Widget->SetLabel(Name);
+		}
+	}
+	Label->SetVisibility(bVisible);
+}
+
+bool AItemPickup::IsLabelEnabled() const
+{
+#if WITH_EDITOR
+	const UWorld* const World = GetWorld();
+	return bShowLabel && World && World->IsPlayInEditor();
+#else
+	return false;
+#endif
 }
 
 void AItemPickup::ApplyState()
@@ -182,10 +206,7 @@ void AItemPickup::ApplyState()
 	{
 		Laser->SetVisibility(!bActive);
 	}
-	if (Label)
-	{
-		Label->SetVisibility(bActive && bShowLabel && Profile != nullptr);
-	}
+	UpdateLabel();
 	if (Trigger)
 	{
 		Trigger->SetCollisionEnabled(bActive ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
