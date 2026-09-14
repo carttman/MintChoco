@@ -95,7 +95,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Paint|Weapon")
 	int32 GetNextSeed() const { return NextSeed; }
 
-	/** Where the next shot leaves from, in world space. Falls back to the view when the owner has no muzzle socket. */
+	/**
+	 * Where the next shot appears to leave from (the gun's muzzle socket), in world space; FX attach
+	 * here. The physics leaves the sight line instead (FPaintFireContext::Muzzle). Falls back to the
+	 * view when the owner has no muzzle socket.
+	 */
 	UFUNCTION(BlueprintPure, Category = "Paint|Weapon")
 	FTransform GetMuzzleTransform() const;
 
@@ -110,7 +114,7 @@ public:
 	/**
 	 * Where to look for the muzzle socket when the owner carries a weapon mesh of its own. Barrel
 	 * lengths differ per character, so the socket belongs on that mesh rather than on a skeleton
-	 * several characters share. A missing component or socket falls back to MuzzleSocketName on
+	 * several characters share. A missing component or socket falls back to VisualMuzzleSocketName on
 	 * the owner's skeletal mesh, so a pawn without a weapon mesh still fires from its hand.
 	 */
 	void SetMuzzleSource(USceneComponent* Component, FName SocketName);
@@ -160,9 +164,17 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing = OnRep_Profile, Category = "Paint|Weapon")
 	TObjectPtr<UPaintWeaponProfile> Profile;
 
-	/** Socket on the owner's skeletal mesh that shots leave from. Missing socket: the view point, pushed forward by MuzzleFallbackOffset. */
+	/** Socket on the owner's skeletal mesh that shots appear to leave from. Missing socket: the view point, pushed forward by VisualMuzzleFallbackOffset. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Weapon")
-	FName MuzzleSocketName = TEXT("hand_r");
+	FName VisualMuzzleSocketName = TEXT("hand_r");
+
+	/**
+	 * How far in front of the pawn, along the sight line, the shot's physics starts. The origin is
+	 * on the view ray at the pawn's depth (PaintAim::FireOrigin) rather than at the muzzle socket, so
+	 * the pose never bends the shot and the crosshair line is the flight line.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Weapon", meta = (ClampMin = "0", ForceUnits = "cm"))
+	float FireOriginForwardMargin = 30.0f;
 
 	/**
 	 * 방아쇠를 당기고 첫 발이 나가기까지 기다리는 시간(초). 0 이면 다음 틱에 나간다.
@@ -187,9 +199,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Weapon", meta = (ClampMin = "0", ForceUnits = "s"))
 	float AimHoldSeconds = 0.5f;
 
-	/** Keeps a socketless muzzle out of the owner's own collision. */
+	/** Where a socketless visual muzzle hangs in front of the view. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint|Weapon", meta = (ClampMin = "0", ForceUnits = "cm"))
-	float MuzzleFallbackOffset = 60.0f;
+	float VisualMuzzleFallbackOffset = 60.0f;
 
 	UPROPERTY(ReplicatedUsing = OnRep_PaintId)
 	uint8 PaintId = 0;
@@ -242,7 +254,9 @@ private:
 	bool CanAffordShot() const;
 	void SpendShot();
 	void BuildContext(FPaintFireContext& OutContext, const FVector& ViewOrigin, const FVector& ViewDirection, float ChargeFraction) const;
-	FTransform ComputeMuzzleTransform(const FVector& ViewOrigin, const FVector& ViewDirection) const;
+
+	/** The gun's muzzle socket, or the hand, or a point in front of the view: where the shot looks like it leaves. */
+	FTransform ComputeVisualMuzzle(const FVector& ViewOrigin, const FVector& ViewDirection) const;
 
 	/** The mesh that carries the muzzle socket, or null when the owner has no such socket. */
 	USkeletalMeshComponent* GetMuzzleMesh() const;

@@ -26,13 +26,24 @@ enum class EPaintFireMode : uint8
 
 /**
  * One shot's worth of input, sampled by the weapon right before it fires its profile. On the
- * server the view comes from the owning client's RPC, the muzzle from the server's own pawn.
+ * server the view comes from the owning client's RPC and the muzzle is derived from that same
+ * view, so both machines fly the same shot.
  */
 struct FPaintFireContext
 {
 	UWorld* World = nullptr;
 	APawn* Instigator = nullptr;
+
+	/**
+	 * Where the shot's physics starts: on the sight line at the pawn's depth (PaintAim::FireOrigin),
+	 * facing along the view. Never the animated socket, which would bend every shot with the pose
+	 * and differ between the owner and the server.
+	 */
 	FTransform Muzzle;
+
+	/** Where the shot appears to start: the gun's muzzle socket. Unset means the same as Muzzle. */
+	TOptional<FVector> VisualMuzzle;
+
 	FVector ViewOrigin = FVector::ZeroVector;
 	FVector ViewDirection = FVector::ForwardVector;
 	uint8 PaintId = 0;
@@ -60,6 +71,10 @@ struct FPaintShot
 
 	UPROPERTY()
 	FVector_NetQuantize Muzzle = FVector::ZeroVector;
+
+	/** Where the ball's mesh, or a tracer, starts before it merges onto the path that leaves Muzzle. */
+	UPROPERTY()
+	FVector_NetQuantize VisualMuzzle = FVector::ZeroVector;
 
 	UPROPERTY()
 	FVector_NetQuantizeNormal Direction = FVector::ForwardVector;

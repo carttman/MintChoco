@@ -18,6 +18,7 @@
 #include "Ink/InkTankComponent.h"
 #include "Items/ItemGameplayTags.h"
 #include "Paint/PaintLog.h"
+#include "Weapons/PaintAimMath.h"
 
 UPaintWeaponComponent::UPaintWeaponComponent()
 {
@@ -566,7 +567,13 @@ void UPaintWeaponComponent::BuildContext(FPaintFireContext& OutContext, const FV
 {
 	OutContext.World = GetWorld();
 	OutContext.Instigator = GetOwnerPawn();
-	OutContext.Muzzle = ComputeMuzzleTransform(ViewOrigin, ViewDirection);
+
+	// The physics leaves the sight line at the pawn's depth, the same on the owner and on the
+	// server that only got the view; the socket merely says where the shot looks like it left.
+	const AActor* const Anchor = OutContext.Instigator ? static_cast<const AActor*>(OutContext.Instigator) : GetOwner();
+	const FVector Origin = PaintAim::FireOrigin(ViewOrigin, ViewDirection, Anchor ? Anchor->GetActorLocation() : ViewOrigin, FireOriginForwardMargin);
+	OutContext.Muzzle = FTransform(ViewDirection.Rotation(), Origin);
+	OutContext.VisualMuzzle = ComputeVisualMuzzle(ViewOrigin, ViewDirection).GetLocation();
 	OutContext.ViewOrigin = ViewOrigin;
 	OutContext.ViewDirection = ViewDirection;
 	OutContext.PaintId = PaintId;
@@ -610,7 +617,7 @@ FTransform UPaintWeaponComponent::GetMuzzleTransform() const
 	FVector ViewOrigin;
 	FVector ViewDirection;
 	GetOwnerView(ViewOrigin, ViewDirection);
-	return ComputeMuzzleTransform(ViewOrigin, ViewDirection);
+	return ComputeVisualMuzzle(ViewOrigin, ViewDirection);
 }
 
 bool UPaintWeaponComponent::PredictNextImpact(FVector& OutViewOrigin, FVector& OutViewDirection, FVector& OutAimPoint, FVector& OutImpact) const
@@ -635,11 +642,11 @@ void UPaintWeaponComponent::SetMuzzleSource(USceneComponent* Component, FName So
 	MuzzleSourceSocket = SocketName;
 }
 
-FTransform UPaintWeaponComponent::ComputeMuzzleTransform(const FVector& ViewOrigin, const FVector& ViewDirection) const
+FTransform UPaintWeaponComponent::ComputeVisualMuzzle(const FVector& ViewOrigin, const FVector& ViewDirection) const
 {
-	// A weapon mesh carries its own muzzle. It is checked first so the shot leaves the barrel
-	// rather than the hand that holds it; the socket lives on the mesh because barrel lengths
-	// differ between characters that share one skeleton.
+	// A weapon mesh carries its own muzzle. It is checked first so the shot appears to leave the
+	// barrel rather than the hand that holds it; the socket lives on the mesh because barrel
+	// lengths differ between characters that share one skeleton.
 	if (const USceneComponent* const Source = MuzzleSource.Get())
 	{
 		if (!MuzzleSourceSocket.IsNone() && Source->DoesSocketExist(MuzzleSourceSocket))
@@ -652,13 +659,13 @@ FTransform UPaintWeaponComponent::ComputeMuzzleTransform(const FVector& ViewOrig
 	const ACharacter* const Character = Cast<ACharacter>(Owner);
 	const USkeletalMeshComponent* const Mesh =
 		Character ? Character->GetMesh() : Owner->FindComponentByClass<USkeletalMeshComponent>();
-	if (Mesh && !MuzzleSocketName.IsNone() && Mesh->DoesSocketExist(MuzzleSocketName))
+	if (Mesh && !VisualMuzzleSocketName.IsNone() && Mesh->DoesSocketExist(VisualMuzzleSocketName))
 	{
-		return Mesh->GetSocketTransform(MuzzleSocketName);
+		return Mesh->GetSocketTransform(VisualMuzzleSocketName);
 	}
 
-	// Socketless, the muzzle hangs off the view - which on the server is the view the owner sent.
-	return FTransform(ViewDirection.Rotation(), ViewOrigin + ViewDirection * MuzzleFallbackOffset);
+	// Socketless, the visual muzzle hangs off the view - which on the server is the view the owner sent.
+	return FTransform(ViewDirection.Rotation(), ViewOrigin + ViewDirection * VisualMuzzleFallbackOffset);
 }
 
 USkeletalMeshComponent* UPaintWeaponComponent::GetMuzzleMesh() const
@@ -667,13 +674,13 @@ USkeletalMeshComponent* UPaintWeaponComponent::GetMuzzleMesh() const
 	ACharacter* const Character = Cast<ACharacter>(Owner);
 	USkeletalMeshComponent* const Mesh =
 		Character ? Character->GetMesh() : (Owner ? Owner->FindComponentByClass<USkeletalMeshComponent>() : nullptr);
-	return (Mesh && !MuzzleSocketName.IsNone() && Mesh->DoesSocketExist(MuzzleSocketName)) ? Mesh : nullptr;
+	return (Mesh && !VisualMuzzleSocketName.IsNone() && Mesh->DoesSocketExist(VisualMuzzleSocketName)) ? Mesh : nullptr;
 }
 
 USceneComponent* UPaintWeaponComponent::GetMuzzleAttachment(FName& OutSocket) const
 {
-	// 총 메시가 총구를 갖고 있으면 그쪽이 먼저다. ComputeMuzzleTransform 과 같은 순서라야
-	// 탄이 나가는 곳과 불꽃이 피는 곳이 같다.
+	// 총 메시가 총구를 갖고 있으면 그쪽이 먼저다. ComputeVisualMuzzle 과 같은 순서라야
+	// 탄이 나오는 것으로 보이는 곳과 불꽃이 피는 곳이 같다.
 	if (USceneComponent* const Source = MuzzleSource.Get())
 	{
 		if (!MuzzleSourceSocket.IsNone() && Source->DoesSocketExist(MuzzleSourceSocket))
@@ -685,7 +692,7 @@ USceneComponent* UPaintWeaponComponent::GetMuzzleAttachment(FName& OutSocket) co
 
 	if (USkeletalMeshComponent* const Mesh = GetMuzzleMesh())
 	{
-		OutSocket = MuzzleSocketName;
+		OutSocket = VisualMuzzleSocketName;
 		return Mesh;
 	}
 

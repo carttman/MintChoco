@@ -96,9 +96,9 @@ bool UPaintSniperProfile::Fire(const FPaintFireContext& Context, FPaintStrokeSta
 	// A dome swallows the shot: nobody behind it is hit and nothing is painted where it stopped.
 	const APawn* const Victim = (bHit && !bStoppedByDome) ? GetHitPawn(Hit) : nullptr;
 
-	// The player aims with the camera, the ray is drawn and the trail laid from the barrel: converge
-	// the two on the end point. A target closer than the muzzle would point the barrel backwards,
-	// and the view direction is the honest fallback there.
+	// The player aims with the camera; the trail is laid from the sight-line origin and only the
+	// tracer is drawn from the barrel. Converge on the end point; a target closer than the origin
+	// would point the ray backwards, and the view direction is the honest fallback there.
 	const FVector MuzzleLocation = Context.Muzzle.GetLocation();
 	FVector Direction = End - MuzzleLocation;
 	if (Direction.SizeSquared() < FMath::Square(10.0f) || FVector::DotProduct(Direction, Context.ViewDirection) <= 0.0f)
@@ -108,6 +108,7 @@ bool UPaintSniperProfile::Fire(const FPaintFireContext& Context, FPaintStrokeSta
 	const float Length = FVector::Dist(MuzzleLocation, End);
 
 	OutShot.Muzzle = MuzzleLocation;
+	OutShot.VisualMuzzle = Context.VisualMuzzle.Get(MuzzleLocation);
 	OutShot.Direction = Direction.GetSafeNormal(UE_SMALL_NUMBER, FVector::ForwardVector);
 	OutShot.Distance = Length;
 	OutShot.Seed = Context.Seed;
@@ -145,7 +146,7 @@ bool UPaintSniperProfile::Fire(const FPaintFireContext& Context, FPaintStrokeSta
 	}
 
 	// The shot multicast skips the authority, which shows its own tracer here instead.
-	DrawTracer(*Context.World, MuzzleLocation, End);
+	DrawTracer(*Context.World, FVector(OutShot.VisualMuzzle), End);
 	return true;
 }
 
@@ -210,7 +211,7 @@ void UPaintSniperProfile::SpawnTrailVolley(UWorld& World, const FVector& Muzzle,
 
 void UPaintSniperProfile::PlayCosmetic(UWorld& World, APawn* Instigator, const FPaintShot& Shot) const
 {
-	DrawTracer(World, Shot.Muzzle, Shot.Muzzle + FVector(Shot.Direction) * Shot.Distance);
+	DrawTracer(World, Shot.VisualMuzzle, Shot.Muzzle + FVector(Shot.Direction) * Shot.Distance);
 }
 
 void UPaintSniperProfile::DrawTracer(const UWorld& World, const FVector& Start, const FVector& End)

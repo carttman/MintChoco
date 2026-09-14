@@ -70,6 +70,7 @@ bool UPaintGunProfile::Fire(const FPaintFireContext& Context, FPaintStrokeState&
 	ComputeAim(Context, AimPoint, Direction);
 
 	OutShot.Muzzle = Context.Muzzle.GetLocation();
+	OutShot.VisualMuzzle = Context.VisualMuzzle.Get(Context.Muzzle.GetLocation());
 	OutShot.Direction = Direction;
 	OutShot.Seed = Context.Seed;
 	OutShot.PaintId = Context.PaintId;
@@ -152,6 +153,9 @@ bool UPaintGunProfile::Launch(UWorld& World, APawn* Instigator, const FPaintShot
 	TArray<FVector> Directions;
 	Scatter->ComputePelletDirections(Shot.Direction, Shot.Seed, Directions);
 
+	// The physics flies from Shot.Muzzle; only the mesh starts at the gun and slides onto the path.
+	const FVector VisualOffset = FVector(Shot.VisualMuzzle) - FVector(Shot.Muzzle);
+
 	bool bLaunched = false;
 	for (int32 Pellet = 0; Pellet < Directions.Num(); ++Pellet)
 	{
@@ -162,7 +166,7 @@ bool UPaintGunProfile::Launch(UWorld& World, APawn* Instigator, const FPaintShot
 			: static_cast<int32>(HashCombineFast(static_cast<uint32>(Shot.Seed), static_cast<uint32>(Pellet)));
 		const FTransform SpawnTransform(Directions[Pellet].Rotation(), Shot.Muzzle);
 		bLaunched |= Paintball->Launch(World, SpawnTransform, Instigator,
-			Directions[Pellet] * Scatter->MuzzleSpeed, Shot.PaintId, PelletSeed, bCosmetic) != nullptr;
+			Directions[Pellet] * Scatter->MuzzleSpeed, Shot.PaintId, PelletSeed, bCosmetic, /*DropAfterOverride=*/-1.0f, VisualOffset) != nullptr;
 	}
 	return bLaunched;
 }

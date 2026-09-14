@@ -71,7 +71,8 @@ APaintProjectile* UProjectilePoolSubsystem::Launch(
 	int32 Seed,
 	const FVector& Velocity,
 	bool bCosmetic,
-	float DropAfterOverride)
+	float DropAfterOverride,
+	const FVector& VisualOffset)
 {
 	bool bFresh = false;
 	APaintProjectile* const Projectile = AcquireIdle(Class, Where, Instigator, bFresh);
@@ -80,7 +81,7 @@ APaintProjectile* UProjectilePoolSubsystem::Launch(
 		return nullptr;
 	}
 
-	Projectile->Init(Profile, PaintId, Seed, Velocity, bCosmetic, DropAfterOverride);
+	Projectile->Init(Profile, PaintId, Seed, Velocity, bCosmetic, DropAfterOverride, VisualOffset);
 
 	if (bFresh)
 	{

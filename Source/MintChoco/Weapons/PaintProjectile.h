@@ -44,9 +44,12 @@ public:
 	 *
 	 * 프로필의 값은 “이 탄은 언제나 이 거리에서 떨어진다” 는 뜻이다. 한 번의 사격이 여러 발을
 	 * 서로 다른 거리에 떨어뜨려야 할 때(차지샷의 연속 발사)만 발마다 다른 값을 받는다.
+	 *
+	 * InVisualOffset 은 메시가 출발하는 곳(궤적 기준 월드 오프셋). 물리는 시선 위의 원점에서
+	 * 날고, 메시만 총구에서 시작해 프로필의 VisualMergeSeconds 동안 궤적으로 미끄러져 들어온다.
 	 */
 	void Init(const UPaintballProfile* InProfile, uint8 InPaintId, int32 InSeed, const FVector& Velocity, bool bInCosmetic,
-		float InDropAfterOverride = -1.0f);
+		float InDropAfterOverride = -1.0f, const FVector& InVisualOffset = FVector::ZeroVector);
 
 	/** 이 공이 칠하는 id(팀). 초콜릿 돔이 상대 탄을 가려낼 때 본다. */
 	uint8 GetPaintId() const { return PaintId; }
@@ -77,7 +80,7 @@ public:
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 
-	/** Only ticks when this ball paints a trail; a plain ball is driven by its movement component alone. */
+	/** Ticks while the mesh merges onto the path and while this ball paints a trail; otherwise the movement component alone drives it. */
 	virtual void Tick(float DeltaSeconds) override;
 
 	UFUNCTION()
@@ -119,6 +122,14 @@ private:
 	uint8 PaintId = 0;
 	int32 Seed = 0;
 	bool bCosmetic = false;
+
+	/** Where the mesh still is relative to the path, in world space; shrinks to zero over the profile's VisualMergeSeconds. */
+	FVector VisualOffset = FVector::ZeroVector;
+	float MergeElapsed = 0.0f;
+	bool bMerging = false;
+
+	/** Only the server's real ball paints a trail, and only when its profile has one. */
+	bool bPaintsTrail = false;
 
 	/** Trail bookkeeping. Distance is measured along the real path, so a lobbed arc samples evenly. */
 	FVector LastTrailLocation = FVector::ZeroVector;

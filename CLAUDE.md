@@ -100,6 +100,10 @@ Tangent); `CustomizedUVs` and WPO are vertex-frequency. Everything else: `docs/T
 - Facing: the body yaw follows the camera only while moving or firing
   (`UUnitMovementComponent::PhysicsRotation` gate, `RotationRate.Yaw` 720, `AUnit::FaceAimHoldSeconds`);
   idle look-around leaves the body alone. Never turn `bUseControllerRotationYaw` back on.
+- Firing origin: a shot's physics leaves the sight line at the pawn's depth (`PaintAim::FireOrigin`
+  → `FPaintFireContext::Muzzle`); the gun socket is only `VisualMuzzle`, for FX, tracers and the
+  ball mesh's merge onto the path (`UPaintballProfile::VisualMergeSeconds`). Never fire from the
+  animated socket: it wobbles with the pose and differs between owner and server.
 - Match flow: `AGameGameState::MatchPhase` WaitingForPlayers → Countdown → Playing → Ended;
   input is locked until Playing through `IsPlayerInputAllowed`.
 - Screen fade: every travel goes through `UScreenFadeSubsystem::*TravelWithFade`; a direct
