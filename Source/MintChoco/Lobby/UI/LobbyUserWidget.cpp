@@ -51,12 +51,13 @@ void ULobbyUserWidget::RefreshUI()
 	Txt_Ready->SetVisibility(ESlateVisibility::Hidden);
 	Editable_PlayerName->SetVisibility(ESlateVisibility::Hidden);
 
-	 if (IsLocalPlayer == false)
-	 {
-	 	//Txt_Team->SetVisibility(ESlateVisibility::Hidden);
-		Btn_Mint->SetVisibility(ESlateVisibility::Hidden);
-		Btn_Choco->SetVisibility(ESlateVisibility::Hidden);
-	 }
+	// 팀 버튼은 내 줄에만 보인다. 숨기기만 하고 다시 보이게 하지 않으면 두 경우에 사라진다:
+	// 풀링된 줄이 이전에 남의 플레이어를 그리며 숨긴 상태를 물려받을 때, 그리고 Seamless Travel로
+	// 로비에 돌아온 직후 PlayerState가 자기 컨트롤러보다 먼저 도착해 첫 갱신에서 IsLocalPlayer가
+	// false로 계산될 때(컨트롤러가 오면 ALobbyPlayerState::ClientInitialize가 다시 갱신한다).
+	const ESlateVisibility TeamButtonVisibility = IsLocalPlayer ? ESlateVisibility::Visible : ESlateVisibility::Hidden;
+	Btn_Mint->SetVisibility(TeamButtonVisibility);
+	Btn_Choco->SetVisibility(TeamButtonVisibility);
 
 	// Show Ready Text
 	if (IsReady)

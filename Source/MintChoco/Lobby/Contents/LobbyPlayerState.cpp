@@ -27,6 +27,11 @@ void ALobbyPlayerState::ClientInitialize(AController* C)
 	// BeginPlay에서 호출되는 SetNickname()은 이보다 먼저 실행되지만, IsLocalController()를 아직 확인할 수 없기 때문에
 	// 별다른 동작 없이(silent no-op) 그냥 넘어가게 됩니다.
 	SetNickname();
+
+	// 같은 이유로 UI도 여기서 한 번 더 그린다. 게임 맵에서 로비로 Seamless Travel로 돌아오면
+	// 이 PlayerState가 새 컨트롤러보다 먼저 복제되어, BeginPlay의 갱신은 "남의 줄"로 그려진다
+	// (팀 버튼 없이 Ready만). 컨트롤러가 붙는 이 시점에 다시 그려야 내 줄이 된다.
+	RefreshLobbyUI();
 }
 
 void ALobbyPlayerState::Multicast_Team_Implementation(int32 TeamId)
