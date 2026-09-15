@@ -33,6 +33,7 @@ class MINTCHOCO_API UTestUnitMovementComponent : public UUnitMovementComponent
 public:
 	using UUnitMovementComponent::PhysCustom;
 	using UUnitMovementComponent::UpdateCharacterStateBeforeMovement;
+	using UUnitMovementComponent::Acceleration;
 };
 
 /**
@@ -49,6 +50,8 @@ public:
 		: Super(ObjectInitializer.SetDefaultSubobjectClass<UTestUnitMovementComponent>(ACharacter::CharacterMovementComponentName))
 	{
 		PrimaryActorTick.bCanEverTick = false;
+		// AUnit과 같다: 몸통 요는 컨트롤러가 아니라 무브먼트(PhysicsRotation)가 돌린다.
+		bUseControllerRotationYaw = false;
 	}
 
 	UTestUnitMovementComponent* GetTestMovement() const

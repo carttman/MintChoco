@@ -6,6 +6,8 @@
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -52,13 +54,13 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	// 발사와 스킬은 각자의 컴포넌트가 필요한 동안만 틱한다.
 	PrimaryActorTick.bCanEverTick = false;
 
-	// 캐릭터가 항상 카메라를 바라본다.
+	// 몸통 요는 무브먼트 컴포넌트가 돌린다(UUnitMovementComponent::PhysicsRotation).
 	//
-	// 조준 방향과 캐릭터 정면이 일치해야 총구가 화면 중앙을 향한다. 페인트 총은
-	// 움직이면서 쏘는 것이 기본 동작이라, 이동 방향을 바라보게 두면 옆으로 달리며
-	// 쏠 때마다 총이 몸을 통과한다. 대가로 옆·뒤로 걷는 스트레이프 애니메이션이
-	// 필요하다.
-	bUseControllerRotationYaw = true;
+	// 가만히 서서 둘러볼 때는 카메라만 돌고 몸통은 그대로다. 이동 입력이 있거나 쏘는 동안에만
+	// 컨트롤 Yaw를 향해 RotationRate로 돈다. 조준 방향과 정면이 일치해야 총구가 화면 중앙을
+	// 향하므로, 쏘는 동안은 몸통이 카메라를 따르고 이동은 카메라 기준 스트레이프다. 여기서
+	// 컨트롤 Yaw를 직접 붙이면 매 프레임 스냅되어 둘러보기가 불가능해진다.
+	bUseControllerRotationYaw = false;
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationRoll = false;
 
@@ -335,6 +337,23 @@ bool AUnit::HasSuperArmor() const
 	return AbilitySystem && AbilitySystem->HasMatchingGameplayTag(ItemTags::State_Status_SuperArmor);
 }
 
+bool AUnit::WantsToFaceAim() const
+{
+	auto Weapons = { PaintWeapon.Get(), SecondaryWeapon.Get() };
+
+	for (const auto Weapon : Weapons)
+	{
+		if (!Weapon) continue;
+
+		if (Weapon->IsTriggerHeld() || Weapon->IsAiming() || Weapon->IsCharging())
+		{
+			return true;
+		}
+	}
+	const UWorld* const World = GetWorld();
+	return World && LastFireTime >= 0.0 && World->GetTimeSeconds() - LastFireTime <= FaceAimHoldSeconds;
+}
+
 bool AUnit::IsMovementInputLocked() const
 {
 	// 경기 전(전원 대기, 카운트다운)에는 아무도 움직이지 못한다. 단계는 복제되므로 양쪽이 같은 답을 본다.
@@ -358,6 +377,9 @@ bool AUnit::CanJumpInternal_Implementation() const
 void AUnit::Landed(const FHitResult& Hit)
 {
 	Super::Landed(Hit);
+
+	// 착지는 낙하를 계산하는 머신(소유자와 서버)에만 온다. 다른 플레이어의 착지음은 그래서 없다.
+	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_Unit_Land, Hit.ImpactPoint, UnitData ? UnitData->Sounds.Get() : nullptr);
 
 	// 히어로 랜딩의 내리꽂기가 끝났다. 단계 정리는 무브먼트 컴포넌트가, 효과는 어빌리티가 맡는다.
 	if (UUnitMovementComponent* const Movement = GetUnitMovement())
@@ -458,12 +480,19 @@ void AUnit::HandleStunTagChanged(const FGameplayTag Tag, int32 NewCount)
 			SecondaryWeapon->CancelTrigger();
 		}
 	}
+	// 태그는 모든 머신에 복제되므로 소리도 각자 낸다. 데디케이티드 서버는 서브시스템이 스스로 거른다.
+	UGameAudioSubsystem::PlayAttached(
+		bStunned ? AudioTags::Audio_Unit_Stun_Begin : AudioTags::Audio_Unit_Stun_End,
+		GetRootComponent(), NAME_None, UnitData ? UnitData->Sounds.Get() : nullptr);
 	BP_OnStunned(bStunned);
 }
 
 void AUnit::HandleSuperArmorTagChanged(const FGameplayTag Tag, int32 NewCount)
 {
 	UpdateSuperArmorOutline();
+	UGameAudioSubsystem::PlayAttached(
+		NewCount > 0 ? AudioTags::Audio_Unit_SuperArmor_Begin : AudioTags::Audio_Unit_SuperArmor_End,
+		GetRootComponent(), NAME_None, UnitData ? UnitData->Sounds.Get() : nullptr);
 }
 
 void AUnit::UpdateSuperArmorOutline()
@@ -955,11 +984,7 @@ void AUnit::UpdateDashEffects(bool bDashing)
 
 	// 몽타주와 소리는 진입 순간의 일회성 연출이라 공용 경로를 그대로 쓴다.
 	PlayFeedbackMontage(*Feedback);
-
-	if (Feedback->Sound)
-	{
-		UGameplayStatics::SpawnSoundAttached(Feedback->Sound, GetRootComponent());
-	}
+	UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Unit_Dash, GetRootComponent(), NAME_None, UnitData->Sounds);
 
 	// 트레일만 따로 붙잡는다. 지속되는 이펙트라 끝날 때 직접 꺼야 하기 때문이다.
 	if (Feedback->FX)
@@ -998,6 +1023,12 @@ void AUnit::PlayFeedbackMontage(const FUnitActionFeedback& Feedback)
 
 void AUnit::HandleWeaponFired(int32 Seed)
 {
+	// 몸통 방향 게이트는 서버도 봐야 하므로 연출을 거르기 전에 적는다.
+	if (const UWorld* const World = GetWorld())
+	{
+		LastFireTime = World->GetTimeSeconds();
+	}
+
 	if (GetNetMode() == NM_DedicatedServer)
 	{
 		return;
@@ -1014,10 +1045,7 @@ void AUnit::HandleWeaponFired(int32 Seed)
 
 	PlayFeedbackMontage(*Feedback);
 
-	if (Feedback->Sound)
-	{
-		UGameplayStatics::SpawnSoundAttached(Feedback->Sound, GetRootComponent());
-	}
+	// 발사음은 무기 컴포넌트가 총구에서 낸다(Audio.Weapon.Fire, 무기 프로필의 Sounds).
 
 	// 총구 화염 같은 일회성 이펙트. 총에 Muzzle 소켓이 있으면 총구에서, 없으면 캐릭터 메시의
 	// FXSocket에서 튼다. 둘 다 없으면 폰 위치에. 소켓 회전을 그대로 따르므로 총구 소켓의

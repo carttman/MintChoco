@@ -114,6 +114,15 @@ public:
 	bool IsMovementInputLocked() const;
 
 	/**
+	 * 몸통이 지금 조준 방향(컨트롤 Yaw)을 봐야 하는지. 무브먼트 컴포넌트가 매 무브마다 묻는다.
+	 *
+	 * 방아쇠를 당기고 있거나, 충전 중이거나, 마지막 발사 뒤 FaceAimHoldSeconds 안이면 참.
+	 * 소유자는 방아쇠 상태를 직접 알고, 서버와 관전 머신은 복제된 충전 상태와 OnFired 시각으로
+	 * 같은 답을 낸다. 이동 입력은 여기 없다 — 그쪽은 무브먼트가 가속으로 스스로 안다.
+	 */
+	bool WantsToFaceAim() const;
+
+	/**
 	 * 서버 전용. 아이템 스턴을 건다(UItemSettings::StunDuration, 이어서 SuperArmorDuration).
 	 * 슈퍼아머거나 이미 스턴이면 false.
 	 */
@@ -251,6 +260,13 @@ protected:
 	/** 조작에 쓰이는 입력 에셋. 비어 있으면 이 유닛은 플레이어 입력을 받지 못한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UUnitInputConfig> InputConfig;
+
+	/**
+	 * 마지막 발사 뒤 몸통이 조준 방향을 계속 따르는 시간(초). 애님 인스턴스의 FireHoldTime과
+	 * 같은 값이어야 총 든 자세가 내려가는 순간 몸통도 같이 풀린다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aim", meta = (ClampMin = "0", ForceUnits = "s"))
+	float FaceAimHoldSeconds = 0.5f;
 
 	/**
 	 * 주무기. 모든 유닛이 하나씩 들고, 주 발사 입력이 이 방아쇠를 당긴다.
@@ -412,6 +428,9 @@ private:
 
 	/** 총을 숨기는 타이머. 발사마다 다시 걸려 마지막 한 발에서만 만료된다. */
 	FTimerHandle GunHideTimer;
+
+	/** 이 머신의 월드 시계로 잰 마지막 발사 시각. 한 번도 안 쐈으면 음수. */
+	double LastFireTime = -1.0;
 
 	UFUNCTION()
 	void OnRep_IsDashing();

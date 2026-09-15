@@ -24,13 +24,6 @@
 			]
 		},
 		{
-			"Name": "ModelContextProtocol",
-			"Enabled": true,
-			"TargetAllowList": [
-				"Editor"
-			]
-		},
-		{
 			"Name": "EditorToolset",
 			"Enabled": true,
 			"TargetAllowList": [
@@ -75,6 +68,10 @@
 		},
 		{
 			"Name": "SteamSockets",
+			"Enabled": true
+		},
+		{
+			"Name": "ModelContextProtocol",
 			"Enabled": true
 		}
 	]

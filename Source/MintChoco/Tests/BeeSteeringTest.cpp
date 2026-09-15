@@ -75,6 +75,46 @@ bool FBeeSteeringTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("half clearance: half dive"), FBeeSteering::MaxDescent(75.0f, 150.0f), 0.35f, 1e-4f);
 	TestEqual(TEXT("full clearance: full dive"), FBeeSteering::MaxDescent(600.0f, 150.0f), 0.7f);
 
+	// 베지어 접선: t=0은 P0→P1, t=1은 P1→P2.
+	const FVector P0(0.0f, 0.0f, 0.0f);
+	const FVector P1(100.0f, 0.0f, 0.0f);
+	const FVector P2(100.0f, 100.0f, 0.0f);
+	TestTrue(TEXT("bezier tangent at start follows P0->P1"), FBeeSteering::BezierTangent(P0, P1, P2, 0.0f).Equals(FVector(200.0f, 0.0f, 0.0f)));
+	TestTrue(TEXT("bezier tangent at end follows P1->P2"), FBeeSteering::BezierTangent(P0, P1, P2, 1.0f).Equals(FVector(0.0f, 200.0f, 0.0f)));
+
+	// 곡선 추적: 이미 목표를 보고 있으면 직진과 같고, 옆의 목표에는 직진보다 덜 꺾은 방향이 나온다.
+	const FVector Here(0.0f, 0.0f, 100.0f);
+	const FVector Ahead(1.0f, 0.0f, 0.0f);
+	TestTrue(TEXT("curve toward a target straight ahead is straight"),
+		FBeeSteering::CurveHeading(Here, Ahead, FVector(1000.0f, 0.0f, 50.0f), 0.5f, 0.2f).Equals(Ahead, 1e-3f));
+	const FVector Curved = FBeeSteering::CurveHeading(Here, Ahead, FVector(0.0f, 1000.0f, 50.0f), 0.5f, 0.2f);
+	TestTrue(TEXT("curve heading is a flat unit vector"), Curved.IsNormalized() && FMath::IsNearlyZero(Curved.Z));
+	TestTrue(TEXT("curve keeps some of the current heading"), Curved.X > 0.3f);
+	TestTrue(TEXT("curve bends toward the target"), Curved.Y > 0.3f);
+	TestTrue(TEXT("zero tension aims straight at the target"),
+		FBeeSteering::CurveHeading(Here, Ahead, FVector(0.0f, 1000.0f, 50.0f), 0.0f, 0.2f).Equals(FVector(0.0f, 1.0f, 0.0f), 1e-3f));
+	TestTrue(TEXT("a larger lookahead bends more"),
+		FBeeSteering::CurveHeading(Here, Ahead, FVector(0.0f, 1000.0f, 50.0f), 0.5f, 0.8f).Y > Curved.Y);
+	TestTrue(TEXT("on top of the target: keep heading"), FBeeSteering::CurveHeading(Here, Ahead, Here, 0.5f, 0.2f).Equals(Ahead));
+
+	// 요동: 시작은 0, 1/4 주기에서 최대, 목표 근처에서는 잦아든다.
+	TestEqual(TEXT("wobble starts at zero"), FBeeSteering::WobbleYawDeg(0.0f, 25.0f, 1.0f, 1000.0f, 300.0f), 0.0f, 1e-4f);
+	TestEqual(TEXT("wobble peaks at a quarter period"), FBeeSteering::WobbleYawDeg(0.25f, 25.0f, 1.0f, 1000.0f, 300.0f), 25.0f, 1e-3f);
+	TestEqual(TEXT("wobble halves at half the settle distance"), FBeeSteering::WobbleYawDeg(0.25f, 25.0f, 1.0f, 150.0f, 300.0f), 12.5f, 1e-3f);
+	TestEqual(TEXT("wobble is gone on the target"), FBeeSteering::WobbleYawDeg(0.25f, 25.0f, 1.0f, 0.0f, 300.0f), 0.0f, 1e-4f);
+	TestEqual(TEXT("no amplitude: no wobble"), FBeeSteering::WobbleYawDeg(0.25f, 0.0f, 1.0f, 1000.0f, 300.0f), 0.0f);
+
+	// 상하 요동: 같은 규칙에 주파수만 다르다. 좌우와 정수비가 아니면 두 파의 비율이 시각마다 달라
+	// 합성 방향이 한 줄에 머물지 않는다.
+	TestEqual(TEXT("pitch wobble starts at zero"), FBeeSteering::WobblePitchDeg(0.0f, 12.0f, 2.3f, 1000.0f, 300.0f), 0.0f, 1e-4f);
+	TestEqual(TEXT("pitch wobble peaks at its own quarter period"), FBeeSteering::WobblePitchDeg(0.25f / 2.3f, 12.0f, 2.3f, 1000.0f, 300.0f), 12.0f, 1e-3f);
+	TestEqual(TEXT("pitch wobble is gone on the target"), FBeeSteering::WobblePitchDeg(0.25f / 2.3f, 12.0f, 2.3f, 0.0f, 300.0f), 0.0f, 1e-4f);
+	const float RatioA = FBeeSteering::WobblePitchDeg(0.1f, 12.0f, 2.3f, 1000.0f, 300.0f) / FBeeSteering::WobbleYawDeg(0.1f, 25.0f, 1.5f, 1000.0f, 300.0f);
+	const float RatioB = FBeeSteering::WobblePitchDeg(0.2f, 12.0f, 2.3f, 1000.0f, 300.0f) / FBeeSteering::WobbleYawDeg(0.2f, 25.0f, 1.5f, 1000.0f, 300.0f);
+	TestTrue(TEXT("different frequencies: the wobble direction changes over time"), !FMath::IsNearlyEqual(RatioA, RatioB, 1e-2f));
+	TestEqual(TEXT("pitch to vertical: 30 degrees is half"), FBeeSteering::PitchToVertical(30.0f), 0.5f, 1e-4f);
+	TestEqual(TEXT("pitch to vertical: zero is level"), FBeeSteering::PitchToVertical(0.0f), 0.0f, 1e-4f);
+
 	return true;
 }
 

@@ -29,8 +29,10 @@ Every item here cost real debugging time once. Read before any MCP write.
   `describe_toolset` returns every tool's argument schema.
 - There is no console-command or editor-python route: `ProgrammaticToolset` only orchestrates
   registered tools, and `EditorAppToolset.SearchCVars` only reads. `ProgrammaticToolset` runs
-  `execute_tool_script` with a `run()` that returns a dict; `execute_tool` and `call_tool` need
-  the full dotted toolset path, and `ObjectTools` takes `instance` + `properties` / `values`
+  `execute_tool_script` with a `run()` that returns a dict; inside the script the call is
+  `execute_tool('<full.toolset.path>.<tool>', json.dumps({...}))` — one dotted string naming
+  the tool and the arguments as a JSON **string** (a dict, kwargs, or a separate tool-name
+  argument all raise TypeError). `ObjectTools` takes `instance` + `properties` / `values`
   (a JSON string). `try/except` inside a script does not reliably catch `execute_tool` failures.
   `time.sleep` inside a script lets the engine tick (Lumen settles), but a long script loses the
   MCP session and its result: 14 viewport captures did, 6 plus a 30 s sleep did not.
@@ -41,6 +43,14 @@ Every item here cost real debugging time once. Read before any MCP write.
   unless the editor and the test instance start together: whichever binds first keeps port
   8000, and an editor that lost it has no MCP until relaunched. Run the headless test before
   launching the editor, not alongside it.
+- Packaging fails with `UATHelper: Error: LogHttpListener: Error: HttpListener unable to bind to
+  127.0.0.1:8000` and `Cook failed` even though the cook log ends with `CookCommandlet ... result 0`:
+  the cook commandlet is a second editor instance and a commandlet exits 1 whenever any
+  Error-level line was logged (`LaunchEngineLoop.cpp`, `GWarn->GetNumErrors() > 0`). It only tries
+  to bind because Editor Preferences → Plugins → Model Context Protocol → **Auto Start Server** is
+  on (`bAutoStartServer=True` in `Saved/Config/WindowsEditor/EditorPerProjectUserSettings.ini`),
+  and the open editor already owns the port. Turn Auto Start off and start the server with the
+  `-ExecCmds` line above (or the console command), or close the editor before packaging.
 
 ## Writes that crash the editor
 
@@ -72,7 +82,13 @@ Every item here cost real debugging time once. Read before any MCP write.
   work in one call. To replace element 0 and shrink, first rotate in place, then drop the tail.
   The shrink call must spell out every field the read returned on each survivor
   (`PlayerMappableKeySettings: "None"` included); an omitted field counts as a change and the
-  removal is rejected as ambiguous. Inside a `ProgrammaticToolset` script, one `execute_tool`
+  removal is rejected as ambiguous.
+- Map property (`TMap<FGameplayTag, FStruct>`, e.g. `USoundBank::Events`): filling an **empty**
+  map accepts plain tag-string keys (`"Audio.UI.Click": {...}`) and writes the whole map in one
+  call. Editing values afterwards must reuse the keys exactly as the read returned them
+  (`"(TagName=\"Audio.UI.Click\")"`); plain keys on a non-empty map are rejected as "keys swapped
+  without size change". Read, edit the values in place, write the full map back.
+  Inside a `ProgrammaticToolset` script, one `execute_tool`
   call per step obeys these rules while still batching the round-trips.
 - A `TSoftObjectPtr` array reads back as plain path strings, but an appended element is stored
   as a `{refPath}` object: re-read the array before every append and pass the elements exactly

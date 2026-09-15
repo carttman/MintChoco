@@ -10,7 +10,7 @@
 class UAnimSequenceBase;
 class UItemAbility;
 class UNiagaraSystem;
-class USoundBase;
+class USoundBank;
 class UTexture2D;
 
 /** 유지 자세가 몸의 어디를 덮는지. 클립을 어떻게 만들었는지에 맞춘다. */
@@ -78,8 +78,20 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity")
 	TObjectPtr<UTexture2D> Icon;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pickup")
-	TObjectPtr<USoundBase> PickupSound;
+	/**
+	 * 이 아이템만 다르게 낼 소리(Audio.Item.* : Pickup, Activate, Expire). 바꿀 태그만 넣는다;
+	 * 없는 태그는 프로젝트 기본 뱅크(UGameAudioSettings::Bank)로 내려간다. 비어 있으면 전부 기본.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity")
+	TObjectPtr<USoundBank> Sounds;
+
+	/**
+	 * 발동음(Audio.Item.Activate)을 효과 시작 순간이 아니라 애니메이션의 노티파이
+	 * (UAnimNotify_ItemSound)에서 낸다. 켜면 슬롯은 발동음을 건너뛰므로, 사용 동작이나 자세
+	 * 시퀀스에 노티파이를 놓아야 소리가 난다. 특정 프레임(스피너의 회전 시작)에 맞출 때 쓴다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity")
+	bool bActivateSoundFromAnimation = false;
 
 	/**
 	 * 효과 지속시간(초). 같은 아이템을 효과 중에 다시 쓰면 이 값으로 다시 시작한다.
@@ -99,9 +111,6 @@ public:
 	/** ActivateFX가 붙을 때의 균일 배율. 1이 에셋 원래 크기다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect", meta = (ClampMin = "0.01"))
 	float ActivateFXScale = 1.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect")
-	TObjectPtr<USoundBase> ActivateSound;
 
 	/** 아이템을 쓰는 순간 한 번. 모든 머신에서 같은 타이밍에 나온다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")

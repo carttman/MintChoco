@@ -8,6 +8,7 @@
 
 class UAudioComponent;
 class USceneComponent;
+class USoundAttenuation;
 class USoundBank;
 struct FSoundEvent;
 
@@ -78,6 +79,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Audio")
 	void ApplyVolumeSettings();
 
+	/**
+	 * 태그에 실제 소리가 붙어 있는지. PlayMusic은 곡이 없는 태그를 받으면 하던 곡을 끄므로,
+	 * "있을 때만 갈아타는" 호출부(막판 곡)는 먼저 이것을 묻는다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Audio")
+	bool HasEvent(const FGameplayTag& Tag, const USoundBank* Override = nullptr) const;
+
 private:
 	/** 오버라이드 뱅크 → 기본 뱅크 순으로 찾는다. 어느 쪽에도 없으면 nullptr. */
 	const FSoundEvent* ResolveEvent(const FGameplayTag& Tag, const USoundBank* Override) const;
@@ -85,12 +93,37 @@ private:
 	/** 데디케이티드 서버이거나 뱅크가 없으면 재생하지 않는다. */
 	bool CanPlay() const;
 
+	/**
+	 * 이벤트에 감쇠가 없을 때 쓸 것: 설정의 DefaultAttenuation, 그것도 없으면 설정값으로 한 번
+	 * 만들어 두는 트랜지언트 자연 감쇠. 에셋 없이도 3D 소리가 거리에 따라 줄어들게 한다.
+	 */
+	USoundAttenuation* GetDefaultAttenuation();
+
 	/** 기본 뱅크. 설정의 소프트 참조를 처음 쓸 때 한 번 로드한다. */
 	UPROPERTY(Transient)
 	TObjectPtr<const USoundBank> LoadedBank;
 
-	/** 새 맵이 올라온 뒤 믹스를 얹는다. Initialize 시점에는 쓸 만한 월드가 없다. */
+	/** 코드로 만든 기본 감쇠. 설정에 에셋이 없을 때만 생긴다. */
+	UPROPERTY(Transient)
+	TObjectPtr<USoundAttenuation> FallbackAttenuation;
+
+	/**
+	 * 새 맵이 올라온 뒤 믹스를 얹고 그 맵의 곡을 정한다. Initialize 시점에는 쓸 만한 월드가 없다.
+	 * PIE의 첫 맵은 이 델리게이트를 지나지 않으므로(에디터가 LoadMap 없이 월드를 복제한다)
+	 * HandleGameInstanceStarted가 같은 일을 한 번 더 한다.
+	 */
 	void HandlePostLoadMap(UWorld* LoadedWorld);
+
+	/** 게임 인스턴스가 플레이를 시작했다(PIE와 스탠드얼론 모두). 첫 맵의 곡은 여기서 잡힌다. */
+	void HandleGameInstanceStarted(UGameInstance* StartedInstance);
+
+	/**
+	 * 경기 단계가 없는 맵(타이틀·룸·로비)이면 로비 곡을 튼다. 게임 맵의 곡은 AGameGameState의
+	 * 단계 복제가 정한다. 같은 곡이면 아무것도 하지 않으므로 여러 번 불려도 된다.
+	 */
+	void UpdateMapMusic(UWorld* World);
+
+	FDelegateHandle GameInstanceStartedHandle;
 
 	/** 지금 흐르는 곡. 맵 전환을 넘기려고 서브시스템이 직접 들고 있다. */
 	UPROPERTY(Transient)

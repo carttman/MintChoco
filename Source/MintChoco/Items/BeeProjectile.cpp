@@ -2,6 +2,7 @@
 
 #include "CollisionQueryParams.h"
 #include "CollisionShape.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/SphereComponent.h"
 #include "Engine/HitResult.h"
 #include "Engine/World.h"
@@ -124,6 +125,59 @@ float FBeeSteering::MaxDescent(float Clearance, float Scale, float MaxDive)
 	return FMath::Clamp(Clearance / SafeScale, 0.0f, 1.0f) * MaxDive;
 }
 
+FVector FBeeSteering::BezierTangent(const FVector& P0, const FVector& P1, const FVector& P2, float T)
+{
+	const float Alpha = FMath::Clamp(T, 0.0f, 1.0f);
+	return 2.0f * (1.0f - Alpha) * (P1 - P0) + 2.0f * Alpha * (P2 - P1);
+}
+
+FVector FBeeSteering::CurveHeading(const FVector& Location, const FVector& CurrentFlat, const FVector& TargetLocation, float Tension, float Lookahead)
+{
+	const FVector P0(Location.X, Location.Y, 0.0f);
+	const FVector P2(TargetLocation.X, TargetLocation.Y, 0.0f);
+	const FVector Heading = FVector(CurrentFlat.X, CurrentFlat.Y, 0.0f).GetSafeNormal();
+
+	const FVector Direct = P2 - P0;
+	const float Distance = Direct.Size();
+	if (Distance < KINDA_SMALL_NUMBER)
+	{
+		return Heading;
+	}
+	if (Heading.IsNearlyZero())
+	{
+		return Direct / Distance;
+	}
+
+	// 제어점이 지금 진행 방향 위에 있어 곡선이 지금 방향으로 출발한다. 팽팽함이 클수록 멀리 나갔다 돌아온다.
+	const FVector P1 = P0 + Heading * (Distance * FMath::Clamp(Tension, 0.0f, 1.0f));
+	FVector Tangent = BezierTangent(P0, P1, P2, Lookahead);
+	Tangent.Z = 0.0f;
+	if (!Tangent.Normalize())
+	{
+		return Direct / Distance;
+	}
+	return Tangent;
+}
+
+float FBeeSteering::WobbleYawDeg(float Time, float AmplitudeDeg, float FrequencyHz, float DistanceToTarget, float SettleDistance)
+{
+	if (AmplitudeDeg <= 0.0f || FrequencyHz <= 0.0f)
+	{
+		return 0.0f;
+	}
+	// 목표 근처에서는 잦아든다. 흔들린 채로 닿으면 스치듯 빗나간다.
+	const float Settle = SettleDistance > KINDA_SMALL_NUMBER
+		? FMath::Clamp(DistanceToTarget / SettleDistance, 0.0f, 1.0f)
+		: 1.0f;
+	return AmplitudeDeg * FMath::Sin(2.0f * PI * FrequencyHz * Time) * Settle;
+}
+
+float FBeeSteering::WobblePitchDeg(float Time, float AmplitudeDeg, float FrequencyHz, float DistanceToTarget, float SettleDistance)
+{
+	// 식은 요와 같다. 방향이 다른 것은 호출한 쪽이 Z 성분에 더하기 때문이고, 주파수가 다른 것은 프로필의 몫이다.
+	return WobbleYawDeg(Time, AmplitudeDeg, FrequencyHz, DistanceToTarget, SettleDistance);
+}
+
 // ---------------------------------------------------------------- ABeeProjectile
 
 AUnit* ABeeProjectile::FindNearestOpponent(const UWorld& World, const FVector& From, int32 Team, const AActor* Exclude)
@@ -164,6 +218,23 @@ ABeeProjectile::ABeeProjectile()
 	Shell->SetCollisionResponseToAllChannels(ECR_Ignore);
 	Shell->SetCollisionResponseToChannel(PaintballChannel, ECR_Block);
 	Shell->SetGenerateOverlapEvents(false);
+
+	// 몸체는 그림일 뿐이다. 판정은 뿌리 구와 껍질이 한다.
+	Body = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Body"));
+	Body->SetupAttachment(Sphere);
+	Body->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Body->SetGenerateOverlapEvents(false);
+	Body->SetCanEverAffectNavigation(false);
+}
+
+void ABeeProjectile::PostInitializeComponents()
+{
+	// 부모가 스태틱 Mesh를 보간 대상으로 걸었다. 꿀벌은 몸체를 끌어가야 클라이언트에서 매끄럽다.
+	Super::PostInitializeComponents();
+	if (Movement && Body)
+	{
+		Movement->SetInterpolatedComponent(Body);
+	}
 }
 
 void ABeeProjectile::SetProfile(const UBeeProfile* InProfile)
@@ -274,6 +345,23 @@ void ABeeProjectile::Steer(float DeltaTime)
 		}
 	}
 
+	// 목표가 있으면 곧장이 아니라 호를 그리며 다가간다: 가던 방향으로 조금 나갔다가 휘어 들어온다.
+	// 그 위에 요동을 얹는다: 좌우는 여기서 수평 방향을 돌리고, 상하는 아래 고도 계산에 더한다. 두 사인파의
+	// 주파수가 달라 합성 방향이 매 순간 바뀐다. 회피와 고도는 이 방향을 "원하는 방향"으로 받아 그대로 돈다.
+	WobblePitch = 0.0f;
+	if (Target.IsValid())
+	{
+		const FVector CurrentFlat(Current.X, Current.Y, 0.0f);
+		Flat = FBeeSteering::CurveHeading(Location, CurrentFlat, Target->GetActorLocation(), Profile->CurveTension, Profile->CurveLookahead);
+
+		WobbleTime += DeltaTime;
+		const float WobbleYaw = FBeeSteering::WobbleYawDeg(
+			WobbleTime, Profile->WobbleAmplitudeDeg, Profile->WobbleFrequency, HorizontalDistance, Profile->WobbleSettleDistance);
+		Flat = Flat.RotateAngleAxis(WobbleYaw, FVector::UpVector).GetSafeNormal();
+		WobblePitch = FBeeSteering::WobblePitchDeg(
+			WobbleTime, Profile->WobblePitchAmplitudeDeg, Profile->WobblePitchFrequency, HorizontalDistance, Profile->WobbleSettleDistance);
+	}
+
 	// 수평 회피. 한 번 고른 방향은 잠시 유지한다: 후보를 매 틱 다시 고르면 둘 사이를 오간다.
 	FVector Wanted = Flat;
 	bool bClimbCandidate = false;
@@ -335,6 +423,8 @@ void ABeeProjectile::Steer(float DeltaTime)
 			}
 		}
 		WantedVertical = FBeeSteering::VerticalComponent(TargetAltitude - Location.Z, Profile->HoverHeight);
+		// 상하 요동은 고도 보정 위에 얹고, 바닥 여유 제한은 그 뒤에 건다: 흔들리다 바닥에 박히지 않게.
+		WantedVertical = FMath::Clamp(WantedVertical + FBeeSteering::PitchToVertical(WobblePitch), -1.0f, 1.0f);
 		// 바닥이 가까울수록 얕게 내려간다. 회전이 따라잡기 전에 바닥에 닿지 않게.
 		WantedVertical = FMath::Max(WantedVertical, -FBeeSteering::MaxDescent(Clearance, Profile->HoverHeight));
 	}

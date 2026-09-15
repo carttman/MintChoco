@@ -29,10 +29,12 @@ public:
 	/**
 	 * Spawns one ball at the transform, already moving. A cosmetic ball flies and dies the same
 	 * way but never paints: it is a client's picture of a ball the server owns. Returns null when
-	 * ProjectileClass is unset or the spawn was refused.
+	 * ProjectileClass is unset or the spawn was refused. VisualOffset (world) is where the mesh
+	 * starts relative to the path, the gun's muzzle for a shot; it slides to zero over VisualMergeSeconds.
 	 */
 	APaintProjectile* Launch(UWorld& World, const FTransform& SpawnTransform, APawn* Instigator,
-		const FVector& Velocity, uint8 PaintId, int32 Seed, bool bCosmetic, float DropAfterOverride = -1.0f) const;
+		const FVector& Velocity, uint8 PaintId, int32 Seed, bool bCosmetic, float DropAfterOverride = -1.0f,
+		const FVector& VisualOffset = FVector::ZeroVector) const;
 
 	/** The actor that flies. Its Blueprint sets the mesh; radius and gravity come from here. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball")
@@ -71,6 +73,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball",
 		meta = (ClampMin = "0", ForceUnits = "x"))
 	float DropGravityScale = 4.0f;
+
+	/**
+	 * Seconds the ball's mesh takes to slide from the gun's muzzle onto the real flight path, which
+	 * starts on the sight line (PaintAim::FireOrigin). 0 shows the ball on the path from the first frame.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball", meta = (ClampMin = "0", ForceUnits = "s"))
+	float VisualMergeSeconds = 0.12f;
 
 	/** What the ball leaves where it lands. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball")

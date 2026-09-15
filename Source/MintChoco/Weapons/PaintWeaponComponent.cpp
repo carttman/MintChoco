@@ -2,6 +2,9 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
+#include "Components/AudioComponent.h"
 #include "Game/GameGameState.h"
 #include "Game/TeamLook.h"
 #include "Game/Unit.h"
@@ -19,6 +22,7 @@
 #include "Ink/InkTankComponent.h"
 #include "Items/ItemGameplayTags.h"
 #include "Paint/PaintLog.h"
+#include "Weapons/PaintAimMath.h"
 
 UPaintWeaponComponent::UPaintWeaponComponent()
 {
@@ -111,6 +115,10 @@ void UPaintWeaponComponent::EndPlay(const EEndPlayReason::Type Reason)
 	// here as well: a pawn destroyed mid-charge would otherwise leave it running on the mesh.
 	CancelTrigger();
 	StopChargeFX();
+	if (UWorld* const World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ChargeReadyTimer);
+	}
 	Super::EndPlay(Reason);
 }
 
@@ -379,10 +387,21 @@ void UPaintWeaponComponent::ApplyChargingVisuals(bool bNewCharging)
 	if (bNewCharging)
 	{
 		StartChargeFX();
+		// The ready cue rings when a full charge would be reached. The watchers only know when the
+		// hold started, so each machine measures from its own copy of that moment.
+		const float ChargeTime = GetEffectiveChargeTime();
+		if (UWorld* const World = GetWorld(); World && ChargeTime > 0.0f)
+		{
+			World->GetTimerManager().SetTimer(ChargeReadyTimer, this, &UPaintWeaponComponent::PlayChargeReadyCue, ChargeTime, /*bLoop=*/false);
+		}
 	}
 	else
 	{
 		StopChargeFX();
+		if (UWorld* const World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(ChargeReadyTimer);
+		}
 	}
 
 	// 캐릭터가 총을 들고 자세를 잡는 것은 연출만의 일이 아니다: 발사 지점이 그 순간의
@@ -392,7 +411,24 @@ void UPaintWeaponComponent::ApplyChargingVisuals(bool bNewCharging)
 
 void UPaintWeaponComponent::StartChargeFX()
 {
-	if (ChargeFXComponent || !Profile || !Profile->ChargeFX || !GetWorld())
+	if (!Profile || !GetWorld())
+	{
+		return;
+	}
+
+	// The loop rides the muzzle like the FX; without a socket it sits on the owner. Stopped in StopChargeFX.
+	if (!ChargeAudioComponent)
+	{
+		FName AudioSocket = NAME_None;
+		USceneComponent* AudioAttachment = GetMuzzleAttachment(AudioSocket);
+		if (!AudioAttachment && GetOwner())
+		{
+			AudioAttachment = GetOwner()->GetRootComponent();
+		}
+		ChargeAudioComponent = UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Weapon_ChargeLoop, AudioAttachment, AudioSocket, Profile->Sounds);
+	}
+
+	if (ChargeFXComponent || !Profile->ChargeFX)
 	{
 		return;
 	}
@@ -425,6 +461,60 @@ void UPaintWeaponComponent::StopChargeFX()
 		ChargeFXComponent->Deactivate();
 		ChargeFXComponent = nullptr;
 	}
+	if (ChargeAudioComponent)
+	{
+		ChargeAudioComponent->Stop();
+		ChargeAudioComponent = nullptr;
+	}
+}
+
+void UPaintWeaponComponent::PlayChargeReadyCue()
+{
+	if (!Profile)
+	{
+		return;
+	}
+	FName Socket = NAME_None;
+	USceneComponent* Attachment = GetMuzzleAttachment(Socket);
+	if (!Attachment && GetOwner())
+	{
+		Attachment = GetOwner()->GetRootComponent();
+	}
+	UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Weapon_ChargeReady, Attachment, Socket, Profile->Sounds);
+}
+
+void UPaintWeaponComponent::PlayFireSound()
+{
+	UWorld* const World = GetWorld();
+	if (!Profile || !World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	// Attached, like the flash: a shot fired on the move should not leave its sound behind.
+	FName Socket = NAME_None;
+	USceneComponent* Attachment = GetMuzzleAttachment(Socket);
+	if (!Attachment && GetOwner())
+	{
+		Attachment = GetOwner()->GetRootComponent();
+	}
+	UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Weapon_Fire, Attachment, Socket, Profile->Sounds);
+}
+
+void UPaintWeaponComponent::PlayEmptyCue()
+{
+	const UWorld* const World = GetWorld();
+	const APawn* const Pawn = GetOwnerPawn();
+	if (!World || !Profile || !Pawn || !Pawn->IsLocallyControlled())
+	{
+		return;
+	}
+	const double Now = World->GetTimeSeconds();
+	if (Now - LastEmptyCueTime < EmptyCueInterval)
+	{
+		return;
+	}
+	LastEmptyCueTime = Now;
+	UGameAudioSubsystem::Play2D(this, AudioTags::Audio_Weapon_Empty, Profile->Sounds);
 }
 
 void UPaintWeaponComponent::SetSeedOverride(bool bInUseFixedSeed, int32 InFixedSeed)
@@ -471,8 +561,15 @@ void UPaintWeaponComponent::SpendShot()
 
 bool UPaintWeaponComponent::FireOnce()
 {
-	if (!bTriggerHeld || !Profile || !GetWorld() || !CanAffordShot())
+	if (!bTriggerHeld || !Profile || !GetWorld())
 	{
+		return false;
+	}
+	// A dry tank is the one refusal the shooter should hear. The server's copy of this check
+	// (ServerFire) stays silent: the owner already heard its own.
+	if (!CanAffordShot())
+	{
+		PlayEmptyCue();
 		return false;
 	}
 
@@ -521,6 +618,7 @@ bool UPaintWeaponComponent::FireOnce()
 	}
 
 	PlayMuzzleFX(ChargeFraction);
+	PlayFireSound();
 	LastShotTime = GetWorld()->GetTimeSeconds();
 	OnFired.Broadcast(Seed);
 	return true;
@@ -550,6 +648,7 @@ void UPaintWeaponComponent::ServerFire_Implementation(int32 Seed, FVector_NetQua
 		SpendShot();
 		MulticastShotFired(Shot);
 		PlayMuzzleFX(Context.ChargeFraction);
+		PlayFireSound();
 		OnFired.Broadcast(Seed);
 	}
 }
@@ -568,6 +667,7 @@ void UPaintWeaponComponent::MulticastShotFired_Implementation(const FPaintShot& 
 	}
 	// Feedback on the machines that only watch: the owner and the server raised theirs when they fired.
 	PlayMuzzleFX(Shot.Charge / 255.0f);
+	PlayFireSound();
 	OnFired.Broadcast(Shot.Seed);
 }
 
@@ -575,7 +675,13 @@ void UPaintWeaponComponent::BuildContext(FPaintFireContext& OutContext, const FV
 {
 	OutContext.World = GetWorld();
 	OutContext.Instigator = GetOwnerPawn();
-	OutContext.Muzzle = ComputeMuzzleTransform(ViewOrigin, ViewDirection);
+
+	// The physics leaves the sight line at the pawn's depth, the same on the owner and on the
+	// server that only got the view; the socket merely says where the shot looks like it left.
+	const AActor* const Anchor = OutContext.Instigator ? static_cast<const AActor*>(OutContext.Instigator) : GetOwner();
+	const FVector Origin = PaintAim::FireOrigin(ViewOrigin, ViewDirection, Anchor ? Anchor->GetActorLocation() : ViewOrigin, FireOriginForwardMargin);
+	OutContext.Muzzle = FTransform(ViewDirection.Rotation(), Origin);
+	OutContext.VisualMuzzle = ComputeVisualMuzzle(ViewOrigin, ViewDirection).GetLocation();
 	OutContext.ViewOrigin = ViewOrigin;
 	OutContext.ViewDirection = ViewDirection;
 	OutContext.PaintId = PaintId;
@@ -619,7 +725,22 @@ FTransform UPaintWeaponComponent::GetMuzzleTransform() const
 	FVector ViewOrigin;
 	FVector ViewDirection;
 	GetOwnerView(ViewOrigin, ViewDirection);
-	return ComputeMuzzleTransform(ViewOrigin, ViewDirection);
+	return ComputeVisualMuzzle(ViewOrigin, ViewDirection);
+}
+
+bool UPaintWeaponComponent::PredictNextImpact(FVector& OutViewOrigin, FVector& OutViewDirection, FVector& OutAimPoint, FVector& OutImpact) const
+{
+	if (!Profile || !GetWorld())
+	{
+		return false;
+	}
+	GetOwnerView(OutViewOrigin, OutViewDirection);
+
+	FPaintFireContext Context;
+	BuildContext(Context, OutViewOrigin, OutViewDirection, 1.0f);
+	Context.Seed = NextSeed;
+	Context.bAuthority = false;
+	return Profile->PredictImpact(Context, OutAimPoint, OutImpact);
 }
 
 
@@ -629,11 +750,11 @@ void UPaintWeaponComponent::SetMuzzleSource(USceneComponent* Component, FName So
 	MuzzleSourceSocket = SocketName;
 }
 
-FTransform UPaintWeaponComponent::ComputeMuzzleTransform(const FVector& ViewOrigin, const FVector& ViewDirection) const
+FTransform UPaintWeaponComponent::ComputeVisualMuzzle(const FVector& ViewOrigin, const FVector& ViewDirection) const
 {
-	// A weapon mesh carries its own muzzle. It is checked first so the shot leaves the barrel
-	// rather than the hand that holds it; the socket lives on the mesh because barrel lengths
-	// differ between characters that share one skeleton.
+	// A weapon mesh carries its own muzzle. It is checked first so the shot appears to leave the
+	// barrel rather than the hand that holds it; the socket lives on the mesh because barrel
+	// lengths differ between characters that share one skeleton.
 	if (const USceneComponent* const Source = MuzzleSource.Get())
 	{
 		if (!MuzzleSourceSocket.IsNone() && Source->DoesSocketExist(MuzzleSourceSocket))
@@ -646,13 +767,13 @@ FTransform UPaintWeaponComponent::ComputeMuzzleTransform(const FVector& ViewOrig
 	const ACharacter* const Character = Cast<ACharacter>(Owner);
 	const USkeletalMeshComponent* const Mesh =
 		Character ? Character->GetMesh() : Owner->FindComponentByClass<USkeletalMeshComponent>();
-	if (Mesh && !MuzzleSocketName.IsNone() && Mesh->DoesSocketExist(MuzzleSocketName))
+	if (Mesh && !VisualMuzzleSocketName.IsNone() && Mesh->DoesSocketExist(VisualMuzzleSocketName))
 	{
-		return Mesh->GetSocketTransform(MuzzleSocketName);
+		return Mesh->GetSocketTransform(VisualMuzzleSocketName);
 	}
 
-	// Socketless, the muzzle hangs off the view - which on the server is the view the owner sent.
-	return FTransform(ViewDirection.Rotation(), ViewOrigin + ViewDirection * MuzzleFallbackOffset);
+	// Socketless, the visual muzzle hangs off the view - which on the server is the view the owner sent.
+	return FTransform(ViewDirection.Rotation(), ViewOrigin + ViewDirection * VisualMuzzleFallbackOffset);
 }
 
 USkeletalMeshComponent* UPaintWeaponComponent::GetMuzzleMesh() const
@@ -661,13 +782,13 @@ USkeletalMeshComponent* UPaintWeaponComponent::GetMuzzleMesh() const
 	ACharacter* const Character = Cast<ACharacter>(Owner);
 	USkeletalMeshComponent* const Mesh =
 		Character ? Character->GetMesh() : (Owner ? Owner->FindComponentByClass<USkeletalMeshComponent>() : nullptr);
-	return (Mesh && !MuzzleSocketName.IsNone() && Mesh->DoesSocketExist(MuzzleSocketName)) ? Mesh : nullptr;
+	return (Mesh && !VisualMuzzleSocketName.IsNone() && Mesh->DoesSocketExist(VisualMuzzleSocketName)) ? Mesh : nullptr;
 }
 
 USceneComponent* UPaintWeaponComponent::GetMuzzleAttachment(FName& OutSocket) const
 {
-	// 총 메시가 총구를 갖고 있으면 그쪽이 먼저다. ComputeMuzzleTransform 과 같은 순서라야
-	// 탄이 나가는 곳과 불꽃이 피는 곳이 같다.
+	// 총 메시가 총구를 갖고 있으면 그쪽이 먼저다. ComputeVisualMuzzle 과 같은 순서라야
+	// 탄이 나오는 것으로 보이는 곳과 불꽃이 피는 곳이 같다.
 	if (USceneComponent* const Source = MuzzleSource.Get())
 	{
 		if (!MuzzleSourceSocket.IsNone() && Source->DoesSocketExist(MuzzleSourceSocket))
@@ -679,7 +800,7 @@ USceneComponent* UPaintWeaponComponent::GetMuzzleAttachment(FName& OutSocket) co
 
 	if (USkeletalMeshComponent* const Mesh = GetMuzzleMesh())
 	{
-		OutSocket = MuzzleSocketName;
+		OutSocket = VisualMuzzleSocketName;
 		return Mesh;
 	}
 

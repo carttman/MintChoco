@@ -11,6 +11,8 @@
 #include "Engine/World.h"
 #include "Tasks/Task.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Paint/PaintAtlasBaker.h"
 #include "Paint/PaintLog.h"
 #include "Paint/PaintPlatformCoverage.h"
@@ -118,6 +120,10 @@ void UPaintSubsystem::ApplySplat(const FPaintSplat& Splat)
 		SpawnSideSplatEffect(Splat);
 		return;
 	}
+
+	// The one per-splat hook every machine passes (the server directly, a client from the replicated
+	// log). A volley lands many in one frame; the bank's concurrency limit keeps that to a few voices.
+	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_Splat, Splat.Location);
 
 	// A physics overlap rather than the registry: collision, not a bounding box, decides which
 	// surfaces the stamp can reach, and it is the same query a projectile hit came from.

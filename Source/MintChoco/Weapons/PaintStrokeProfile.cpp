@@ -50,6 +50,7 @@ bool UPaintStrokeProfile::Fire(const FPaintFireContext& Context, FPaintStrokeSta
 	}
 
 	OutShot.Muzzle = MuzzleLocation;
+	OutShot.VisualMuzzle = Context.VisualMuzzle.Get(MuzzleLocation);
 	OutShot.Direction = Context.ViewDirection;
 	OutShot.Seed = Context.Seed;
 	OutShot.PaintId = Context.PaintId;

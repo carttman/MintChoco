@@ -466,4 +466,67 @@ bool FHeroLandingHighGroundTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+/**
+ * 히어로 랜딩으로 공중에 있는 동안에는 밖에서 던져진 속도(점프대)를 받지 않는다.
+ *
+ * 내리꽂기는 중력을 끈 직선이고, 그 단계를 푸는 유일한 사건이 착지다. 위로 던져지면 중력 0으로
+ * 영원히 올라가 착지가 오지 않는다 — 점프대를 착지점으로 고르면 실제로 그랬다. 단계만 걷어내고
+ * 던져지게 두는 것으로는 모자란다: 그러면 내리꽂기 → 착지 → 경직이라는 전환이 통째로 사라져,
+ * 그 전환을 보고 도는 쪽(애님 블루프린트의 착지 상태)이 나갈 곳을 잃는다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FHeroLandingLaunchTest,
+	"MintChoco.Items.HeroLanding.Launch",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FHeroLandingLaunchTest::RunTest(const FString& Parameters)
+{
+	UWorld* const World = MintChocoTest::MakeWorld();
+	if (!TestNotNull(TEXT("테스트 월드"), World))
+	{
+		return false;
+	}
+
+	ON_SCOPE_EXIT { MintChocoTest::DestroyWorld(World); };
+
+	MintChocoTest::SpawnBlock(*World, FVector(0.0f, 0.0f, -100.0f), FVector(4000.0f, 4000.0f, 100.0f));
+
+	UTestUnitMovementComponent* const Movement = HoverAt(*World, FVector(0.0f, 0.0f, 400.0f));
+	if (!TestNotNull(TEXT("정지 단계의 테스트 캐릭터"), Movement))
+	{
+		return false;
+	}
+
+	LookAlong(*Movement, FRotator(-45.0f, 0.0f, 0.0f));
+	Movement->SetWantsHeroDive(true);
+	Movement->PhysCustom(0.016f, 0);
+	if (!TestEqual(TEXT("내리꽂기가 시작된다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::Dive))
+	{
+		return false;
+	}
+	TestEqual(TEXT("내리꽂는 동안에는 중력이 없다"), Movement->GetGravityZ(), 0.0f);
+
+	// 점프대가 하는 일과 같다(레벨의 발판은 블루프린트지만 Launch Character를 거쳐 여기로 온다).
+	const FVector Before = Movement->Velocity;
+	Movement->Launch(FVector(0.0f, 0.0f, 1200.0f));
+
+	TestTrue(TEXT("던져진 속도를 쌓아 두지 않는다"), Movement->PendingLaunchVelocity.IsNearlyZero());
+	TestEqual(TEXT("내리꽂기는 그대로 이어진다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::Dive);
+	TestTrue(TEXT("속도도 그대로다"), Movement->Velocity.Equals(Before));
+	TestTrue(TEXT("여전히 내려가는 중이다"), Movement->Velocity.Z < 0.0f);
+
+	// 내려서면 평소대로 경직으로 넘어간다. 이 전환이 사라지지 않는 것이 요점이다.
+	TestTrue(TEXT("착지는 그대로 온다"), Movement->FinishHeroLandingDive());
+	TestEqual(TEXT("착지 뒤는 경직 단계다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::Recover);
+
+	// 경직 중이라면 이야기가 다르다. 이미 땅에 있으므로 던져지는 것 자체는 말이 되지만,
+	// 경직을 안고 가면 입력이 잠긴 채로 떠오른다.
+	Movement->Launch(FVector(0.0f, 0.0f, 1200.0f));
+	TestFalse(TEXT("경직 중에는 던져진 속도를 받는다"), Movement->PendingLaunchVelocity.IsNearlyZero());
+	TestEqual(TEXT("받으면서 경직은 푼다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::None);
+	TestTrue(TEXT("풀리면 다시 움직일 수 있다"), Movement->GetMaxSpeed() > 0.0f);
+
+	return true;
+}
+
 #endif

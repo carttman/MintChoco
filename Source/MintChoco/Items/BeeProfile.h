@@ -32,6 +32,44 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bee", meta = (ClampMin = "10", ForceUnits = "deg/s"))
 	float TurnRateDeg = 360.0f;
 
+	/**
+	 * 추적 곡선의 팽팽함(0~1). 꿀벌 위치에서 지금 진행 방향으로 (거리 × 이 값)만큼 나간 점을
+	 * 2차 베지어의 제어점으로 삼는다. 클수록 가던 방향으로 크게 나갔다가 호를 그리며 돌아 들어오고,
+	 * 0이면 곧장 목표를 향한다(예전 동작).
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bee|Curve", meta = (ClampMin = "0", ClampMax = "1"))
+	float CurveTension = 0.5f;
+
+	/**
+	 * 곡선 위 어느 지점의 접선을 원하는 방향으로 쓸지(0~1). 작을수록 지금 방향을 오래 유지하고
+	 * 클수록 빨리 목표 쪽으로 꺾인다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bee|Curve", meta = (ClampMin = "0.05", ClampMax = "1"))
+	float CurveLookahead = 0.2f;
+
+	/** 좌우 요동의 폭(도). 진행 방향을 이 각도만큼 사인파로 흔든다. 0이면 요동 없음. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bee|Curve", meta = (ClampMin = "0", ClampMax = "80", ForceUnits = "deg"))
+	float WobbleAmplitudeDeg = 25.0f;
+
+	/** 좌우 요동의 빠르기(초당 왕복 횟수). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bee|Curve", meta = (ClampMin = "0", ForceUnits = "Hz"))
+	float WobbleFrequency = 1.5f;
+
+	/**
+	 * 상하 요동의 폭(도). 좌우와 다른 주파수의 사인파로 고도를 흔든다. 두 파가 합쳐져 매 순간 다른
+	 * 방향(대각선, 원, 8자)으로 흔들린다. 0이면 좌우로만 흔들린다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bee|Curve", meta = (ClampMin = "0", ClampMax = "45", ForceUnits = "deg"))
+	float WobblePitchAmplitudeDeg = 12.0f;
+
+	/** 상하 요동의 빠르기(초당 왕복 횟수). 좌우와 정수비가 아니어야 궤적이 한 줄로 고정되지 않는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bee|Curve", meta = (ClampMin = "0", ForceUnits = "Hz"))
+	float WobblePitchFrequency = 2.3f;
+
+	/** 목표와 이 거리(cm) 안으로 들어오면 요동이 거리에 비례해 잦아든다. 마지막에는 흔들리지 않고 명중한다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bee|Curve", meta = (ClampMin = "0", ForceUnits = "cm"))
+	float WobbleSettleDistance = 300.0f;
+
 	/** 바닥에서 이 높이 아래로 내려가면 위로 뜬다(cm). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bee", meta = (ClampMin = "0", ForceUnits = "cm"))
 	float HoverHeight = 150.0f;

@@ -11,10 +11,13 @@
 #include "NiagaraFunctionLibrary.h"
 
 #include "MeshScale.h"
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Game/TeamLook.h"
 #include "Game/TeamTypes.h"
 #include "Game/Unit.h"
 #include "Paint/PaintSplat.h"
+#include "Weapons/PaintAimMath.h"
 #include "Weapons/PaintDeposit.h"
 #include "Weapons/PaintWeaponComponent.h"
 #include "Weapons/PaintballProfile.h"
@@ -39,7 +42,7 @@ APaintProjectile::APaintProjectile()
 	// Init, once the profile is known; bCanEverTick has to be set here for that to be possible.
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
-	InitialLifeSpan = 5.0f;
+	InitialLifeSpan = PaintballLifeSpanSeconds;
 
 	Sphere = CreateDefaultSubobject<USphereComponent>(TEXT("Sphere"));
 	SetRootComponent(Sphere);
@@ -74,7 +77,7 @@ APaintProjectile::APaintProjectile()
 }
 
 void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId, int32 InSeed, const FVector& Velocity, bool bInCosmetic,
-	float InDropAfterOverride)
+	float InDropAfterOverride, const FVector& InVisualOffset)
 {
 	check(InProfile);
 	Profile = InProfile;
@@ -124,8 +127,17 @@ void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId,
 
 	// Splats reach the other machines through the game state's log, so only the server's real ball
 	// may paint. A cosmetic ball ticking here would draw the same trail a second time.
+	bPaintsTrail = !bCosmetic && HasAuthority() && Profile->HasTrail();
 	LastTrailLocation = GetActorLocation();
-	SetActorTickEnabled(!bCosmetic && HasAuthority() && Profile->HasTrail());
+
+	// The mesh starts where the gun is and slides onto the path the physics flies, so the ball
+	// leaves the barrel on screen while the trajectory belongs to the crosshair.
+	VisualOffset = Profile->VisualMergeSeconds > 0.0f ? InVisualOffset : FVector::ZeroVector;
+	MergeElapsed = 0.0f;
+	bMerging = !VisualOffset.IsNearlyZero();
+	Mesh->SetWorldLocation(GetActorLocation() + VisualOffset);
+
+	SetActorTickEnabled(bPaintsTrail || bMerging);
 }
 
 UMaterialInterface* APaintProjectile::GetTeamMaterial(uint8 InPaintId) const
@@ -163,6 +175,11 @@ void APaintProjectile::Deactivate()
 	// 공에서 뒤늦게 터져 남의 탄도를 꺾는다(풀링과 DropAfter가 합쳐지며 생긴 자리다).
 	GetWorldTimerManager().ClearTimer(DropTimer);
 
+	// 합류 중이던 메시를 제자리로. 다음에 꺼내 쓴 공이 남의 총구 오프셋을 물려받지 않게.
+	bMerging = false;
+	VisualOffset = FVector::ZeroVector;
+	Mesh->SetRelativeLocation(FVector::ZeroVector);
+
 	Movement->StopMovementImmediately();
 	Movement->Deactivate();
 
@@ -191,9 +208,22 @@ void APaintProjectile::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	if (!Profile || TrailSplatCount >= Profile->MaxTrailSplats)
+	if (bMerging)
 	{
-		SetActorTickEnabled(false);
+		MergeElapsed += DeltaSeconds;
+		const float Alpha = PaintAim::MergeAlpha(MergeElapsed, Profile ? Profile->VisualMergeSeconds : 0.0f);
+		Mesh->SetWorldLocation(GetActorLocation() + VisualOffset * (1.0f - Alpha));
+		if (Alpha >= 1.0f)
+		{
+			bMerging = false;
+			Mesh->SetRelativeLocation(FVector::ZeroVector);
+		}
+	}
+
+	if (!bPaintsTrail || !Profile || TrailSplatCount >= Profile->MaxTrailSplats)
+	{
+		bPaintsTrail = false;
+		SetActorTickEnabled(bMerging);
 		return;
 	}
 
@@ -336,6 +366,8 @@ void APaintProjectile::OnHit(UPrimitiveComponent*, AActor*, UPrimitiveComponent*
 	}
 
 	// 연출용 공도 그린다: 착탄은 각 머신에서 제 공으로 일어나므로 이것이 그 화면의 한 번이다.
+	// 소리도 같은 이유로 여기서 한 번. 한 발의 산탄이 한꺼번에 닿으므로 뱅크의 동시발성 제한이 자른다.
+	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_Weapon_Impact, Hit.ImpactPoint);
 	if (Profile && Profile->ImpactFX)
 	{
 		UWorld* const World = GetWorld();

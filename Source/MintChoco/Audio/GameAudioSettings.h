@@ -31,9 +31,20 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Bank")
 	TSoftObjectPtr<USoundBank> Bank;
 
-	/** 이벤트가 감쇠를 따로 지정하지 않았을 때 쓰는 기본값. */
+	/**
+	 * 이벤트가 감쇠를 따로 지정하지 않았을 때 쓰는 에셋. 비어 있으면 서브시스템이 아래 두 값으로
+	 * 자연 감쇠(구, Natural Sound)를 코드에서 만들어 쓴다. 에셋을 넣으면 그쪽이 우선한다.
+	 */
 	UPROPERTY(Config, EditAnywhere, Category = "Bank")
 	TSoftObjectPtr<USoundAttenuation> DefaultAttenuation;
+
+	/** DefaultAttenuation이 없을 때: 이 거리(cm)까지는 감쇠 없이 들린다. */
+	UPROPERTY(Config, EditAnywhere, Category = "Bank", meta = (ClampMin = "0", ForceUnits = "cm"))
+	float FallbackInnerRadius = 300.0f;
+
+	/** DefaultAttenuation이 없을 때: 안쪽 반경에서 이 거리(cm)를 더 가면 들리지 않는다. */
+	UPROPERTY(Config, EditAnywhere, Category = "Bank", meta = (ClampMin = "1", ForceUnits = "cm"))
+	float FallbackFalloffDistance = 3000.0f;
 
 	//~ 음악
 

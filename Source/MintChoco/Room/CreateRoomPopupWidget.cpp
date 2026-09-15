@@ -7,6 +7,9 @@
 #include "components/Button.h"
 #include "Components/EditableTextBox.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
+
 void UCreateRoomPopupWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -42,8 +45,10 @@ void UCreateRoomPopupWidget::OnCreateRoom()
 	const FText Name = TxtBox_InputGameName->GetText();
 	if (!IsValidRoomName(Name))
 	{
+		UGameAudioSubsystem::Play2D(this, AudioTags::Audio_UI_Error);
 		return;
 	}
+	UGameAudioSubsystem::Play2D(this, AudioTags::Audio_UI_Click);
 
 	OSS->OnMyCreateSession(Name.ToString().TrimStartAndEnd(), 100);
 }

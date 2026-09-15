@@ -8,6 +8,8 @@
 
 class APawn;
 class UNiagaraSystem;
+class UPaintCrosshairWidget;
+class USoundBank;
 
 /** How long one trigger pull lasts. Part of the profile, so one asset says when it fires as well as what flies. */
 UENUM(BlueprintType)
@@ -25,13 +27,24 @@ enum class EPaintFireMode : uint8
 
 /**
  * One shot's worth of input, sampled by the weapon right before it fires its profile. On the
- * server the view comes from the owning client's RPC, the muzzle from the server's own pawn.
+ * server the view comes from the owning client's RPC and the muzzle is derived from that same
+ * view, so both machines fly the same shot.
  */
 struct FPaintFireContext
 {
 	UWorld* World = nullptr;
 	APawn* Instigator = nullptr;
+
+	/**
+	 * Where the shot's physics starts: on the sight line at the pawn's depth (PaintAim::FireOrigin),
+	 * facing along the view. Never the animated socket, which would bend every shot with the pose
+	 * and differ between the owner and the server.
+	 */
 	FTransform Muzzle;
+
+	/** Where the shot appears to start: the gun's muzzle socket. Unset means the same as Muzzle. */
+	TOptional<FVector> VisualMuzzle;
+
 	FVector ViewOrigin = FVector::ZeroVector;
 	FVector ViewDirection = FVector::ForwardVector;
 	uint8 PaintId = 0;
@@ -59,6 +72,10 @@ struct FPaintShot
 
 	UPROPERTY()
 	FVector_NetQuantize Muzzle = FVector::ZeroVector;
+
+	/** Where the ball's mesh, or a tracer, starts before it merges onto the path that leaves Muzzle. */
+	UPROPERTY()
+	FVector_NetQuantize VisualMuzzle = FVector::ZeroVector;
 
 	UPROPERTY()
 	FVector_NetQuantizeNormal Direction = FVector::ForwardVector;
@@ -114,6 +131,13 @@ public:
 
 	/** Replays the visible side of a shot another machine accepted. Nothing here may paint. */
 	virtual void PlayCosmetic(UWorld& World, APawn* Instigator, const FPaintShot& Shot) const {}
+
+	/**
+	 * Where the next shot from this context would land, for the crosshair's impact marker. Returns
+	 * false when the profile has nothing to predict: a hitscan or a stroke lands where the
+	 * crosshair rests. Never launches or paints; the context arrives without authority.
+	 */
+	virtual bool PredictImpact(const FPaintFireContext& Context, FVector& OutAimPoint, FVector& OutImpact) const { return false; }
 
 	/** Warns once, at equip time, about asset references that would otherwise fail as "nothing happens". */
 	virtual void LogUnsetReferences(const UObject* Owner) const {}
@@ -206,6 +230,14 @@ public:
 	float ChargeFXScale = 1.0f;
 
 	/**
+	 * Sounds this weapon plays differently (Audio.Weapon.*: Fire, Empty, ChargeLoop, ChargeReady).
+	 * Holds only the tags to change; a tag missing here falls through to the project bank
+	 * (UGameAudioSettings::Bank). Unset means every sound comes from the project bank.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX")
+	TObjectPtr<USoundBank> Sounds;
+
+	/**
 	 * Uniform scale one shot's muzzle FX spawns at. Charged walks between the ends of
 	 * MuzzleFXChargeScale by how far past MinChargeToFire the shot got; every other mode is fixed.
 	 */
@@ -223,6 +255,13 @@ public:
 			: FMath::Clamp((ChargeFraction - Minimum) / (1.0f - Minimum), 0.0f, 1.0f);
 		return MuzzleFXScale * FMath::Lerp(static_cast<float>(MuzzleFXChargeScale.X), static_cast<float>(MuzzleFXChargeScale.Y), Alpha);
 	}
+
+	/**
+	 * The crosshair drawn while this weapon is the one the player is using (the primary, or the
+	 * secondary while its trigger is held). Unset falls back to the HUD's default, the bracket.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HUD")
+	TSubclassOf<UPaintCrosshairWidget> CrosshairClass;
 
 private:
 	/** Percent of a full ink tank one accepted shot spends. Read it through GetInkCostPerShot. */
