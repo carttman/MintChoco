@@ -132,11 +132,66 @@ DA_Brush_Feet_T            ← DA_Brush_HeroLanding 복제. 두 무기의 FeetDe
 - **대체한 것**: 없다. 스턴에 붙은 시각 연출이 아예 없었다(소리와 `BP_OnStunned`만 있었다).
 - **기본값**: `Stun` 항목을 비우면 아무 일도 안 한다.
 - **지금 값**: `DA_Unit_Mint` / `DA_Unit_Choco` 양쪽에
-  `FX` = `NS_Sparkling_Animate_2`, `FXSocket` = `head`, `FXOffset` = `(0, 0, 30)`.
+  `FX` = `NS_UnitStun`, `FXSocket` = `head`, `FXOffset` = `(0, 0, 30)`.
   소켓 기준 오프셋을 살려야 머리 위로 뜨므로 `EAttachLocation::KeepRelativeOffset`을 쓴다.
+
+#### `NS_UnitStun` — 뜨는 시점과 사라지는 시점
+
+`/Game/FreeParticle_SoftTofu/Niagara/NS_Sparkling_Animate_2`를
+`/Game/Assets/Paint/Niagara/NS_UnitStun`으로 **복제해서** 쓴다. 원본은 그 팩의 데모 맵
+(`FreeParticle_SoftTofu/Map/Overview`)도 참조하므로 건드리지 않았다.
+
+원본 값으로는 두 가지가 문제였다. 둘 다 **유저 변수 셋만 바꿔** 고쳤다 — 그래프는 손대지 않았다.
+
+| 유저 변수 | 원본 | 지금 | 왜 |
+|---|---|---|---|
+| `User.SpawnRate` | 5 /초 | **40** | 초당 5개면 별이 하나씩 늘어나 "늦게 뜨는" 것처럼 보였다. 스턴이 1초뿐이라 채워지기도 전에 끝난다 |
+| `User.Lifetime Min` | 3.19초 | **0.25** | 스턴이 끝나 `Deactivate()`해도 남은 별이 3초 넘게 떠 있었다 |
+| `User.Lifetime Max` | 1.78초 | **0.25** | 원본은 Min > Max로 뒤집혀 있었다 |
+
+수명을 0.25초로 줄인 것이 곧 **0.25초 페이드아웃**이다. `Deactivate()`가 새 생성만 멈추므로,
+남아 있던 별은 각자 제 수명(최대 0.25초)만큼 사라지는 커브를 타고 꺼진다. **C++은 한 줄도
+안 고쳤다** — 별도의 페이드 타이머가 필요 없다.
+
+동시에 떠 있는 별 수는 `SpawnRate × Lifetime` = 40 × 0.25 ≈ **10개**로 원본 체감과 비슷하다.
+더 촘촘하게 하려면 `SpawnRate`를, 여운을 늘리려면 `Lifetime`을 올리면 된다 —
+다만 `Lifetime`이 곧 사라지는 데 걸리는 시간이다.
+
+수명이 짧아 `CurlNoiseForce`가 별을 멀리 밀 시간이 없다. 원본처럼 떠다니기보다 머리 위에서
+반짝이다 꺼지는 느낌이 된다.
 
 캐릭터 메시에 **머리 전용 소켓은 없다.** `SKM_Character_Mint`의 커스텀 소켓은 `Board`, `InkBottle`,
 `Gun`뿐이라 `head` **본**에 직접 붙였다. 높이는 `FXOffset`으로 맞춘다.
+
+### 테스트용 스턴 큐브 (`ATestStunZone`) — 버릴 것
+
+맵 가운데 큐브. 범위 안에 들어오면 1초 스턴, 이어서 5초 슈퍼아머.
+
+**테스트용이라 지우기 쉽게 만들었다.** 지울 때는 이 둘만 지우면 끝이다:
+
+```
+Source/MintChoco/Sandbox/          폴더째 (TestStunZone.h / .cpp)
+Lvl_Stage 의 TestStunZone_Center   액터 인스턴스
+```
+
+그러려고 아래를 전부 피했다 — 기존 파일 수정 **0줄**, 새 게임플레이 태그 없음, 새 열거형 값 없음,
+설정 항목 없음, `/Game`에 새 에셋 없음, 공용 데이터 에셋 참조 없음. 외형은 엔진 기본
+`/Engine/BasicShapes/Cube`를 그대로 쓴다.
+
+- **어디에**: 아무 데도 붙지 않는다. `AUnit::TryApplyStun(StunSeconds, SuperArmorSeconds)`를
+  바깥에서 부르기만 한다 — 이미 공개된 함수다.
+- **동작**: `OnComponentBeginOverlap` 하나. 들어오는 순간 한 번만 걸고, 범위 안에 머무르는
+  동안은 다시 걸지 않는다(나갔다 들어와야 한다). 슈퍼아머 5초 동안은 `TryApplyStun`이 스스로
+  거절하므로 사실상 재발동 쿨다운 노릇도 한다.
+- **아이템 스턴과 같은 규칙**을 탄다. 스턴 규칙이 나중에 바뀌어도 따라간다.
+- 복제하지 않는다. 레벨 배치 액터라 모든 머신에 있고, 스턴은 서버가 걸어 GAS가 복제한다.
+- **지금 값**: `TriggerRadius` 400cm, `StunSeconds` 1, `SuperArmorSeconds` 5.
+  위치 `(0, 0, 409.5)` — `Lvl_Stage`의 페인트 가능 액터 31개 경계가 X/Y −4000~4000이라
+  중심이 정확히 원점이고, 그 자리 바닥이 z 359.5라 100cm 큐브가 바닥에 닿게 +50 했다.
+  참고로 양 팀 스폰 지점 중점도 `(0, 0, 460.5)`로 같은 XY다.
+
+큐브를 키우려면 액터가 아니라 **Mesh 컴포넌트의 스케일**을 올릴 것. 액터를 키우면 루트인
+구체 트리거의 반경까지 같이 커진다.
 
 ---
 
