@@ -154,6 +154,12 @@ void UItemAbility::StartItem()
 	const float EffectDuration = ResolveEffectDuration(*Profile);
 	Spec.Data->SetSetByCallerMagnitude(ItemTags::Data_Item_Duration, EffectDuration);
 	Spec.Data->DynamicGrantedTags.AddTag(StateTag);
+	// 효과 동안 주는 상태(스피드 스타의 슈퍼아머)도 같은 GE에 싣는다. 효과와 함께 오르내리고, 태그라서
+	// 모든 머신에 복제되어 스턴·밀어내기 면역과 하이라이트가 어디서나 맞는다.
+	if (Profile->GrantsSuperArmor())
+	{
+		Spec.Data->DynamicGrantedTags.AddTag(ItemTags::State_Status_SuperArmor);
+	}
 	Spec.Data->GetContext().AddSourceObject(Profile);
 	AppliedEffect = ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, Spec);
 

@@ -39,28 +39,6 @@ namespace
 		return nullptr;
 	}
 
-	/**
-	 * GE의 지속시간과 어빌리티 태스크의 대기는 둘 다 월드의 타이머로 돈다. 그런데 GE의 만료 검사
-	 * (CheckDuration)는 타이머가 울려도 월드 시각(GetTimeSeconds)을 다시 보고, 아직이면 남은 시간으로
-	 * 타이머를 다시 건다. 그래서 타이머만 돌리면 영원히 만료되지 않는다: 월드 시각도 같이 흘려야 한다.
-	 *
-	 * 타이머 매니저는 한 프레임에 한 번만 돈다(LastTickedFrame == GFrameCounter면 건너뛴다). 테스트는
-	 * 한 프레임 안에서 여러 번 돌리므로 매번 프레임 번호를 넘긴다. LEVELTICK_TimeOnly 월드 틱은
-	 * 타이머를 돌리지 않으므로 쓸 수 없다.
-	 */
-	void Advance(UWorld& World, float Seconds)
-	{
-		const float Step = 0.05f;
-		const int32 Steps = FMath::CeilToInt(Seconds / Step - UE_KINDA_SMALL_NUMBER);
-		for (int32 Index = 0; Index < Steps; ++Index)
-		{
-			World.TimeSeconds += Step;
-			World.UnpausedTimeSeconds += Step;
-			World.RealTimeSeconds += Step;
-			++GFrameCounter;
-			World.GetTimerManager().Tick(Step);
-		}
-	}
 }
 
 /**
@@ -120,21 +98,21 @@ bool FItemRecoveryFlowTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("효과 중은 마무리가 아니다"), Ability->IsRecovering());
 
 	// 효과 중에는 발사로 끊기지 않는다: 끊는 것은 마무리뿐이다.
-	Advance(*World, 0.5f);
+	MintChocoTest::AdvanceTime(*World,0.5f);
 	Slot->InterruptItemRecovery();
 	TestTrue(TEXT("효과 중의 발사는 효과를 끊지 않는다"), FindActiveRecovery(*AbilitySystem) == Ability);
 	TestTrue(TEXT("효과 중의 발사 뒤에도 태그가 있다"), HasStateTag());
 
-	Advance(*World, 0.6f);
+	MintChocoTest::AdvanceTime(*World,0.6f);
 	TestFalse(TEXT("효과 시간이 지나면 태그가 내려간다"), HasStateTag());
 	TestTrue(TEXT("어빌리티는 마무리로 산다"), FindActiveRecovery(*AbilitySystem) == Ability && Ability->IsRecovering());
 	TestEqual(TEXT("마무리 시작은 한 번"), UTestRecoveryItemAbility::RecoveryStarts, 1);
 	TestEqual(TEXT("아직 끝나지 않았다"), UTestRecoveryItemAbility::Ends, 0);
 
-	Advance(*World, 0.2f);
+	MintChocoTest::AdvanceTime(*World,0.2f);
 	TestNotNull(TEXT("마무리 도중에는 살아 있다"), FindActiveRecovery(*AbilitySystem));
 
-	Advance(*World, 0.4f);
+	MintChocoTest::AdvanceTime(*World,0.4f);
 	TestNull(TEXT("마무리가 지나면 끝난다"), FindActiveRecovery(*AbilitySystem));
 	TestEqual(TEXT("끝은 한 번"), UTestRecoveryItemAbility::Ends, 1);
 
@@ -142,20 +120,20 @@ bool FItemRecoveryFlowTest::RunTest(const FString& Parameters)
 	UTestRecoveryItemAbility::ResetCounters();
 	Slot->GiveItem(MakeRecoveryProfile(UTestRecoveryItemAbility::StaticClass(), 2.0f));
 	TestTrue(TEXT("다시 쓸 수 있다"), Slot->TryUseHeldItem());
-	Advance(*World, 1.1f);
+	MintChocoTest::AdvanceTime(*World,1.1f);
 	Ability = FindActiveRecovery(*AbilitySystem);
 	TestTrue(TEXT("발사 전에는 마무리 중"), Ability && Ability->IsRecovering());
 	Slot->InterruptItemRecovery();
 	TestNull(TEXT("발사가 마무리를 끊는다"), FindActiveRecovery(*AbilitySystem));
 	TestEqual(TEXT("끊겨도 끝은 한 번"), UTestRecoveryItemAbility::Ends, 1);
-	Advance(*World, 1.0f);
+	MintChocoTest::AdvanceTime(*World,1.0f);
 	TestEqual(TEXT("끊긴 뒤 마무리 타이머가 다시 끝내지 않는다"), UTestRecoveryItemAbility::Ends, 1);
 
 	// 3. 마무리 중 다른 아이템 사용: 켜지는 것만으로 끝난다.
 	UTestRecoveryItemAbility::ResetCounters();
 	Slot->GiveItem(MakeRecoveryProfile(UTestRecoveryItemAbility::StaticClass(), 2.0f));
 	TestTrue(TEXT("세 번째 사용"), Slot->TryUseHeldItem());
-	Advance(*World, 1.1f);
+	MintChocoTest::AdvanceTime(*World,1.1f);
 	TestNotNull(TEXT("다른 아이템을 쓰기 전에는 마무리 중"), FindActiveRecovery(*AbilitySystem));
 	Slot->GiveItem(MakeRecoveryProfile(UTestInstantItemAbility::StaticClass(), 0.0f));
 	TestTrue(TEXT("마무리 중에 다른 아이템을 쓸 수 있다"), Slot->TryUseHeldItem());
@@ -166,7 +144,7 @@ bool FItemRecoveryFlowTest::RunTest(const FString& Parameters)
 	UTestRecoveryItemAbility::ResetCounters();
 	Slot->GiveItem(MakeRecoveryProfile(UTestRecoveryItemAbility::StaticClass(), 2.0f));
 	TestTrue(TEXT("네 번째 사용"), Slot->TryUseHeldItem());
-	Advance(*World, 0.5f);
+	MintChocoTest::AdvanceTime(*World,0.5f);
 	Ability = FindActiveRecovery(*AbilitySystem);
 	if (TestNotNull(TEXT("강제 종료 전에는 켜져 있다"), Ability))
 	{
@@ -182,7 +160,7 @@ bool FItemRecoveryFlowTest::RunTest(const FString& Parameters)
 	UTestRecoveryItemAbility::RecoverySeconds = 0.0f;
 	Slot->GiveItem(MakeRecoveryProfile(UTestRecoveryItemAbility::StaticClass(), 2.0f));
 	TestTrue(TEXT("다섯 번째 사용"), Slot->TryUseHeldItem());
-	Advance(*World, 1.1f);
+	MintChocoTest::AdvanceTime(*World,1.1f);
 	TestNull(TEXT("마무리가 없으면 효과와 함께 끝난다"), FindActiveRecovery(*AbilitySystem));
 	TestEqual(TEXT("마무리가 없으면 시작도 없다"), UTestRecoveryItemAbility::RecoveryStarts, 0);
 	TestEqual(TEXT("마무리가 없어도 끝은 한 번"), UTestRecoveryItemAbility::Ends, 1);

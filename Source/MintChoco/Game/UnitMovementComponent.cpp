@@ -43,7 +43,7 @@ bool UUnitMovementComponent::ShouldFaceControlRotation() const
 	return !Acceleration.IsNearlyZero() || IsAimHeld();
 }
 
-// 스턴·히어로 랜딩이면 0, 부스트 중이면 고정 속도, 대시 중이면 기본 속도에 배율을 곱한 값, 아니면 기본 속도.
+// 스턴·히어로 랜딩이면 0. 아니면 기본 속도에 부스트 배율과 대시 배율을 켜진 만큼 곱한 값.
 float UUnitMovementComponent::GetMaxSpeed() const
 {
 	// 최고 속도 0: CalcVelocity는 MaxSpeed로 나누지 않으므로 안전하고, 제동이 몇 프레임 안에
@@ -54,14 +54,18 @@ float UUnitMovementComponent::GetMaxSpeed() const
 		return 0.0f;
 	}
 
+	// 부스트와 대시는 둘 다 기본 속도에 곱해진다. 부스트 중에 대시하면 둘을 모두 곱하므로 부스트가
+	// 대시보다 느려지는 일이 없다. 두 플래그는 압축 플래그로 서버에 가므로 양쪽이 같은 값을 낸다.
+	float Speed = Super::GetMaxSpeed();
 	if (bWantsSpeedBoost)
 	{
-		return SpeedBoostSpeed;
+		Speed *= SpeedBoostMultiplier;
 	}
-
-	const float BaseSpeed = Super::GetMaxSpeed();
-
-	return bWantsToDash ? BaseSpeed * DashSpeedMultiplier : BaseSpeed;
+	if (bWantsToDash)
+	{
+		Speed *= DashSpeedMultiplier;
+	}
+	return Speed;
 }
 
 FVector UUnitMovementComponent::ConstrainInputAcceleration(const FVector& InputAcceleration) const
