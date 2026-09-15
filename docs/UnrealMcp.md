@@ -96,6 +96,9 @@ Every item here cost real debugging time once. Read before any MCP write.
 - A nested USTRUCT writes in one call (`{"Deposit": {"BrushProfile": {"refPath": ...},
   "SplatVolume": 1}}`), but `get_properties` returns its members camelCased (`brushProfile`), so
   compare by value, not by key, when reading back.
+- An `FTransform` property writes as `{"Location": {...}, "Rotation": {"Pitch", "Yaw", "Roll"},
+  "Scale": {...}}`, the shape `get_properties` returns. The native `Rotation` quaternion /
+  `Translation` / `Scale3D` spelling returns true and silently lands an identity transform.
 - `get_properties` fails as a whole when any requested property is unreadable on that class;
   ask per class. It cannot read a UPROPERTY without an `Edit*`/`Visible*` specifier
   (`bCollected`, `HeldItem` were unreadable until `VisibleInstanceOnly`), and `set_properties`
@@ -162,6 +165,12 @@ Every item here cost real debugging time once. Read before any MCP write.
   "Cannot pythonize '28'"); every other root pin used so far works. `MakeMaterialAttributes` has no
   Front Material pin in 5.8, so the material-attributes detour loses the Substrate tree. The PDO
   wire is a developer drag (`M_PaintSplashBlob`: `Max` → Pixel Depth Offset, Apply, save).
+- A post-process material samples GBuffer data at pixel offsets under Substrate Blendable: wire one
+  SceneTexture node per id into a Custom input (an id whose input the code never reads is dead
+  stripped) and call `SceneTextureFetchFunc(Parameters, PPI_WorldNormal, float2(dx, dy))` in the
+  code (`M_PP_LookStylize`). Before the tonemapper, PostProcessInput0 arrives divided by
+  pre-exposure and the emissive output is multiplied back, so colour ratios are exposure-safe; an
+  `EyeAdaptation` node gives the exposure scale.
 - A `VectorParameter`'s default output is `RGB`; a Custom input that reads `.w` needs
   `from_output_name: "RGBA"`. `DynamicParameter` outputs are `Param1..Param4`, `RGB`, `RGBA`; the
   first wire into a freshly created Custom node input can fail and succeed on a retry.
@@ -198,7 +207,10 @@ Every item here cost real debugging time once. Read before any MCP write.
   `/Game/<Path>/UEDPIE_0_<Map>.<Map>:PersistentLevel.<Actor>_C_0`.
 - `CaptureViewport` / `CaptureEditorImage` / `CaptureAssetImage` return base64 too large for
   the tool result; decode the saved result file with PowerShell (`ConvertFrom-Json` →
-  `[Convert]::FromBase64String`) and Read the PNG. `CaptureAssetImage` on a mesh is a quick way
+  `[Convert]::FromBase64String`) and Read the PNG. Inside a `ProgrammaticToolset` script
+  `CaptureViewport` needs `captureTransform: None` **and** `annotations: None` spelled out, or it
+  raises "needs a default value" - after a `StartPIE` in the same script, which leaves the
+  session running. Four Simulate captures plus a 10 s warmup per script have been reliable. `CaptureAssetImage` on a mesh is a quick way
   to make a placeholder icon texture (`TextureTools.import_file`).
 - While PIE runs, `AssetTools.save_assets` / `exists` / `is_dirty` fail with "Asset does not
   exist" even though compiles succeed. Stop PIE, then save. `is_dirty` takes `asset_path`,

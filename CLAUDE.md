@@ -110,3 +110,7 @@ Tangent); `CustomizedUVs` and WPO are vertex-frequency. Everything else: `docs/T
   `ServerTravel` skips the cover.
 - Steam sessions: use `Online::GetSubsystem(GetWorld())`, keep `bAllowJoinInProgress` on, and
   filter lobbies with a private key; any filter change must be repackaged on both PCs.
+- Look presets (`Source/MintChoco/Look/`): `ULookPreset` data assets in `/Game/Assets/Look/`, listed
+  in `[/Script/MintChoco.LookSettings]`, laid on at runtime only by `ULookSubsystem`
+  (`mc.Look <name|number|Off>`, `mc.Look.List`); levels and source assets never change on disk.
+  Comparison captures set the `ReviewPreset` / `ReviewSetup` on the settings CDO before Simulate.

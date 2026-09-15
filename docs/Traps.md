@@ -142,6 +142,23 @@ before anything else.
 | The camera boom snags on another player, or a player stays translucent | Units ignore `ECC_Camera` on capsule and mesh (set again in `AUnit::PostInitializeComponents`, so a Blueprint override cannot bring it back). Overlap is detected by `CameraProbe`, a sphere on the local player's camera that overlaps other units' capsules only; the overlapped unit swaps every mesh slot to `CameraFadeMaterial` (`M_UnitCameraFade`, set on `BP_Unit`) until EndOverlap, `UpdateCameraProbe` (unpossess) or the prober's `EndPlay` restores it. |
 | Other players animate in slow motion on the listen-server host | The anim blueprint derives speed from per-tick position delta. On the server a remotely controlled pawn only moves when a `ServerMove` arrives (`ClientNetSendMoveDeltaTime` 0.0166 = 60 Hz), while the mesh ticks every frame, so the ticks with no displacement drag the average down. Read `Velocity` off the movement component instead — it holds its value between moves, so it is frame-rate independent. `t.MaxFPS 60` making the symptom vanish confirms it. |
 
+## Look presets (`mc.Look`)
+
+`ULookSubsystem` lays a `ULookPreset` on a game or PIE world at runtime only: a transient unbound
+post-process volume (priority 1000), the level's sun, sky light, height fog, sky dome MID and
+volumetric cloud, `MPC_TeamLook` instance values, console variables, and material swaps rescanned
+every 0.5 s. `mc.Look Off` and world teardown restore all of it; console variables are process-wide,
+so `Deinitialize` restores them too.
+
+| Symptom | Check first |
+|---|---|
+| A preset looks the same as Off | The preset only covers fields whose override flag is on (`bOverride_*` inside `PostProcess`, `bOverride*` in Sun, SkyLight, Fog, SkyDome); the level volume still decides everything else. `mc.Look.List` marks the active preset. |
+| Shadows stay hard after leaving Toon | `r.Shadow.Virtual.SMRT.RayCountDirectional` comes back on `mc.Look Off` and when the PIE world ends. The restore is set by code, so a later scalability change does not override it until the editor restarts. |
+| A Toon character shows its PBR material again | The camera-overlap fade restores the materials it stored; the rescan swaps them back within 0.5 s. A unit that never swaps uses a slot material missing from the preset's `MaterialSwaps.From`. |
+| Toon surfaces sparkle in shade or in the distance | Lumen noise crossing a band edge, or normal-map detail read as creases. Raise `CelParams.z` (band softness) or `OutlineParams.z` (normal threshold), or pull `FadeParams.xy` (outline fade, cm) closer in `MI_PP_LookStylize_Toon`. |
+| Metal, emissive or very dark surfaces look wrong under the cel pass | The pass divides scene colour by GBuffer diffuse colour. Below albedo luminance 0.02, on unlit pixels, and on Toon BSDF pixels (`FadeParams.w` = 1) it passes the scene through untouched. |
+| Review mannequins or splats missing from a capture | `ULookSettings::ReviewSetup` must be set on the settings CDO before Simulate starts. Splats wait `SplatDelay` for surfaces to register and log `리뷰 스플랫 N/M`. A mannequin placed inside level geometry shows only its shadow: pick open floor with traces first. |
+
 ## Items (Gameplay Ability System)
 
 Items live in `Source/MintChoco/Items/`: a `UItemProfile` asset per item (display, pickup mesh,
