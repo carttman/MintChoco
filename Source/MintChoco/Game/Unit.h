@@ -189,6 +189,16 @@ public:
 	void SetBoardShown(bool bShown);
 
 	/**
+	 * 메시를 캐릭터의 앞 축을 중심으로 굴린다(도). 양수면 오른쪽으로 기운다. 0이면 블루프린트가 놓은
+	 * 원래 자세로 돌아간다. 애님 인스턴스가 보드 동작 중 좌우 입력만큼 매 프레임 넣는다
+	 * (UUnitAnimInstance::BoardLean).
+	 *
+	 * 연출이라 복제하지 않는다. 머신마다 자기 무브먼트의 가속에서 같은 값을 낸다. 캡슐과 카메라는
+	 * 그대로이고, 메시에 붙은 것(보드, 총, 잉크병, 외곽선)만 함께 기운다.
+	 */
+	void SetMeshLean(float RollDegrees);
+
+	/**
 	 * 히어로 랜딩 단계. 애님 블루프린트가 이 값으로 준비·시작 자세를 고른다.
 	 *
 	 * 단계 기계는 압축 플래그로 굴러가므로 소유자와 서버에만 있다. 다른 클라이언트의 무브먼트는
@@ -432,6 +442,13 @@ private:
 
 	/** 애님 인스턴스가 세우는 보드 상태. 실제로 보이는지는 카메라 페이드까지 봐야 안다. */
 	bool bBoardShown = false;
+
+	/** 기울이기 전 메시의 기준 회전(캡슐 대비). 처음 기울일 때 한 번 잡는다. */
+	FQuat MeshRestRotation = FQuat::Identity;
+	bool bMeshRestCaptured = false;
+
+	/** 지금 메시에 걸린 기울기(도). 같은 값이면 트랜스폼을 다시 쓰지 않는다. */
+	float MeshLeanDegrees = 0.0f;
 
 	/** 총을 숨기는 타이머. 발사마다 다시 걸려 마지막 한 발에서만 만료된다. */
 	FTimerHandle GunHideTimer;

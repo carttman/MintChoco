@@ -36,6 +36,18 @@ bool FUnitAnimMath::IsFireHoldActive(double Now, double LastFiredTime, float Hol
 	return LastFiredTime >= 0.0 && HoldSeconds > 0.0f && Now - LastFiredTime <= HoldSeconds;
 }
 
+float FUnitAnimMath::BoardLeanInput(const FVector& Acceleration, const FRotator& ActorRotation)
+{
+	const FVector Planar(Acceleration.X, Acceleration.Y, 0.0f);
+	if (Planar.IsNearlyZero())
+	{
+		return 0.0f;
+	}
+	// 몸 기준으로 돌린 단위 방향의 Y가 오른쪽 성분이다(요 0에서 앞 +X, 오른쪽 +Y).
+	const FVector Local = FRotator(0.0f, ActorRotation.Yaw, 0.0f).UnrotateVector(Planar.GetSafeNormal());
+	return FMath::Clamp(static_cast<float>(Local.Y), -1.0f, 1.0f);
+}
+
 // ---------------------------------------------------------------- UUnitAnimInstance
 
 void UUnitAnimInstance::NativeInitializeAnimation()
@@ -58,6 +70,7 @@ void UUnitAnimInstance::NativeUninitializeAnimation()
 	if (AUnit* const Bound = BoundUnit.Get())
 	{
 		Bound->SetBoardShown(false);
+		Bound->SetMeshLean(0.0f);
 	}
 	BindWeapons(nullptr);
 	Super::NativeUninitializeAnimation();
@@ -129,6 +142,21 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		bDashAnimationActive = IsInDashState();
 		Unit->SetBoardShown(bDashAnimationActive);
 
+		// 보드 기울기도 동작을 따른다. 보드 동작 중에만 좌우 입력만큼 기울고, 내리면 부드럽게 선다.
+		// 입력은 가속 방향에서 온다: 다른 클라이언트의 폰도 속도 방향으로 채워지므로 복제가 필요 없다.
+		const float TargetLean = bDashAnimationActive
+			? FUnitAnimMath::BoardLeanInput(Movement->GetCurrentAcceleration(), Rotation) * BoardLeanMaxDegrees
+			: 0.0f;
+		BoardLean = BoardLeanInterpSpeed > 0.0f
+			? FMath::FInterpTo(BoardLean, TargetLean, DeltaSeconds, BoardLeanInterpSpeed)
+			: TargetLean;
+		// 거의 섰으면 딱 맞춘다. 평소에는 메시 트랜스폼을 매 프레임 다시 쓰지 않게 하려는 것이다.
+		if (!bDashAnimationActive && FMath::Abs(BoardLean) < 0.05f)
+		{
+			BoardLean = 0.0f;
+		}
+		Unit->SetMeshLean(BoardLean);
+
 		// 유닛에게 묻는다: 원격 폰의 단계는 무브먼트가 아니라 복제된 값에서 온다.
 		HeroLandingPhase = Unit->GetHeroLandingPhase();
 		bIsHeroLanding = HeroLandingPhase != EHeroLandingPhase::None;
@@ -166,6 +194,7 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		bIsDashing = false;
 		bIsStunned = false;
 		bDashAnimationActive = false;
+		BoardLean = 0.0f;
 		HeroLandingPhase = EHeroLandingPhase::None;
 		bIsHeroLanding = false;
 		bIsFiring = false;

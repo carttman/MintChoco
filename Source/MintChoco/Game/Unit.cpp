@@ -1214,6 +1214,35 @@ void AUnit::SetBoardShown(bool bShown)
 	UpdateBoardLoopSound();
 }
 
+void AUnit::SetMeshLean(float RollDegrees)
+{
+	USkeletalMeshComponent* const MeshComponent = GetMesh();
+	if (!MeshComponent || FMath::IsNearlyEqual(RollDegrees, MeshLeanDegrees, 1e-3f))
+	{
+		return;
+	}
+
+	// 기준은 처음 기울일 때 한 번 잡는다. 기울이는 동안 캐릭터의 기준 회전도 같이 바뀌므로, 매번 다시
+	// 읽으면 기울기가 쌓인다.
+	if (!bMeshRestCaptured)
+	{
+		MeshRestRotation = GetBaseRotationOffset();
+		bMeshRestCaptured = true;
+	}
+	MeshLeanDegrees = RollDegrees;
+
+	// 캡슐의 앞 축(X)을 중심으로 굴린다. 메시의 기준 회전(보통 요 -90)보다 바깥에서 곱해야 메시 축이 아니라
+	// 캐릭터 축으로 기운다. 양의 롤은 앞을 보며 시계 방향이라 머리가 오른쪽(+Y)으로 간다.
+	const FQuat Leaned = FRotator(0.0f, 0.0f, RollDegrees).Quaternion() * MeshRestRotation;
+
+	// 네트워크 스무딩(다른 클라이언트의 폰, 리슨 서버의 원격 폰)은 매 틱 메시 상대 회전을
+	// "스무딩 오프셋 × GetBaseRotationOffset"으로 다시 쓴다. 기준도 함께 바꿔야 기울기가 덮이지 않는다.
+	// 지금 걸려 있는 스무딩 오프셋은 그대로 보존한다.
+	const FQuat SmoothingOffset = MeshComponent->GetRelativeRotation().Quaternion() * GetBaseRotationOffset().Inverse();
+	CacheInitialMeshOffset(GetBaseTranslationOffset(), Leaned.Rotator());
+	MeshComponent->SetRelativeRotation(SmoothingOffset * Leaned);
+}
+
 void AUnit::UpdateBoardLoopSound()
 {
 	// 데디케이티드 서버에는 들을 사람이 없다. 나머지 머신은 각자 자기 화면의 보드를 따라 켠다.

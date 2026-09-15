@@ -27,6 +27,16 @@ struct MINTCHOCO_API FUnitAnimMath
 	 * HoldSeconds가 0 이하면 항상 거짓.
 	 */
 	static bool IsFireHoldActive(double Now, double LastFiredTime, float HoldSeconds);
+
+	/**
+	 * 보드 기울기 입력(-1..1). 가속 방향을 몸의 오른쪽 축에 투영한 값이다: 오른쪽 키 +1, 왼쪽 키 -1,
+	 * 앞뒤는 0, 대각선은 약 0.707. 가속이 없으면 0.
+	 *
+	 * 크기는 보지 않고 방향만 본다. 소유자와 서버의 가속은 입력 × MaxAcceleration이지만, 다른
+	 * 클라이언트의 폰은 가속이 복제되지 않아 엔진이 속도 방향의 단위 벡터로 채운다
+	 * (UCharacterMovementComponent::SimulatedTick). 방향만 쓰면 모든 머신에서 같은 기울기가 나온다.
+	 */
+	static float BoardLeanInput(const FVector& Acceleration, const FRotator& ActorRotation);
 };
 
 /**
@@ -102,6 +112,14 @@ protected:
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Unit|State")
 	bool bDashAnimationActive = false;
+
+	/**
+	 * 보드 기울기(도). 양수면 오른쪽으로 기운다. 보드 동작 중에만 좌우 입력만큼 BoardLeanMaxDegrees까지
+	 * 기울고, 보드에서 내리면 0으로 돌아온다. 이 값으로 유닛이 메시를 굴린다(AUnit::SetMeshLean).
+	 * 애님 그래프가 따로 쓸 일은 없지만 디버깅용으로 읽을 수 있게 둔다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|Dash")
+	float BoardLean = 0.0f;
 
 	/**
 	 * 히어로 랜딩 단계. None이면 평소.
@@ -220,6 +238,17 @@ protected:
 	/** 이 접두사로 시작하는 상태가 대시 동작이다(Dash_Start, Dash_Loop, Dash_End). */
 	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning")
 	FString DashStatePrefix = TEXT("Dash");
+
+	/**
+	 * 보드 동작 중 좌우 키를 끝까지 눌렀을 때의 기울기(도). 캐릭터의 앞 축을 중심으로 메시를 굴린다.
+	 * 기우는 방향이 반대로 보이면 부호를 바꾼다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning", meta = (ClampMin = "-45", ClampMax = "45", ForceUnits = "deg"))
+	float BoardLeanMaxDegrees = 15.0f;
+
+	/** 보드 기울기가 목표로 따라가는 속도(FInterpTo). 클수록 빨리 기운다. 0이면 보간 없이 바로 기운다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning", meta = (ClampMin = "0"))
+	float BoardLeanInterpSpeed = 8.0f;
 
 private:
 	/** 소유 폰. 유닛이 아니면 이동·공중 값만 채우고 상태는 기본값으로 둔다. */
