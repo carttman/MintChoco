@@ -4,6 +4,8 @@
 #include "Engine/DataAsset.h"
 #include "Engine/NetSerialization.h"
 
+#include "Weapons/PaintDeposit.h"
+
 #include "PaintWeaponProfile.generated.h"
 
 class APawn;
@@ -262,6 +264,20 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HUD")
 	TSubclassOf<UPaintCrosshairWidget> CrosshairClass;
+
+	/**
+	 * 한 발이 나갈 때 사수 발밑에 남기는 자국. 날아가는 탄을 쓰지 않는다: 폰에서 아래로 광선
+	 * 하나를 내려 맞은 바닥에 바로 찍으므로 화면에 보일 탄도, 복제할 액터도 없다.
+	 *
+	 * 브러시를 비워 두면 CanPaint()가 거짓이라 아무 일도 하지 않는다. 그래서 이 값을 넣지 않은
+	 * 기존 프로필은 전과 똑같이 동작한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feet")
+	FPaintDeposit FeetDeposit;
+
+	/** 발밑을 찾을 때 폰 위치에서 아래로 훑는 거리(cm). 이 안에 바닥이 없으면(공중) 아무것도 남지 않는다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Feet", meta = (ClampMin = "1", ForceUnits = "cm"))
+	float FeetTraceDown = 300.0f;
 
 private:
 	/** Percent of a full ink tank one accepted shot spends. Read it through GetInkCostPerShot. */

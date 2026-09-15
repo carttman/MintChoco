@@ -40,6 +40,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gun", meta = (ClampMin = "0", ForceUnits = "cm"))
 	float AimTraceDistance = 10000.0f;
 
+	/**
+	 * 한 발의 산탄이 내는 착탄음을 첫 탄 하나로 줄인다.
+	 *
+	 * 펠릿이 거의 동시에 닿으므로 탄마다 울리면 같은 소리가 겹쳐 지저분해진다. 켜면 첫 탄만
+	 * 소리를 내고 나머지는 조용히 칠하기만 한다. 칠하는 양과 이펙트는 그대로다.
+	 *
+	 * 기본은 꺼짐이라 이 값을 넣지 않은 기존 총은 전과 같다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gun")
+	bool bImpactSoundOncePerShot = false;
+
 private:
 	/**
 	 * The player aims with the camera, not the barrel: finds what the crosshair rests on

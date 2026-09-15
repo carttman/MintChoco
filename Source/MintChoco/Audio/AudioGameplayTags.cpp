@@ -9,6 +9,7 @@ namespace AudioTags
 	UE_DEFINE_GAMEPLAY_TAG(Audio_Weapon_Impact, "Audio.Weapon.Impact");
 
 	UE_DEFINE_GAMEPLAY_TAG(Audio_Unit_Dash, "Audio.Unit.Dash");
+	UE_DEFINE_GAMEPLAY_TAG(Audio_Unit_Board_Loop, "Audio.Unit.Board.Loop");
 	UE_DEFINE_GAMEPLAY_TAG(Audio_Unit_Land, "Audio.Unit.Land");
 	UE_DEFINE_GAMEPLAY_TAG(Audio_Unit_Footstep, "Audio.Unit.Footstep");
 	UE_DEFINE_GAMEPLAY_TAG(Audio_Unit_Stun_Begin, "Audio.Unit.Stun.Begin");

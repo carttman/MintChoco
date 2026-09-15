@@ -25,6 +25,7 @@ namespace
 			AudioTags::Audio_Weapon_ChargeReady,
 			AudioTags::Audio_Weapon_Impact,
 			AudioTags::Audio_Unit_Dash,
+			AudioTags::Audio_Unit_Board_Loop,
 			AudioTags::Audio_Unit_Land,
 			AudioTags::Audio_Unit_Footstep,
 			AudioTags::Audio_Unit_Stun_Begin,

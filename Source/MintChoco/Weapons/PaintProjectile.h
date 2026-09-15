@@ -54,6 +54,12 @@ public:
 	/** 이 공이 칠하는 id(팀). 초콜릿 돔이 상대 탄을 가려낼 때 본다. */
 	uint8 GetPaintId() const { return PaintId; }
 
+	/**
+	 * 이 공이 닿을 때 착탄음을 낼지. 산탄처럼 한 번에 여러 발이 나가는 무기가 첫 탄 하나만
+	 * 남겨 두는 데 쓴다. Init이 매번 참으로 되돌리므로 풀에서 꺼낸 공에 지난 값이 남지 않는다.
+	 */
+	void SetPlaysImpactSound(bool bPlays) { bPlaysImpactSound = bPlays; }
+
 	/** The body material a ball of this paint id wears, or null when the id has none and keeps the mesh's own. */
 	UMaterialInterface* GetTeamMaterial(uint8 InPaintId) const;
 
@@ -115,6 +121,9 @@ private:
 
 	/** DropAfter가 지났다. 여기서부터 무겁게 떨어진다. */
 	void ApplyDropGravity();
+
+	/** 착탄음을 낼 공인지. SetPlaysImpactSound가 끄지 않는 한 참이다. */
+	bool bPlaysImpactSound = true;
 
 	UPROPERTY(Transient)
 	TObjectPtr<const UPaintballProfile> Profile;

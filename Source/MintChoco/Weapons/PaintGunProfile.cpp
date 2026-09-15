@@ -165,8 +165,15 @@ bool UPaintGunProfile::Launch(UWorld& World, APawn* Instigator, const FPaintShot
 			? Shot.Seed
 			: static_cast<int32>(HashCombineFast(static_cast<uint32>(Shot.Seed), static_cast<uint32>(Pellet)));
 		const FTransform SpawnTransform(Directions[Pellet].Rotation(), Shot.Muzzle);
-		bLaunched |= Paintball->Launch(World, SpawnTransform, Instigator,
-			Directions[Pellet] * Scatter->MuzzleSpeed, Shot.PaintId, PelletSeed, bCosmetic, /*DropAfterOverride=*/-1.0f, VisualOffset) != nullptr;
+		APaintProjectile* const Projectile = Paintball->Launch(World, SpawnTransform, Instigator,
+			Directions[Pellet] * Scatter->MuzzleSpeed, Shot.PaintId, PelletSeed, bCosmetic, /*DropAfterOverride=*/-1.0f, VisualOffset);
+		bLaunched |= Projectile != nullptr;
+
+		// 첫 탄에만 소리를 남긴다. 펠릿이 거의 동시에 닿아 같은 소리가 겹치기 때문이다.
+		if (Projectile && bImpactSoundOncePerShot && Pellet != 0)
+		{
+			Projectile->SetPlaysImpactSound(false);
+		}
 	}
 	return bLaunched;
 }
