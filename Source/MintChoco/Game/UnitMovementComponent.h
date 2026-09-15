@@ -263,11 +263,14 @@ public:
 	void SetSimulatedHeroLandingPhase(EHeroLandingPhase NewPhase);
 
 	/**
-	 * 부스트 중의 이동 속도(cm/s). 배율이 아니라 고정값이다: "감속 지대 무시"가 규칙이라
-	 * 기본 속도에 무엇이 곱해지든 이 값으로 달린다. 대시도 여기에 곱해지지 않는다.
+	 * 스피드 스타 부스트 중 기본 이동 속도에 곱해지는 배율. 대시 배율과 함께 곱해진다
+	 * (걷기 = 기본 × 이것, 대시 = 기본 × 이것 × DashSpeedMultiplier).
+	 *
+	 * 예전에는 고정 속도(1500)였는데, BP_Unit의 기본 속도가 1000으로 오른 뒤로 대시(1700)가 부스트보다
+	 * 빨라져 대시 중에 아이템을 쓰면 오히려 느려졌다. 배율이면 기본 속도를 어떻게 바꾸든 늘 빨라진다.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item", meta = (ClampMin = "0", ForceUnits = "cm/s"))
-	float SpeedBoostSpeed = 1500.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Item", meta = (ClampMin = "1.0"))
+	float SpeedBoostMultiplier = 1.5f;
 
 	/**
 	 * 기본 이동 속도에 곱해지는 배율.

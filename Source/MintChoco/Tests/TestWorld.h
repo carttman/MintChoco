@@ -6,6 +6,8 @@
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Misc/CoreMiscDefines.h"
+#include "CoreGlobals.h"
+#include "TimerManager.h"
 
 /**
  * 액터를 스폰해야 하는 자동화 테스트를 위한 임시 게임 월드.
@@ -53,6 +55,27 @@ namespace MintChocoTest
 		Box->RegisterComponent();
 		Block->SetActorLocation(Center);
 		return Block;
+	}
+
+	/**
+	 * 월드 시각과 타이머를 Seconds만큼 흘린다. 액터 틱은 돌리지 않는다.
+	 *
+	 * GE의 지속시간은 타이머로 울리지만 만료 검사(CheckDuration)가 월드 시각을 다시 보고, 아직이면
+	 * 남은 시간으로 다시 건다. 그래서 둘 다 흘려야 만료된다. 타이머 매니저는 프레임마다 한 번만
+	 * 돌므로(LastTickedFrame == GFrameCounter) 매번 프레임 번호를 넘긴다. LEVELTICK_TimeOnly 월드
+	 * 틱은 타이머를 돌리지 않아 쓸 수 없다.
+	 */
+	inline void AdvanceTime(UWorld& World, float Seconds, float Step = 0.05f)
+	{
+		const int32 Steps = FMath::CeilToInt(Seconds / Step - UE_KINDA_SMALL_NUMBER);
+		for (int32 Index = 0; Index < Steps; ++Index)
+		{
+			World.TimeSeconds += Step;
+			World.UnpausedTimeSeconds += Step;
+			World.RealTimeSeconds += Step;
+			++GFrameCounter;
+			World.GetTimerManager().Tick(Step);
+		}
 	}
 
 	inline void DestroyWorld(UWorld* World)
