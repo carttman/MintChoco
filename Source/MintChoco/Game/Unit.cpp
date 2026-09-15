@@ -8,6 +8,7 @@
 #include "Animation/AnimMontage.h"
 #include "Audio/AudioGameplayTags.h"
 #include "Audio/GameAudioSubsystem.h"
+#include "Components/AudioComponent.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -1183,6 +1184,35 @@ void AUnit::SetBoardShown(bool bShown)
 	}
 	bBoardShown = bShown;
 	UpdateBoardVisibility();
+	UpdateBoardLoopSound();
+}
+
+void AUnit::UpdateBoardLoopSound()
+{
+	// 데디케이티드 서버에는 들을 사람이 없다. 나머지 머신은 각자 자기 화면의 보드를 따라 켠다.
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	if (!bBoardShown)
+	{
+		if (BoardAudioComponent)
+		{
+			BoardAudioComponent->Stop();
+			BoardAudioComponent = nullptr;
+		}
+		return;
+	}
+
+	// 보드가 보이는 동안 하나만 돈다. 같은 보드에 두 번 켜지면 소리가 겹친다.
+	if (BoardAudioComponent)
+	{
+		return;
+	}
+
+	BoardAudioComponent = UGameAudioSubsystem::PlayAttached(
+		AudioTags::Audio_Unit_Board_Loop, GetRootComponent(), NAME_None, UnitData ? UnitData->Sounds : nullptr);
 }
 
 void AUnit::UpdateBoardVisibility()

@@ -20,6 +20,7 @@ class UItemSlotComponent;
 class UMaterialInterface;
 class UPaintWeaponComponent;
 class USphereComponent;
+class UAudioComponent;
 class UNiagaraComponent;
 class USpringArmComponent;
 class UStaticMeshComponent;
@@ -420,6 +421,12 @@ private:
 	/** 대시 동작이 돌고 있고 카메라 페이드가 아닐 때만 보드가 보인다. */
 	void UpdateBoardVisibility();
 
+	/**
+	 * 보드 표시에 맞춰 주행 루프를 켜고 끈다. 카메라 페이드는 보지 않는다: 페이드는 그림만
+	 * 감추는 것이고 보드는 여전히 달리고 있으므로 소리는 이어져야 한다.
+	 */
+	void UpdateBoardLoopSound();
+
 	/** 발사 연출이 요구하는 총의 상태. 실제로 보이는지는 카메라 페이드까지 봐야 안다. */
 	bool bGunVisible = false;
 
@@ -490,6 +497,10 @@ private:
 	/** 지속되는 트레일이라 시작할 때 만들고 끝날 때 직접 꺼야 한다. */
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> DashTrailComponent;
+
+	/** 보드 주행 루프. 트레일과 같은 이유로 들고 있다가 보드가 사라질 때 직접 멈춘다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> BoardAudioComponent;
 
 	/**
 	 * 컨텍스트를 넣어준 서브시스템. EndPlay 시점에는 Controller가 이미 떨어져 나갔을

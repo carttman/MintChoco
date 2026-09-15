@@ -140,4 +140,16 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball|Trail")
 	bool bTrailSkipTransient = true;
+
+	/**
+	 * 첫 번째 광선을 부채꼴에서 빼내 **똑바로 아래**로 쏜다.
+	 *
+	 * 부채꼴은 비행 방향에 수직인 평면을 샘플마다 무작위로 돌려 쓰므로, 어느 광선이 바닥을
+	 * 향할지가 운에 달린다. 그래서 같은 사격인데도 바닥이 칠해지다 말다 한다. 이 값을 켜면
+	 * 한 줄기는 항상 바닥을 잡아 탄 바로 밑에 자국이 이어진다.
+	 *
+	 * 기본은 꺼짐이라 이 값을 넣지 않은 기존 탄은 전과 똑같다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball|Trail")
+	bool bTrailFirstRayDown = false;
 };

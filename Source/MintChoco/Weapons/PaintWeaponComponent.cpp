@@ -23,6 +23,7 @@
 #include "Items/ItemGameplayTags.h"
 #include "Paint/PaintLog.h"
 #include "Weapons/PaintAimMath.h"
+#include "Weapons/PaintProjectile.h"
 
 UPaintWeaponComponent::UPaintWeaponComponent()
 {
@@ -607,6 +608,8 @@ bool UPaintWeaponComponent::FireOnce()
 
 	if (Context.bAuthority)
 	{
+		// 발밑 자국은 서버만 찍는다. 스플랫 로그가 결과를 나르므로 클라이언트가 따라 찍을 것이 없다.
+		PaintUnderOwner(Context);
 		MulticastShotFired(Shot);
 	}
 	else
@@ -622,6 +625,36 @@ bool UPaintWeaponComponent::FireOnce()
 	LastShotTime = GetWorld()->GetTimeSeconds();
 	OnFired.Broadcast(Seed);
 	return true;
+}
+
+void UPaintWeaponComponent::PaintUnderOwner(const FPaintFireContext& Context) const
+{
+	if (!Profile || !Profile->FeetDeposit.CanPaint() || !Context.World || !Context.Instigator)
+	{
+		return;
+	}
+
+	// 폰 중심에서 곧장 아래로. 탄을 쓰지 않으므로 보일 메시도, 풀에서 꺼낼 액터도 없다.
+	const FVector Start = Context.Instigator->GetActorLocation();
+	const FCollisionQueryParams Params(SCENE_QUERY_STAT(PaintWeaponFeet), /*bTraceComplex=*/false, Context.Instigator);
+
+	FHitResult Hit;
+	if (!Context.World->LineTraceSingleByChannel(Hit, Start, Start - FVector::UpVector * Profile->FeetTraceDown,
+			PaintballChannel, Params)
+		|| Hit.bStartPenetrating)
+	{
+		return;
+	}
+
+	// 다른 폰 위에 서 있을 때 그쪽을 때리지 않는다: 발밑 자국은 바닥에만 남는다.
+	if (Cast<APawn>(Hit.GetActor()))
+	{
+		return;
+	}
+
+	// 입사 속도를 0으로 넘기면 BuildSplat이 표면 법선을 입사 방향으로 삼아 Stretch가 1이 된다.
+	// 발밑 자국은 늘어나지 않고 둥글게 남아야 하므로 이쪽이 맞다.
+	Profile->FeetDeposit.ApplyHit(Context.World, Hit, FVector::ZeroVector, Context.PaintId, Context.Seed);
 }
 
 void UPaintWeaponComponent::ServerFire_Implementation(int32 Seed, FVector_NetQuantize ViewOrigin, FVector_NetQuantizeNormal ViewDirection, uint8 Charge)

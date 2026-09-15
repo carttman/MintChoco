@@ -84,6 +84,8 @@ void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId,
 	PaintId = InPaintId;
 	Seed = InSeed;
 	bCosmetic = bInCosmetic;
+	// 풀에서 꺼낸 공에 지난 사격의 설정이 남지 않도록 매번 되돌린다. 끄는 쪽은 Launch 뒤에 건다.
+	bPlaysImpactSound = true;
 
 	Movement->InitialSpeed = Velocity.Size();
 	Movement->MaxSpeed = 0.0f;
@@ -279,8 +281,12 @@ int32 APaintProjectile::PaintTrailSample(const FVector& Location, int32 SampleIn
 	int32 Painted = 0;
 	for (int32 Index = 0; Index < Rays && Painted < Budget; ++Index)
 	{
+		// 첫 광선을 아래로 고정하면 바닥 한 줄기는 트위스트 운에 맡기지 않는다. 나머지는 그대로
+		// 부채꼴을 돈다: 천장과 벽은 여전히 무작위 방향이 맡는다.
 		const float Angle = Twist + 2.0f * UE_PI * static_cast<float>(Index) / static_cast<float>(Rays);
-		const FVector Direction = RayUp * FMath::Cos(Angle) + RaySide * FMath::Sin(Angle);
+		const FVector Direction = (Profile->bTrailFirstRayDown && Index == 0)
+			? -FVector::UpVector
+			: RayUp * FMath::Cos(Angle) + RaySide * FMath::Sin(Angle);
 
 		FHitResult Hit;
 		if (!World->LineTraceSingleByChannel(Hit, Location, Location + Direction * Profile->TrailRadius, PaintballChannel, Params)
@@ -366,8 +372,12 @@ void APaintProjectile::OnHit(UPrimitiveComponent*, AActor*, UPrimitiveComponent*
 	}
 
 	// 연출용 공도 그린다: 착탄은 각 머신에서 제 공으로 일어나므로 이것이 그 화면의 한 번이다.
-	// 소리도 같은 이유로 여기서 한 번. 한 발의 산탄이 한꺼번에 닿으므로 뱅크의 동시발성 제한이 자른다.
-	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_Weapon_Impact, Hit.ImpactPoint);
+	// 소리도 같은 이유로 여기서 한 번. 산탄처럼 한꺼번에 닿는 무기는 첫 탄에만 소리를 남겨
+	// 두므로(UPaintGunProfile::bImpactSoundOncePerShot) 한 발에 한 번만 울린다.
+	if (bPlaysImpactSound)
+	{
+		UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_Weapon_Impact, Hit.ImpactPoint);
+	}
 	if (Profile && Profile->ImpactFX)
 	{
 		UWorld* const World = GetWorld();

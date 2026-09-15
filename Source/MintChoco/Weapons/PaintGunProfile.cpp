@@ -148,6 +148,26 @@ void UPaintGunProfile::PlayCosmetic(UWorld& World, APawn* Instigator, const FPai
 	}
 }
 
+float UPaintGunProfile::ComputePelletDropAfter(int32 Pellet, int32 PelletCount) const
+{
+	// -1 은 "프로필의 DropAfter를 그대로 쓰라"는 뜻이다. 0 은 "즉시 꺾여라"라서 쓸 수 없다.
+	if (!bStaggerPelletDrop || !Scatter)
+	{
+		return -1.0f;
+	}
+
+	// 부채꼴에서의 좌우 위치: 가운데가 0, 양끝이 1. 펠릿은 -Fan에서 +Fan으로 고르게 놓이므로
+	// 인덱스만으로 구할 수 있다(UPaintScatterProfile::ComputePelletDirections).
+	const float Lateral = PelletCount > 1
+		? FMath::Abs(2.0f * static_cast<float>(Pellet) / static_cast<float>(PelletCount - 1) - 1.0f)
+		: 0.0f;
+
+	// 가운데(Lateral 0)가 Far, 바깥(Lateral 1)이 Near.
+	const float TargetDistance = FMath::Lerp(PelletDropFarDistance, PelletDropNearDistance, Lateral);
+	const float StraightDistance = FMath::Max(TargetDistance - PelletDropLead, 0.0f);
+	return StraightDistance / FMath::Max(Scatter->MuzzleSpeed, 1.0f);
+}
+
 bool UPaintGunProfile::Launch(UWorld& World, APawn* Instigator, const FPaintShot& Shot, bool bCosmetic) const
 {
 	TArray<FVector> Directions;
@@ -165,8 +185,16 @@ bool UPaintGunProfile::Launch(UWorld& World, APawn* Instigator, const FPaintShot
 			? Shot.Seed
 			: static_cast<int32>(HashCombineFast(static_cast<uint32>(Shot.Seed), static_cast<uint32>(Pellet)));
 		const FTransform SpawnTransform(Directions[Pellet].Rotation(), Shot.Muzzle);
-		bLaunched |= Paintball->Launch(World, SpawnTransform, Instigator,
-			Directions[Pellet] * Scatter->MuzzleSpeed, Shot.PaintId, PelletSeed, bCosmetic, /*DropAfterOverride=*/-1.0f, VisualOffset) != nullptr;
+		APaintProjectile* const Projectile = Paintball->Launch(World, SpawnTransform, Instigator,
+			Directions[Pellet] * Scatter->MuzzleSpeed, Shot.PaintId, PelletSeed, bCosmetic,
+			ComputePelletDropAfter(Pellet, Directions.Num()), VisualOffset);
+		bLaunched |= Projectile != nullptr;
+
+		// 첫 탄에만 소리를 남긴다. 펠릿이 거의 동시에 닿아 같은 소리가 겹치기 때문이다.
+		if (Projectile && bImpactSoundOncePerShot && Pellet != 0)
+		{
+			Projectile->SetPlaysImpactSound(false);
+		}
 	}
 	return bLaunched;
 }
