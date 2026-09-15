@@ -71,6 +71,28 @@ namespace PaintSplash
 
 	/** The crown ring at Age: its radius grows from half the ball to CrownRadiusScale while the tube thins and fades to 0 at CrownLifetime. */
 	MINTCHOCO_API void CrownAt(const UPaintSplashProfile& Profile, float BallRadius, float Age, float& OutRadius, float& OutTube, float& OutFade);
+
+	/**
+	 * Scale of the unit cube the blob material marches in: centred on the contact, standing on its
+	 * plane, wide enough for every droplet's drag-free flight and the finished crown, high enough for
+	 * the jet's apex. In the cube's own 100 cm units, so it goes straight into Particles.Scale.
+	 */
+	MINTCHOCO_API FVector BlobScale(const UPaintSplashProfile& Profile, const FSpawnInput& Input, TArrayView<const FDroplet> Droplets, float GravityZ);
+}
+
+/** Parameters of M_PaintSplashBlob, set on the dynamic instance UPaintSplashSubsystem builds per splash. */
+namespace PaintSplashBlob
+{
+	inline const FName TeamId(TEXT("TeamId"));
+	/** xyz: launch offset from the contact, cm; w: radius, cm. 0 radius means the slot is empty. */
+	inline const FName Drop[PaintSplash::MaxDroplets] = {FName(TEXT("Drop0")), FName(TEXT("Drop1")), FName(TEXT("Drop2")), FName(TEXT("Drop3"))};
+	inline const FName Velocity[PaintSplash::MaxDroplets] = {FName(TEXT("Vel0")), FName(TEXT("Vel1")), FName(TEXT("Vel2")), FName(TEXT("Vel3"))};
+	/** (gravity cm/s^2 downward, drag 1/s, cohesion radius cm, cohesion decay s). */
+	inline const FName Physics(TEXT("Phys"));
+	/** (radius at birth, final radius, tube at birth, lifetime), cm and s. */
+	inline const FName Crown(TEXT("Crown"));
+	/** How far a ray marches past the cube's surface before giving up, cm. */
+	inline const FName MarchMax(TEXT("MarchMax"));
 }
 
 /**
@@ -106,4 +128,7 @@ namespace PaintSplashFX
 	inline const FName CrownRadiusScale(TEXT("User.CrownRadiusScale"));
 	inline const FName CrownThicknessScale(TEXT("User.CrownThicknessScale"));
 	inline const FName CrownLifetime(TEXT("User.CrownLifetime"));
+	/** The blob's dynamic material instance and the scale of the cube it marches in. */
+	inline const FName BlobMaterial(TEXT("User.BlobMaterial"));
+	inline const FName BlobScale(TEXT("User.BlobScale"));
 }

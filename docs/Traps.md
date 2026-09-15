@@ -69,6 +69,23 @@ before anything else.
 - Never give `Particles.Position` an expression or a dynamic input through the MCP Niagara
   toolset (editor assert, see `docs/UnrealMcp.md`); droplets spawn at the system origin, which is
   why the component is placed 1 cm along the normal.
+- The blob: `NS_PaintSplash`'s `Blob` emitter is one local-space mesh particle (a 100 cm cube,
+  `Particles.Scale` = `User.BlobScale`, pivot lifted 50 mesh units so the cube stands on the
+  plane) whose material `M_PaintSplashBlob` ray-marches four droplets on drag-damped parabolas
+  plus a crown torus with the team look. Each droplet is a round cone from its head to a tail:
+  while the cohesion holds (C++ `PaintSplash::Cohesion`, `CohesionRadius` smooth-min fading over
+  `CohesionDecay`) the tail roots on the crown ring at the droplet's azimuth, so the splash reads
+  as fingers rising off the rim; as it pinches off the tail slides `TailSeconds` (material scalar,
+  0.06) behind the head and thins to a point, leaving teardrops. `CrownAt` defines the ring.
+  `UPaintSplashSubsystem::BuildBlobMaterial` makes a MID per splash (`PaintSplashBlob` names:
+  `Drop0..3` xyz offset + w radius, `Vel0..3`, `Phys`, `Crown`, `MarchMax`, `TeamId`) and
+  `PaintSplash::BlobScale` sizes the cube. `Droplets` keeps fixed bounds (±450 cm) because its
+  sprite renderer is disabled: an emitter with no enabled particle renderer and dynamic bounds
+  trips the "only Emitter sourced renderers" warning and has no bounds at all. No blob: `Splash.BlobMaterial` unset, the material
+  missing the Niagara mesh particles usage (`ProfileAssets` test), or `User.BlobScale` zero -
+  a zero-scale mesh particle silently stops the entire system, droplets and marks included.
+  Pixel Depth Offset must be wired by hand in the material editor (the MCP tool cannot), or the
+  blob intersects geometry at the cube's surface instead of the fluid's.
 - `APaintSplashTestActor` (Blueprintable) fires a fixed contact on a timer without a weapon:
   drop one in a scratch level with `Paintball` set, Simulate, and watch the marks.
 

@@ -5,6 +5,7 @@
 #include "Engine/HitResult.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "NiagaraComponent.h"
 
@@ -156,18 +157,44 @@ UPaintSplashLandingHandler* UPaintSplashSubsystem::BeginSplash(const FPaintSplas
 	return Handler;
 }
 
+UMaterialInstanceDynamic* UPaintSplashSubsystem::BuildBlobMaterial(UNiagaraComponent& Effect, const UPaintSplashProfile& Profile, const FPaintSplashRequest& Request,
+	TArrayView<const PaintSplash::FDroplet> Droplets, const FVector& BlobScale, float GravityZ)
+{
+	if (!Profile.BlobMaterial)
+	{
+		return nullptr;
+	}
+
+	// Outered to the pooled component, so the instance lives exactly as long as the component holds it.
+	UMaterialInstanceDynamic* const Blob = UMaterialInstanceDynamic::Create(Profile.BlobMaterial, &Effect);
+	Blob->SetScalarParameterValue(PaintSplashBlob::TeamId, static_cast<float>(Request.PaintId));
+	for (int32 Index = 0; Index < PaintSplash::MaxDroplets; ++Index)
+	{
+		const bool bUsed = Index < Droplets.Num();
+		const FVector Offset = bUsed ? Droplets[Index].Position - Request.ImpactPoint : FVector::ZeroVector;
+		const FVector Velocity = bUsed ? Droplets[Index].Velocity : FVector::ZeroVector;
+		Blob->SetVectorParameterValue(PaintSplashBlob::Drop[Index], FLinearColor(Offset.X, Offset.Y, Offset.Z, bUsed ? Droplets[Index].Radius : 0.0f));
+		Blob->SetVectorParameterValue(PaintSplashBlob::Velocity[Index], FLinearColor(Velocity.X, Velocity.Y, Velocity.Z, 0.0f));
+	}
+	Blob->SetVectorParameterValue(PaintSplashBlob::Physics, FLinearColor(-GravityZ * Profile.GravityScale, Profile.Drag, Profile.CohesionRadius, Profile.CohesionDecay));
+	Blob->SetVectorParameterValue(PaintSplashBlob::Crown,
+		FLinearColor(0.5f * Request.BallRadius, Profile.CrownRadiusScale * Request.BallRadius, Profile.CrownThicknessScale * Request.BallRadius, Profile.CrownLifetime));
+	Blob->SetScalarParameterValue(PaintSplashBlob::MarchMax, static_cast<float>(BlobScale.Size() * 100.0));
+	return Blob;
+}
+
 void UPaintSplashSubsystem::ConfigureEffect(UNiagaraComponent& Effect, const FPaintSplashRequest& Request, UPaintSplashLandingHandler* Handler)
 {
 	const UPaintSplashProfile* const Profile = Request.Profile;
+	PaintSplash::FSpawnInput Input;
+	Input.ImpactPoint = Request.ImpactPoint;
+	Input.ImpactNormal = Request.ImpactNormal;
+	Input.IncidentVelocity = Request.IncidentVelocity;
+	Input.BallRadius = Request.BallRadius;
+	Input.Seed = Request.Seed;
 	TArray<PaintSplash::FDroplet> Droplets;
 	if (Profile)
 	{
-		PaintSplash::FSpawnInput Input;
-		Input.ImpactPoint = Request.ImpactPoint;
-		Input.ImpactNormal = Request.ImpactNormal;
-		Input.IncidentVelocity = Request.IncidentVelocity;
-		Input.BallRadius = Request.BallRadius;
-		Input.Seed = Request.Seed;
 		PaintSplash::GenerateDroplets(*Profile, Input, Droplets);
 	}
 
@@ -207,6 +234,11 @@ void UPaintSplashSubsystem::ConfigureEffect(UNiagaraComponent& Effect, const FPa
 	{
 		Effect.SetVariableFloat(Entry.Name, Entry.Value);
 	}
+
+	const float GravityZ = GetWorld()->GetGravityZ();
+	const FVector BlobScale = PaintSplash::BlobScale(*Profile, Input, Droplets, GravityZ);
+	Effect.SetVariableVec3(PaintSplashFX::BlobScale, BlobScale);
+	Effect.SetVariableMaterial(PaintSplashFX::BlobMaterial, BuildBlobMaterial(Effect, *Profile, Request, Droplets, BlobScale, GravityZ));
 
 	Effect.SetVariableObject(PaintSplashFX::LandingHandler, Handler);
 	if (Handler)

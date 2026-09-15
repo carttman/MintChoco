@@ -3,6 +3,8 @@
 #include "AssetRegistry/ARFilter.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialInterface.h"
 #include "Modules/ModuleManager.h"
 
 #include "Game/TeamTypes.h"
@@ -104,6 +106,12 @@ bool FPaintProfileAssetTest::RunTest(const FString& Parameters)
 			TestNotNull(*FString::Printf(TEXT("%s: a splashing ball has an ImpactFX to fly its droplets"), *Name), Paintball->ImpactFX.Get());
 			TestTrue(*FString::Printf(TEXT("%s: Splash.MaxDropletSpeed is positive"), *Name), Splash->MaxDropletSpeed > 0.0f);
 			TestTrue(*FString::Printf(TEXT("%s: Splash.MaxLifetime is positive"), *Name), Splash->MaxLifetime > 0.0f);
+			if (const UMaterialInterface* const Blob = Splash->BlobMaterial)
+			{
+				// A mesh renderer silently drops an override material without this flag.
+				const UMaterial* const Master = Blob->GetMaterial();
+				TestTrue(*FString::Printf(TEXT("%s: Splash.BlobMaterial is usable with Niagara mesh particles"), *Name), Master && Master->GetUsageByFlag(MATUSAGE_NiagaraMeshParticles));
+			}
 		}
 	}
 

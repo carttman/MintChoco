@@ -6,7 +6,13 @@
 
 #include "PaintSplashSubsystem.generated.h"
 
+class UMaterialInstanceDynamic;
 class UNiagaraComponent;
+class UPaintSplashProfile;
+namespace PaintSplash
+{
+	struct FDroplet;
+}
 class UPaintSplashProfile;
 class UPaintSubsystem;
 
@@ -106,6 +112,10 @@ private:
 
 	UFUNCTION()
 	void HandleEffectFinished(UNiagaraComponent* Effect);
+
+	/** The blob's material for one splash: the profile's BlobMaterial with the droplets, the flight numbers and the team written in. Null without one. */
+	static UMaterialInstanceDynamic* BuildBlobMaterial(UNiagaraComponent& Effect, const UPaintSplashProfile& Profile, const FPaintSplashRequest& Request,
+		TArrayView<const PaintSplash::FDroplet> Droplets, const FVector& BlobScale, float GravityZ);
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UPaintSplashLandingHandler>> Handlers;

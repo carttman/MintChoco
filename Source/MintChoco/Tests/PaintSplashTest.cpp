@@ -310,6 +310,53 @@ bool FPaintSplashScoreTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+/** The blob's cube holds every droplet's drag-free flight and the crown, so nothing is clipped mid-air. */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPaintSplashBlobBoundsTest, "MintChoco.Paint.Splash.BlobBounds", SPLASH_TEST_FLAGS)
+
+bool FPaintSplashBlobBoundsTest::RunTest(const FString& Parameters)
+{
+	const UPaintSplashProfile* const Profile = MakeProfile();
+	constexpr float GravityZ = -980.0f;
+	constexpr int32 Steps = 20;
+	for (int32 Seed = 1; Seed <= 8; ++Seed)
+	{
+		const PaintSplash::FSpawnInput Input = FloorHit(Seed);
+		TArray<PaintSplash::FDroplet> Droplets;
+		PaintSplash::GenerateDroplets(*Profile, Input, Droplets);
+		const FVector Scale = PaintSplash::BlobScale(*Profile, Input, Droplets, GravityZ);
+		TestTrue(TEXT("the cube has volume"), Scale.X > 0.0 && Scale.Y > 0.0 && Scale.Z > 0.0);
+		const double HalfWidth = 50.0 * Scale.X;
+		const double Height = 100.0 * Scale.Z;
+		const double CrownReach = (Profile->CrownRadiusScale + Profile->CrownThicknessScale) * Input.BallRadius;
+		TestTrue(TEXT("the finished crown fits"), CrownReach <= HalfWidth + 1e-3);
+		for (const PaintSplash::FDroplet& Droplet : Droplets)
+		{
+			const FVector Offset = Droplet.Position - Input.ImpactPoint;
+			for (int32 Step = 0; Step <= Steps; ++Step)
+			{
+				const double Time = Profile->MaxLifetime * Step / Steps;
+				const FVector Point = Offset + Droplet.Velocity * Time + FVector(0.0, 0.0, 0.5 * GravityZ * Time * Time);
+				if (Point.Z < -Droplet.Radius)
+				{
+					break;
+				}
+				const double Across = FVector2D(Point.X, Point.Y).Size();
+				if (Across <= Profile->MaxTravel)
+				{
+					TestTrue(FString::Printf(TEXT("seed %d: the flight stays inside the cube across"), Seed), Across + Droplet.Radius <= HalfWidth + 1e-3);
+				}
+				TestTrue(FString::Printf(TEXT("seed %d: the flight stays under the cube's top"), Seed), Point.Z + Droplet.Radius <= Height + 1e-3);
+			}
+		}
+	}
+
+	// No droplets: the crown alone sizes the cube.
+	TArray<PaintSplash::FDroplet> None;
+	const FVector Bare = PaintSplash::BlobScale(*Profile, FloorHit(1), None, GravityZ);
+	TestTrue(TEXT("a crown-only cube is still a cube"), Bare.X > 0.0 && Bare.Z > 0.0);
+	return true;
+}
+
 /** Landing handlers are pooled: one per splash while it flies, free again when the effect is done. */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPaintSplashHandlerPoolTest, "MintChoco.Paint.Splash.HandlerPool", SPLASH_TEST_FLAGS)
 

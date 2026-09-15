@@ -158,6 +158,18 @@ Every item here cost real debugging time once. Read before any MCP write.
   `connect_expressions` by output name (`Color`, `Roughness`, …; slab F0 goes through
   `SubstrateMetalnessToDiffuseAlbedoF0`) → recompile → per-team MI `clear_parameters` +
   `set_scalar_parameter TeamId 0/1` → save.
+- `connect_to_output` cannot take `MP_PixelDepthOffset` (the Python enum has no entry 28:
+  "Cannot pythonize '28'"); every other root pin used so far works. `MakeMaterialAttributes` has no
+  Front Material pin in 5.8, so the material-attributes detour loses the Substrate tree. The PDO
+  wire is a developer drag (`M_PaintSplashBlob`: `Max` → Pixel Depth Offset, Apply, save).
+- A `VectorParameter`'s default output is `RGB`; a Custom input that reads `.w` needs
+  `from_output_name: "RGBA"`. `DynamicParameter` outputs are `Param1..Param4`, `RGB`, `RGBA`; the
+  first wire into a freshly created Custom node input can fail and succeed on a retry.
+- Custom node HLSL: `ResolvedView.ViewForward` is available (view-depth PDO = `dot(hit - pixel,
+  ViewForward)`); `WorldPosition` / `CameraPositionWS` / `ParticlePositionWS` arrive as plain
+  float3; `#define` macros with statement blocks compile fine. Build a material as one
+  `ProgrammaticToolset` script (see the scratchpad builders) and read the `[AssetLog]` lines
+  right after; an appended Custom input logs "missing input N" failures until it is wired.
 
 ## Verifying
 
@@ -226,6 +238,33 @@ Building a system from scratch (verified 2026-09-15 on `NS_PaintSplash`):
 - The toolset cannot create scratch-pad modules or custom HLSL modules. Anything that needs a
   data-interface call in particle code (writing a render target, reading a grid) is out of reach;
   stock modules, links and rvalue expressions are the whole vocabulary.
+- A mesh renderer through `AddRenderer` (`/Script/Niagara.NiagaraMeshRendererProperties`) +
+  `SetRendererData` with PascalCase JSON: `{"Meshes": [{"Mesh": {"refPath": ".../Cube.Cube"},
+  "PivotOffset": {...}, "PivotOffsetSpace": "Mesh"}], "bOverrideMaterials": true,
+  "OverrideMaterials": [{"UserParamBinding": {"Parameter": {"Name": "User.BlobMaterial"}}}],
+  "bCastShadows": false}`. `SetEmitterData` takes `{"bLocalSpace": true}` the same way. An
+  object-typed user variable: type `/Script/Engine.MaterialInterface`, default
+  `NiagaraExt_VariableValue_Object {objectClass, object: "None"}`. `Particles.Scale` (Vector) and
+  `Particles.DynamicMaterialParameter` (Vector4) take links and expressions without the LWC trap.
+- **A mesh renderer whose scale can be zero silently kills the whole system**: with
+  `Particles.Scale` linked to a user vector whose default was (0,0,0), every emitter in
+  `NS_PaintSplash` stopped simulating (no sprites, no Export callbacks, nothing in the log even at
+  Verbose), although C++ set the scale right after spawning. Give such user vectors a (1,1,1)
+  default. `PivotOffset` in `Mesh` space and the `User.*` material binding were innocent; the
+  pivot lifts the instance transform, so `ParticlePositionWS` in the material arrives lifted too
+  (undo it with the transformed local Z: `Origin - AxisRaw * 50`).
+- Disabling an emitter's only renderer (`Droplets` keeps its sprite renderer off for debugging)
+  raises "dynamic bounds mode but only using Emitter sourced renderers" on the emitter
+  properties: give it fixed bounds with `SetEmitterData` `{"CalculateBoundsMode": "Fixed",
+  "FixedBounds": {"min": {...}, "max": {...}, "isValid": true}}`; `GetStackIssues` confirms
+  (it returns at once while the asset is open in an editor tab).
+- `AddUserVariables` replaces a variable's default when the name already exists - handy for a
+  quick preview, but restore the value afterwards. A Custom-node code change did reach the
+  PIE-created MID of `M_PaintSplashBlob` without an editor restart.
+- `NiagaraToolset_Component.SetSystem` refuses the system already assigned; swap to another
+  system and back to restart an editor-world instance. `LogsToolset.SetVerbosity` raises a
+  category (`LogNiagara` Verbose) at runtime, and `EditorAppToolset.CaptureEditorImage` grabs the
+  whole editor window (`returnValue.data`) for the Niagara preview.
 - `GetSystemCompileState` / `GetStackIssues` block the game thread and time out after 120 s whenever
   the system has a pending compile and no asset editor is driving it (right after a load or a
   duplicate). `EditorAppToolset.OpenEditorForAsset` on the system runs the compile within seconds

@@ -5,6 +5,7 @@
 
 #include "PaintSplashProfile.generated.h"
 
+class UMaterialInterface;
 class UPaintBrushProfile;
 
 /**
@@ -131,4 +132,16 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Look", meta = (ClampMin = "0.01", ForceUnits = "s"))
 	float CrownLifetime = 0.35f;
+
+	/**
+	 * Draws the droplets and the crown as one ray-marched fluid on a cube around the contact
+	 * (M_PaintSplashBlob). ConfigureEffect builds a dynamic instance per splash and hands it the
+	 * droplets, the flight numbers and the TeamId (PaintSplashBlob names). Unset, only the marks show.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Look")
+	TObjectPtr<UMaterialInterface> BlobMaterial;
+
+	/** Slack the blob's cube keeps around the droplets' flight, cm. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Look", meta = (ClampMin = "0", ForceUnits = "cm"))
+	float BlobPadding = 4.0f;
 };

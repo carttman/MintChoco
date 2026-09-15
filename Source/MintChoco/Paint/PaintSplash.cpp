@@ -176,3 +176,43 @@ void PaintSplash::CrownAt(const UPaintSplashProfile& Profile, float BallRadius, 
 	OutTube = Profile.CrownThicknessScale * BallRadius * (1.0f - Alpha);
 	OutFade = 1.0f - Alpha;
 }
+
+FVector PaintSplash::BlobScale(const UPaintSplashProfile& Profile, const FSpawnInput& Input, TArrayView<const FDroplet> Droplets, float GravityZ)
+{
+	const FVector Normal = Input.ImpactNormal.GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
+	const FVector Gravity(0.0, 0.0, GravityZ * Profile.GravityScale);
+	const double GravityAlong = FVector::DotProduct(Gravity, Normal);
+
+	// The crown alone needs its full ring; the droplets add their flights, sampled along the parabola
+	// until they return to the plane or run out of lifetime, whichever comes first.
+	double Reach = (Profile.CrownRadiusScale + Profile.CrownThicknessScale) * Input.BallRadius;
+	double Height = 2.0 * Profile.CrownThicknessScale * Input.BallRadius;
+	constexpr int32 Samples = 8;
+	for (const FDroplet& Droplet : Droplets)
+	{
+		const FVector Offset = Droplet.Position - Input.ImpactPoint;
+		const double Rise = FVector::DotProduct(Droplet.Velocity, Normal);
+		const double Start = FVector::DotProduct(Offset, Normal);
+		double Flight = Profile.MaxLifetime;
+		if (GravityAlong < -UE_DOUBLE_KINDA_SMALL_NUMBER)
+		{
+			const double Discriminant = Rise * Rise - 2.0 * GravityAlong * Start;
+			if (Discriminant >= 0.0)
+			{
+				Flight = FMath::Min(Flight, (-Rise - FMath::Sqrt(Discriminant)) / GravityAlong);
+			}
+		}
+		for (int32 Sample = 0; Sample <= Samples; ++Sample)
+		{
+			const double Time = Flight * Sample / Samples;
+			const FVector Point = Offset + Droplet.Velocity * Time + Gravity * (0.5 * Time * Time);
+			const double Up = FVector::DotProduct(Point, Normal);
+			const double Across = (Point - Normal * Up).Size();
+			Reach = FMath::Max(Reach, Across + Droplet.Radius);
+			Height = FMath::Max(Height, Up + Droplet.Radius);
+		}
+	}
+	Reach = FMath::Min(Reach, static_cast<double>(Profile.MaxTravel)) + Profile.BlobPadding;
+	Height += Profile.BlobPadding;
+	return FVector(2.0 * Reach, 2.0 * Reach, Height) / 100.0;
+}
