@@ -5,6 +5,10 @@
 
 #include "PaintSettings.generated.h"
 
+class UStaticMesh;
+class UMaterialInterface;
+class UMaterialParameterCollection;
+
 /**
  * Project-wide pieces of the paint pipeline that every paintable surface shares: how the score
  * grid is cut, how densely paint is stored, how the atlas fades at edges, and what a splat on a
@@ -21,6 +25,20 @@ public:
 	UPaintSettings();
 
 	static const UPaintSettings& Get() { return *GetDefault<UPaintSettings>(); }
+
+	/** Exact persistent map package; blank leaves the existing scoring rules unchanged everywhere. */
+	UPROPERTY(Config, EditAnywhere, Category = "Playable Platforms")
+	FString PlatformCoverageMap;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Playable Platforms")
+	TSoftObjectPtr<UStaticMesh> PlatformRampSourceMesh;
+
+	/** Dedicated CPU-readable ramp copy. Only instances of this mesh in PlatformCoverageMap are auto-painted. */
+	UPROPERTY(Config, EditAnywhere, Category = "Playable Platforms")
+	TSoftObjectPtr<UStaticMesh> PlatformRampMesh;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Playable Platforms")
+	TSoftObjectPtr<UMaterialInterface> PlatformRampMaterial;
 
 	/**
 	 * World-space edge of one coverage cell. Cells are the gameplay layer's unit of ownership;
@@ -71,4 +89,12 @@ public:
 	 */
 	UPROPERTY(Config, EditAnywhere, Category = "Side Splats")
 	TSoftClassPtr<AActor> SideSplatEffectClass;
+
+	/**
+	 * Team colors and gloss (MPC_TeamLook). Every team-tinted material reads it through
+	 * MF_TeamLook and C++ through TeamLook::Get, so the two never disagree. Unset falls back
+	 * to the built-in table in TeamLook.cpp.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Team Look")
+	TSoftObjectPtr<UMaterialParameterCollection> TeamLookCollection;
 };

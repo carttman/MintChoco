@@ -6,8 +6,10 @@
 
 #include "SpeedStarAbility.generated.h"
 
+class ACharacter;
 class AGameGameState;
 class USpeedStarProfile;
+struct FHitResult;
 
 /**
  * 스피드 스타. 속도 자체는 이 클래스가 만지지 않는다. GE가 붙인 상태 태그를 슬롯
@@ -27,7 +29,15 @@ public:
 	UGA_SpeedStar();
 
 	/**
-	 * 자국 하나를 찍을 위치에서 바닥을 찾아 칠한다. 바닥이 없으면(공중) 아무것도 안 한다.
+	 * 자국을 찍을 바닥을 찾는다. At은 캡슐 중심이고, 발밑 MarkGroundReach까지 내려본다.
+	 *
+	 * 공중에 떠 있어도 지나간 자리 아래가 칠해지도록 그 거리만큼 멀리 본다. 사거리 밖이면 거짓이고,
+	 * 그때는 자국을 찍지 않는다(끝없이 아래를 칠하지는 않는다).
+	 */
+	static bool FindTrailGround(const ACharacter& Character, const USpeedStarProfile& Profile, const FVector& At, FHitResult& OutHit);
+
+	/**
+	 * 자국 하나를 찍을 위치에서 바닥을 찾아 칠한다. 사거리 안에 바닥이 없으면 아무것도 안 한다.
 	 * Direction은 달리는 수평 방향(단위 벡터): 자국이 그 반대쪽(발 뒤)으로 Stretch 배만큼 끌린다. 1이면 둥근 자국.
 	 */
 	static bool DropMark(AUnit& Unit, const USpeedStarProfile& Profile, const FVector& At, const FVector& Direction, float Stretch, uint8 PaintId, uint8 StarGen);

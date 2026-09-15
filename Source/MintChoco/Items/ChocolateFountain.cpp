@@ -6,6 +6,8 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Net/UnrealNetwork.h"
+#include "Particles/ParticleSystemComponent.h"
+#include "TimerManager.h"
 
 #include "Game/Unit.h"
 #include "MeshScale.h"
@@ -55,6 +57,16 @@ AChocolateFountain::AChocolateFountain()
 	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Mesh->SetGenerateOverlapEvents(false);
 	Mesh->SetCastShadow(false);
+
+	// 거품은 BeginPlay가 템플릿을 확인한 뒤 직접 켠다. 자동 활성이면 템플릿이 비어 있어도
+	// 켜지려 들고, 데디케이티드 서버에서까지 돈다.
+	BubbleFX = CreateDefaultSubobject<UParticleSystemComponent>(TEXT("BubbleFX"));
+	BubbleFX->SetupAttachment(Wall);
+	BubbleFX->bAutoActivate = false;
+	// 액터가 Lifetime에 사라질 때 같이 사라져야 한다. 스스로 정리하면 두 번 죽는다.
+	BubbleFX->bAutoDestroy = false;
+	BubbleFX->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BubbleFX->SetGenerateOverlapEvents(false);
 }
 
 void AChocolateFountain::Init(int32 InTeam, uint8 InPaintId, float InRadius, float InLifetime)
@@ -83,6 +95,8 @@ void AChocolateFountain::ApplyShape()
 	Wall->SetSphereRadius(Radius);
 	Sensor->SetSphereRadius(Radius + SensorMargin);
 	ScaleMeshToRadius(Mesh, Radius);
+	// 거품도 반경을 따라간다. 기준 반경에서 BubbleScale, 그 밖에서는 선형으로.
+	BubbleFX->SetRelativeScale3D(FVector(BubbleScale * Radius / FMath::Max(BubbleReferenceRadius, 1.0f)));
 }
 
 void AChocolateFountain::BeginPlay()
@@ -120,17 +134,75 @@ void AChocolateFountain::BeginPlay()
 	}
 	ApplyPassThrough();
 
+	StartBubbles();
+
 	BP_OnRaised(Team);
 	UE_LOG(LogMintChoco, Verbose, TEXT("%s: %s 팀의 초콜릿 분수, 반경 %.0f, %d명 갇힘."), *GetNameSafe(this), Teams::GetDisplayName(Team), Radius, PassThrough.Num());
 }
 
 void AChocolateFountain::EndPlay(const EEndPlayReason::Type Reason)
 {
+	if (UWorld* const World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(BubbleFadeTimer);
+	}
 	for (int32 Index = IgnoringUnits.Num() - 1; Index >= 0; --Index)
 	{
 		SetIgnoresWall(IgnoringUnits[Index], false);
 	}
 	Super::EndPlay(Reason);
+}
+
+void AChocolateFountain::StartBubbles()
+{
+	UWorld* const World = GetWorld();
+	if (!BubbleTemplate || !World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	BubbleFX->OnSystemFinished.AddDynamic(this, &AChocolateFountain::OnBubblesFinished);
+	BubbleFX->SetTemplate(BubbleTemplate);
+	BubbleFX->Activate(true);
+
+	// 남은 수명이 페이드 시간보다 길 때만 예약한다. 짧으면 스폰할 틈도 없이 꺼지는 꼴이라
+	// 그냥 끝까지 끓다가 액터와 함께 사라지는 편이 낫다.
+	if (BubbleFadeOut > 0.0f && Lifetime > BubbleFadeOut)
+	{
+		World->GetTimerManager().SetTimer(
+			BubbleFadeTimer, this, &AChocolateFountain::BeginBubbleFadeOut, Lifetime - BubbleFadeOut, false);
+	}
+}
+
+void AChocolateFountain::OnBubblesFinished(UParticleSystemComponent* FinishedComponent)
+{
+	// 페이드가 시작된 뒤의 완료는 마지막 거품이 꺼진 것이므로 그대로 둔다.
+	if (bBubblesFading)
+	{
+		return;
+	}
+	if (UWorld* const World = GetWorld())
+	{
+		World->GetTimerManager().SetTimerForNextTick(this, &AChocolateFountain::RestartBubbles);
+	}
+}
+
+void AChocolateFountain::RestartBubbles()
+{
+	if (!bBubblesFading && BubbleFX)
+	{
+		BubbleFX->Activate(true);
+	}
+}
+
+void AChocolateFountain::BeginBubbleFadeOut()
+{
+	// DeactivateImmediate가 아니다. 스폰만 멈추고 떠 있는 거품은 제 수명대로 옅어진다.
+	bBubblesFading = true;
+	if (BubbleFX)
+	{
+		BubbleFX->Deactivate();
+	}
 }
 
 void AChocolateFountain::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

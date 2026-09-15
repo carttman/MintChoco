@@ -47,6 +47,9 @@ public:
 	/** 던진 유닛. Instigator와 같지만 타입이 맞춰져 있다. */
 	AUnit* GetInstigatorUnit() const;
 
+	/** 충돌 구의 반지름(cm). 궤적 미리보기가 같은 굵기로 훑는다. CDO에서도 읽을 수 있다. */
+	float GetCollisionRadius() const;
+
 protected:
 	/** 서버 전용. 월드(벽, 바닥)에 막혔다. 기본은 터진다. */
 	virtual void HandleWorldHit(const FHitResult& Hit);

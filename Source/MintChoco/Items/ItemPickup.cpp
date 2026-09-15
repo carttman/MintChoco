@@ -10,6 +10,8 @@
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Game/Unit.h"
 #include "Items/ItemLabelWidget.h"
 #include "Items/ItemProfile.h"
@@ -17,9 +19,25 @@
 #include "Items/ItemSpawnPoint.h"
 #include "MintChoco.h"
 
+float FItemPickupMotion::BobOffset(float Time, float Amplitude, float FrequencyHz)
+{
+	if (Amplitude <= 0.0f || FrequencyHz <= 0.0f)
+	{
+		return 0.0f;
+	}
+	return Amplitude * FMath::Sin(2.0f * PI * FrequencyHz * Time);
+}
+
+float FItemPickupMotion::SpinYaw(float Time, float RateDegPerSecond)
+{
+	return FRotator::NormalizeAxis(RateDegPerSecond * Time);
+}
+
 AItemPickup::AItemPickup()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// 연출 틱. 활성 상태에서만 켠다(UpdateMotionEnabled).
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 	bReplicates = true;
 	SetReplicatingMovement(false);
 
@@ -91,15 +109,27 @@ void AItemPickup::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// BP가 정한 메시 자리를 기준으로 흔든다. 틱이 덮어쓰기 전에 읽어 둔다.
+	if (Mesh)
+	{
+		MeshBaseLocation = Mesh->GetRelativeLocation();
+		MeshBaseRotation = Mesh->GetRelativeRotation();
+	}
+
 	if (Label)
 	{
-		Label->SetWidgetClass(bShowLabel ? LabelWidgetClass : nullptr);
 		Label->SetRelativeLocation(FVector(0.0f, 0.0f, LabelHeight));
-		Label->InitWidget();
 	}
 
 	ApplyProfile();
 	ApplyState();
+
+	// 예고음은 태어날 때 한 번. ApplyState는 여러 번 불리므로(BeginPlay, OnRep) 거기 두지 않는다.
+	// 액터가 복제되어 머신마다 BeginPlay를 지나므로 각자 한 번씩이다.
+	if (State == EItemPickupState::Announced)
+	{
+		UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_Item_Announce, GetActorLocation());
+	}
 
 	if (HasAuthority())
 	{
@@ -112,6 +142,25 @@ void AItemPickup::BeginPlay()
 			Activate();
 		}
 	}
+}
+
+void AItemPickup::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+	if (!Mesh)
+	{
+		return;
+	}
+	MotionTime += DeltaTime;
+	Mesh->SetRelativeLocation(MeshBaseLocation + FVector(0.0f, 0.0f, FItemPickupMotion::BobOffset(MotionTime, BobAmplitude, BobFrequency)));
+	FRotator Rotation = MeshBaseRotation;
+	Rotation.Yaw = FRotator::NormalizeAxis(MeshBaseRotation.Yaw + FItemPickupMotion::SpinYaw(MotionTime, SpinRateDeg));
+	Mesh->SetRelativeRotation(Rotation);
+}
+
+void AItemPickup::UpdateMotionEnabled()
+{
+	SetActorTickEnabled(State == EItemPickupState::Active && !bCollected);
 }
 
 void AItemPickup::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -146,28 +195,53 @@ void AItemPickup::OnRep_State()
 
 void AItemPickup::OnRep_Collected()
 {
+	UpdateMotionEnabled();
 	if (bCollected)
 	{
 		SetActorHiddenInGame(true);
-		if (Profile && Profile->PickupSound)
-		{
-			UGameplayStatics::PlaySoundAtLocation(this, Profile->PickupSound, GetActorLocation());
-		}
+		// 서버는 OnTriggerBeginOverlap이 직접 부르고 클라이언트는 복제로 온다: 머신마다 한 번.
+		UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_Item_Pickup, GetActorLocation(), Profile ? Profile->Sounds.Get() : nullptr);
 	}
 }
 
 void AItemPickup::ApplyProfile()
 {
-	// 박스는 종류와 무관하게 같은 모양(BP_ItemPickup의 Egg 메시)이다. 종류는 이름표와 HUD로만 구분한다.
-	if (!Label || !Profile) return;
-
-    if (UItemLabelWidget* const Widget = Cast<UItemLabelWidget>(Label->GetUserWidgetObject()))
-	{
-		const FText Name = Profile->DisplayName.IsEmpty() ? FText::FromString(Profile->GetName()) : Profile->DisplayName;
-		Widget->SetLabel(Name);
-	}
+	// 박스는 종류와 무관하게 같은 모양(BP_ItemPickup의 Egg 메시)이다. 종류는 HUD로 구분하고 이름표는 디버그용이다.
 	// 프로필이 상태보다 늦게 복제돼도 이름표가 켜진다.
-	Label->SetVisibility(State == EItemPickupState::Active && bShowLabel);
+	UpdateLabel();
+}
+
+void AItemPickup::UpdateLabel()
+{
+	if (!Label) return;
+
+	const bool bVisible = IsLabelEnabled() && State == EItemPickupState::Active && Profile != nullptr;
+	if (bVisible && !Label->GetUserWidgetObject())
+	{
+		// 위젯은 처음 보일 때 만든다. 에디터 밖에서는 끝까지 만들지 않는다.
+		Label->SetWidgetClass(LabelWidgetClass);
+		Label->InitWidget();
+	}
+
+	if (Profile)
+	{
+		if (UItemLabelWidget* const Widget = Cast<UItemLabelWidget>(Label->GetUserWidgetObject()))
+		{
+			const FText Name = Profile->DisplayName.IsEmpty() ? FText::FromString(Profile->GetName()) : Profile->DisplayName;
+			Widget->SetLabel(Name);
+		}
+	}
+	Label->SetVisibility(bVisible);
+}
+
+bool AItemPickup::IsLabelEnabled() const
+{
+#if WITH_EDITOR
+	const UWorld* const World = GetWorld();
+	return bShowLabel && World && World->IsPlayInEditor();
+#else
+	return false;
+#endif
 }
 
 void AItemPickup::ApplyState()
@@ -182,14 +256,12 @@ void AItemPickup::ApplyState()
 	{
 		Laser->SetVisibility(!bActive);
 	}
-	if (Label)
-	{
-		Label->SetVisibility(bActive && bShowLabel && Profile != nullptr);
-	}
+	UpdateLabel();
 	if (Trigger)
 	{
 		Trigger->SetCollisionEnabled(bActive ? ECollisionEnabled::QueryOnly : ECollisionEnabled::NoCollision);
 	}
+	UpdateMotionEnabled();
 
 	BP_OnStateChanged(State);
 }

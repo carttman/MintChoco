@@ -70,6 +70,7 @@ bool FItemProfileAssetTest::RunTest(const FString& Parameters)
 		TestNotNull(*FString::Printf(TEXT("%s: AbilityClass"), *Name), Item->AbilityClass.Get());
 		TestTrue(*FString::Printf(TEXT("%s: Duration is not negative"), *Name), Item->Duration >= 0.0f);
 		TestFalse(*FString::Printf(TEXT("%s: DisplayName"), *Name), Item->DisplayName.IsEmpty());
+		TestTrue(*FString::Printf(TEXT("%s: ActivateFXScale is positive"), *Name), Item->ActivateFXScale > 0.0f);
 		// 즉발 아이템은 상태 태그가 없다. 지속형은 있어야 슬롯이 연출을 찾는다.
 		if (!Item->IsInstant())
 		{
@@ -95,7 +96,8 @@ bool FItemProfileAssetTest::RunTest(const FString& Parameters)
 		}
 		else if (const UHoneyBalloonProfile* const Honey = Cast<UHoneyBalloonProfile>(Item))
 		{
-			TestTrue(*FString::Printf(TEXT("%s: instant"), *Name), Honey->IsInstant());
+			// 폭격과 같다: 조준은 bAiming이 맡고, 던지는 순간 끝난다.
+			TestTrue(*FString::Printf(TEXT("%s: confirm is instant"), *Name), Honey->IsInstant());
 			TestNotNull(*FString::Printf(TEXT("%s: ProjectileClass"), *Name), Honey->ProjectileClass.Get());
 			TestNotNull(*FString::Printf(TEXT("%s: Burst paintball"), *Name), Honey->Burst.Paintball.Get());
 			TestTrue(*FString::Printf(TEXT("%s: Burst count"), *Name), Honey->Burst.Count > 0);
@@ -125,7 +127,9 @@ bool FItemProfileAssetTest::RunTest(const FString& Parameters)
 		}
 		else if (const UDessertBombardmentProfile* const Bombardment = Cast<UDessertBombardmentProfile>(Item))
 		{
-			TestTrue(*FString::Printf(TEXT("%s: instant"), *Name), Bombardment->IsInstant());
+			// 조준은 GE가 아니라 슬롯의 bAiming으로 돈다. 확정하면 그 자리에서 폭격이 나가고
+			// 끝이므로 Duration은 0이어야 한다 — 0이 아니면 발사 뒤 빈 효과가 그만큼 남는다.
+			TestTrue(*FString::Printf(TEXT("%s: confirm is instant"), *Name), Bombardment->IsInstant());
 			TestNotNull(*FString::Printf(TEXT("%s: Paintball"), *Name), Bombardment->Paintball.Get());
 			TestTrue(*FString::Printf(TEXT("%s: Columns is positive"), *Name), Bombardment->Columns > 0);
 		}

@@ -78,6 +78,38 @@ void UItemAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle, cons
 		return;
 	}
 
+	// 조준형: 아직 아무것도 일어나지 않는다. 슬롯도 그대로, GE도 없다. 좌클릭이 오면 ConfirmAim이
+	// 아래의 StartItem을 부르고, 우클릭이 오면 손대지 않은 채로 끝난다.
+	if (IsAimingItem())
+	{
+		bAiming = true;
+
+		// 조준은 태그를 남기지 않으므로 다른 머신에는 이 플래그가 유일한 신호다(조준 자세용).
+		if (UItemSlotComponent* const Slot = Unit->GetItemSlot())
+		{
+			Slot->SetAiming(true);
+		}
+
+		OnAimStarted(*Unit, *Profile);
+		return;
+	}
+
+	StartItem();
+}
+
+void UItemAbility::StartItem()
+{
+	AUnit* const Unit = GetUnit();
+	const UItemProfile* const Profile = GetItemProfile();
+	if (!Unit || !Profile)
+	{
+		return;
+	}
+
+	const FGameplayAbilitySpecHandle Handle = GetCurrentAbilitySpecHandle();
+	const FGameplayAbilityActorInfo* const ActorInfo = GetCurrentActorInfo();
+	const FGameplayAbilityActivationInfo ActivationInfo = GetCurrentActivationInfo();
+
 	// 슬롯은 서버가 비운다. 소유자의 HUD는 복제로 따라온다.
 	if (HasAuthority(&ActivationInfo))
 	{
@@ -92,6 +124,12 @@ void UItemAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle, cons
 	// 즉발: GE 없이 효과를 내고 바로 끝난다. 남는 것은 OnItemActivated가 스폰한 액터뿐이다.
 	if (Profile->IsInstant())
 	{
+		// 상태 태그가 없어 슬롯의 태그 경로가 돌지 않는다. 사용 연출은 여기서 직접 낸다.
+		if (UItemSlotComponent* const Slot = Unit->GetItemSlot())
+		{
+			Slot->PlayInstantUseFeedback(Profile);
+		}
+
 		bItemStarted = true;
 		OnItemActivated(*Unit, *Profile);
 		EndAbility(Handle, ActorInfo, ActivationInfo, /*bReplicateEndAbility=*/HasAuthority(&ActivationInfo), /*bWasCancelled=*/false);
@@ -175,9 +213,78 @@ void UItemAbility::FinishItem()
 	EndFromTimer();
 }
 
+bool UItemAbility::WantsInput(EItemAbilityInput Input) const
+{
+	return bAiming;
+}
+
+void UItemAbility::HandleInput(EItemAbilityInput Input)
+{
+	if (Input == EItemAbilityInput::Confirm)
+	{
+		ConfirmAim();
+	}
+	else
+	{
+		CancelAim();
+	}
+}
+
+void UItemAbility::ConfirmAim()
+{
+	if (!bAiming)
+	{
+		return;
+	}
+
+	EndAim(/*bConfirmed=*/true);
+	StartItem();
+}
+
+void UItemAbility::CancelAim()
+{
+	if (!bAiming)
+	{
+		return;
+	}
+
+	EndAim(/*bConfirmed=*/false);
+
+	// 슬롯은 손대지 않았으므로 아이템은 아직 거기 있다. 스펙도 "끝나면 제거" 표시가 서지
+	// 않았으므로(ConsumeHeldItem이 하는 일이다) 다시 쓸 수 있다.
+	EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(),
+		/*bReplicateEndAbility=*/IsAuthority(), /*bWasCancelled=*/true);
+}
+
+void UItemAbility::EndAim(bool bConfirmed)
+{
+	if (!bAiming)
+	{
+		return;
+	}
+	bAiming = false;
+
+	AUnit* const Unit = GetUnit();
+	const UItemProfile* const Profile = GetItemProfile();
+	if (!Unit || !Profile)
+	{
+		return;
+	}
+
+	if (UItemSlotComponent* const Slot = Unit->GetItemSlot())
+	{
+		Slot->SetAiming(false);
+	}
+
+	OnAimEnded(*Unit, *Profile, bConfirmed);
+}
+
 void UItemAbility::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo, bool bReplicateEndAbility, bool bWasCancelled)
 {
+	// 조준 중에 다른 이유로 끝났다(사망, 재발동, 스턴). 미리보기는 어떤 경로로 끝나든 치워져야 한다.
+	EndAim(/*bConfirmed=*/false);
+
 	if (bItemStarted)
 	{
 		bItemStarted = false;

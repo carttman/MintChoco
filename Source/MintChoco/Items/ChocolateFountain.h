@@ -8,6 +8,8 @@
 #include "ChocolateFountain.generated.h"
 
 class AUnit;
+class UParticleSystem;
+class UParticleSystemComponent;
 class USphereComponent;
 class UStaticMeshComponent;
 
@@ -47,6 +49,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "ChocolateFountain")
 	int32 GetTeam() const { return Team; }
 
+	/** 사용자의 페인트 id. 돔이 삼킬 대상인지 가릴 때 밖에서도 본다(히트스캔이 광선을 끊을지 정할 때). */
+	UFUNCTION(BlueprintPure, Category = "ChocolateFountain")
+	uint8 GetPaintId() const { return PaintId; }
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ChocolateFountain")
 	TObjectPtr<USphereComponent> Wall;
@@ -56,6 +62,37 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ChocolateFountain")
 	TObjectPtr<UStaticMeshComponent> Mesh;
+
+	/** 돔이 서 있는 동안 끓는 거품. 연출뿐이라 데디케이티드 서버에서는 아예 켜지 않는다. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "ChocolateFountain|FX")
+	TObjectPtr<UParticleSystemComponent> BubbleFX;
+
+	/** 거품 이펙트. 비어 있으면 거품 없이 돔만 선다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ChocolateFountain|FX")
+	TObjectPtr<UParticleSystem> BubbleTemplate;
+
+	/**
+	 * BubbleReferenceRadius에서의 균일 배율. 실제 배율은 반경에 비례해 늘어나므로 Radius를
+	 * 키우면 거품도 따라 커진다. 돔의 Mesh가 반경을 따라가는 것과 같은 규칙이다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ChocolateFountain|FX", meta = (ClampMin = "0.01"))
+	float BubbleScale = 1.0f;
+
+	/**
+	 * BubbleScale이 그대로 적용되는 반경. 즉 이펙트가 원래 크기로 덮는 반경이다.
+	 * P_ConsGround_Bubble의 고정 바운드가 ±500이라 500을 기본값으로 둔다. 거품이 돔보다
+	 * 크거나 작게 보이면 BubbleScale보다 이쪽을 먼저 맞추는 편이 뜻이 분명하다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ChocolateFountain|FX", meta = (ClampMin = "1", ForceUnits = "cm"))
+	float BubbleReferenceRadius = 500.0f;
+
+	/**
+	 * 돔이 사라지기 이 시간 전에 거품이 스폰을 멈춘다. 남아 있던 거품은 제 수명대로 옅어지다
+	 * 사라지므로 돔이 꺼지는 순간 뚝 끊기지 않는다. 0이면 끝까지 끓다가 한 번에 사라진다.
+	 * Lifetime보다 크면 처음부터 스폰하지 않는 꼴이라 Lifetime으로 잘린다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ChocolateFountain|FX", meta = (ClampMin = "0", ForceUnits = "s"))
+	float BubbleFadeOut = 1.0f;
 
 	UPROPERTY(VisibleInstanceOnly, Replicated, Category = "ChocolateFountain")
 	int32 Team = Teams::None;
@@ -97,6 +134,27 @@ private:
 	void ApplyShape();
 	void SetIgnoresWall(AUnit* Unit, bool bIgnore);
 	void ApplyPassThrough();
+
+	/** 거품을 켜고, 꺼야 할 시각에 맞춰 타이머를 건다. 그릴 머신에서만. */
+	void StartBubbles();
+
+	/**
+	 * 이펙트가 제 길이를 다 재생했을 때. Cascade 에셋 자체는 한 번만 도는 데다 EmitterLoops는
+	 * 모듈 안이라 코드에서 못 건드리므로, 끝날 때마다 다시 틀어 돔이 서 있는 동안을 채운다.
+	 */
+	UFUNCTION()
+	void OnBubblesFinished(UParticleSystemComponent* FinishedComponent);
+
+	/** 다음 프레임에 다시 튼다. 완료 브로드캐스트 안에서 재활성하지 않으려고 한 프레임 미룬다. */
+	void RestartBubbles();
+
+	/** 스폰만 멈춘다. 이미 떠 있는 거품은 제 수명을 마저 살고 사라진다. */
+	void BeginBubbleFadeOut();
+
+	FTimerHandle BubbleFadeTimer;
+
+	/** 페이드가 시작된 뒤로는 다시 틀지 않는다. */
+	bool bBubblesFading = false;
 
 	/** 서버 전용. 생성 순간 안에 있는 상대를 통과 목록에 넣고 밀어낸다. */
 	void AdmitTrappedOpponent(AUnit& Unit);

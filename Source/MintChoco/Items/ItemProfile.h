@@ -7,10 +7,55 @@
 
 #include "ItemProfile.generated.h"
 
+class UAnimSequenceBase;
 class UItemAbility;
 class UNiagaraSystem;
-class USoundBase;
+class USoundBank;
 class UTexture2D;
+
+/** 유지 자세가 몸의 어디를 덮는지. 클립을 어떻게 만들었는지에 맞춘다. */
+UENUM(BlueprintType)
+enum class EItemPoseBlend : uint8
+{
+	/** 전신을 덮는다. 이동이 멈춘 것처럼 보인다(설치, 시전, 제자리 회전). */
+	FullBody,
+	/** 상체만 덮고 하체는 로코모션이 그대로 돈다(조준, 들고 달리기). */
+	UpperBody,
+};
+
+/**
+ * 아이템을 쓰는 순간 한 번 재생되는 동작. 애님 그래프의 슬롯에 동적 몽타주로 올라가므로
+ * 몽타주 에셋을 따로 만들 필요가 없고, 애님 블루프린트에 상태를 추가할 필요도 없다.
+ *
+ * 두 캐릭터가 스켈레톤을 공유하므로 클립은 아이템당 하나면 된다(ActivateFX와 같은 이유로
+ * UnitData가 아니라 아이템 프로필에 있다).
+ */
+USTRUCT(BlueprintType)
+struct FItemUseAnimation
+{
+	GENERATED_BODY()
+
+	/** 비어 있으면 아무 동작도 하지 않는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimSequenceBase> Animation;
+
+	/**
+	 * 얹을 슬롯. 상체 슬롯이면 이동이 그대로 살아 있고, 전신 슬롯이면 전신을 덮는다.
+	 *
+	 * 애님 그래프에 같은 이름의 Slot 노드가 **있고 그 순간 실제로 평가되어야** 보인다. 노드가
+	 * 없을 때도, 노드가 Blend Poses by bool의 꺼진 가지에 있을 때도 엔진은 오류를 내지 않는다:
+	 * 몽타주는 정상적으로 돌고 받아 줄 노드만 없는 상태라 조용히 안 보인다. 아무것도 재생되지
+	 * 않는 Slot 노드는 입력을 그대로 흘려보내므로, 항상 평가되는 자리에 두어도 손해가 없다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+	FName Slot = TEXT("UpperBody");
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation", meta = (ClampMin = "0", ForceUnits = "s"))
+	float BlendIn = 0.1f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation", meta = (ClampMin = "0", ForceUnits = "s"))
+	float BlendOut = 0.15f;
+};
 
 /**
  * 아이템 한 종의 정의. 아이템 하나 = 에셋 하나이며 로직은 없다.
@@ -33,8 +78,20 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity")
 	TObjectPtr<UTexture2D> Icon;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pickup")
-	TObjectPtr<USoundBase> PickupSound;
+	/**
+	 * 이 아이템만 다르게 낼 소리(Audio.Item.* : Pickup, Activate, Expire). 바꿀 태그만 넣는다;
+	 * 없는 태그는 프로젝트 기본 뱅크(UGameAudioSettings::Bank)로 내려간다. 비어 있으면 전부 기본.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity")
+	TObjectPtr<USoundBank> Sounds;
+
+	/**
+	 * 발동음(Audio.Item.Activate)을 효과 시작 순간이 아니라 애니메이션의 노티파이
+	 * (UAnimNotify_ItemSound)에서 낸다. 켜면 슬롯은 발동음을 건너뛰므로, 사용 동작이나 자세
+	 * 시퀀스에 노티파이를 놓아야 소리가 난다. 특정 프레임(스피너의 회전 시작)에 맞출 때 쓴다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity")
+	bool bActivateSoundFromAnimation = false;
 
 	/**
 	 * 효과 지속시간(초). 같은 아이템을 효과 중에 다시 쓰면 이 값으로 다시 시작한다.
@@ -51,8 +108,32 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect")
 	TObjectPtr<UNiagaraSystem> ActivateFX;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect")
-	TObjectPtr<USoundBase> ActivateSound;
+	/** ActivateFX가 붙을 때의 균일 배율. 1이 에셋 원래 크기다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect", meta = (ClampMin = "0.01"))
+	float ActivateFXScale = 1.0f;
+
+	/** 아이템을 쓰는 순간 한 번. 모든 머신에서 같은 타이밍에 나온다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+	FItemUseAnimation UseAnimation;
+
+	/**
+	 * 효과가 도는 동안 유지하는 자세. 애님 블루프린트의 ItemPose 변수로 나가므로, 어떻게 섞을지는
+	 * 애님 그래프가 정한다(상체만 덮을지, 전신을 덮을지). 시퀀스 플레이어에 바인딩하고 Loop를 켠다.
+	 *
+	 * 조준형 아이템(꿀풍선)은 조준하는 동안 이 자세를 잡는다. 효과가 시작되면 상태 태그가
+	 * 이어받으므로 자세는 끊기지 않는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UAnimSequenceBase> PoseAnimation;
+
+	/**
+	 * 그 자세가 덮는 범위. 애님 블루프린트가 이 값으로 전신 가지와 상체 가지 중 하나를 고른다.
+	 *
+	 * 전신은 이동이 멈춘 것처럼 보이므로 설치·시전에 맞고, 상체는 하체가 계속 걸으므로 조준이나
+	 * 무언가를 들고 달리는 자세에 맞는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+	EItemPoseBlend PoseBlend = EItemPoseBlend::FullBody;
 
 	/** 효과 중 ASC에 붙는 상태 태그. 어빌리티 클래스가 정하며, 없으면 빈 태그. */
 	UFUNCTION(BlueprintPure, Category = "Item")

@@ -18,8 +18,8 @@ class UMaterialInterface;
  *
  * The decal projects along the actor's -Z (into the surface): its own X is the projection
  * axis, its Y follows the stamp's V axis and its Z the stamp's U axis, which is the frame the
- * decal material stamps in. A Blueprint child only picks the material, the team colors and the
- * timing.
+ * decal material stamps in. The team color and gloss come from MPC_TeamLook through the material's
+ * TeamId parameter; a Blueprint child only picks the material and the timing.
  */
 UCLASS(Blueprintable)
 class MINTCHOCO_API APaintSideSplat : public AActor, public IPaintSplatEffect
@@ -31,20 +31,18 @@ public:
 
 	virtual void OnPaintSplat_Implementation(const FPaintSplat& Splat) override;
 
+	UMaterialInterface* GetDecalMaterial() const { return DecalMaterial; }
+
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Paint")
 	TObjectPtr<UDecalComponent> Decal;
 
 	/**
-	 * Decal material with the parameters M_PaintSideSplat declares: SplatColor, Radius, Stretch,
-	 * Seed, ImpactU, BirthTime, Lifetime, DripLength.
+	 * Decal material with the parameters M_PaintSideSplat declares: TeamId, Radius, Stretch,
+	 * Seed, ImpactU, BirthTime, Lifetime, DripLength, Reach, DripDir.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Paint")
 	TObjectPtr<UMaterialInterface> DecalMaterial;
-
-	/** One color per paint id; an id past the end takes the last entry. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Paint")
-	TArray<FLinearColor> TeamColors;
 
 	/** Seconds from the contact until the decal is gone. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Paint", meta = (ClampMin = "0.1"))

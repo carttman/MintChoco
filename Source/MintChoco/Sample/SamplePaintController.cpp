@@ -3,6 +3,8 @@
 #include "AssetRegistry/ARFilter.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "Blueprint/GameViewportSubsystem.h"
+#include "Blueprint/WidgetTree.h"
 #include "DrawDebugHelpers.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -13,6 +15,7 @@
 #include "InputMappingContext.h"
 #include "Modules/ModuleManager.h"
 
+#include "Game/PaintBarWidget.h"
 #include "Paint/PaintBrushProfile.h"
 #include "Paint/PaintLog.h"
 #include "Paint/PaintSplat.h"
@@ -24,6 +27,26 @@
 #include "Weapons/PaintDeposit.h"
 #include "Weapons/PaintWeaponComponent.h"
 #include "Weapons/PaintWeaponProfile.h"
+
+namespace
+{
+	/** The paint bar a HUD widget already carries, so the sample does not stack a second one on top of it. */
+	UPaintBarWidget* FindPaintBar(UUserWidget* Hud)
+	{
+		UPaintBarWidget* Found = nullptr;
+		if (Hud && Hud->WidgetTree)
+		{
+			Hud->WidgetTree->ForEachWidget([&Found](UWidget* Widget)
+			{
+				if (!Found)
+				{
+					Found = Cast<UPaintBarWidget>(Widget);
+				}
+			});
+		}
+		return Found;
+	}
+}
 
 ASamplePaintController::ASamplePaintController()
 {
@@ -53,6 +76,24 @@ void ASamplePaintController::BeginPlay()
 	CoverageWidget = AddLocalWidget(CoverageWidgetClass);
 	ChargeWidget = AddLocalWidget(ChargeWidgetClass);
 	HUDWidget = AddLocalWidget(HUDWidgetClass);
+
+	PaintBarWidget = FindPaintBar(HUDWidget);
+	if (!PaintBarWidget)
+	{
+		PaintBarWidget = AddLocalWidget(PaintBarWidgetClass);
+		UGameViewportSubsystem* const Viewport = UGameViewportSubsystem::Get();
+		if (PaintBarWidget && Viewport)
+		{
+			// A viewport widget stretches over the whole screen by default; pin the bar to the top center at its own size.
+			// The slot is written in one go because SetDesiredSizeInViewport and SetPositionInViewport reset the anchors to (0, 0).
+			FGameViewportWidgetSlot Slot = Viewport->GetWidgetSlot(PaintBarWidget);
+			const FVector2D BarSize = PaintBarWidget->GetBarSize();
+			Slot.Anchors = FAnchors(0.5f, 0.0f);
+			Slot.Alignment = FVector2D(0.5f, 0.0f);
+			Slot.Offsets = FMargin(0.0f, PaintBarTopOffset, static_cast<float>(BarSize.X), static_cast<float>(BarSize.Y));
+			Viewport->SetWidgetSlot(PaintBarWidget, Slot);
+		}
+	}
 }
 
 void ASamplePaintController::SetupInputComponent()
@@ -124,6 +165,17 @@ void ASamplePaintController::SetPawn(APawn* InPawn)
 {
 	Super::SetPawn(InPawn);
 	BindWeapon(InPawn);
+}
+
+void ASamplePaintController::PlayerTick(float DeltaTime)
+{
+	Super::PlayerTick(DeltaTime);
+
+	// Pushed every tick so an edit made in PIE (details panel, ObjectTools) shows on the next frame.
+	if (PaintBarWidget)
+	{
+		PaintBarWidget->SetCoverageOverride(PaintBarPreview);
+	}
 }
 
 void ASamplePaintController::BindWeapon(APawn* InPawn)
@@ -446,6 +498,25 @@ void ASamplePaintController::PaintCoverage()
 	{
 		GEngine->AddOnScreenDebugMessage(/*Key=*/1, /*TimeToDisplay=*/8.0f, FColor::White, Summary);
 	}
+}
+
+void ASamplePaintController::PaintBarCoverage(float LeftPercent, float RightPercent)
+{
+	PaintBarPreview.bEnabled = LeftPercent >= 0.0f && RightPercent >= 0.0f;
+	PaintBarPreview.bLoopDemo = false;
+	PaintBarPreview.LeftCoverage = FMath::Clamp(LeftPercent / 100.0f, 0.0f, 1.0f);
+	PaintBarPreview.RightCoverage = FMath::Clamp(RightPercent / 100.0f, 0.0f, 1.0f);
+	ShowMessage(PaintBarPreview.bEnabled
+		? FString::Printf(TEXT("Paint bar: %.1f%% vs %.1f%%"), LeftPercent, RightPercent)
+		: FString(TEXT("Paint bar: world coverage")));
+}
+
+void ASamplePaintController::PaintBarDemo()
+{
+	const bool bStart = !(PaintBarPreview.bEnabled && PaintBarPreview.bLoopDemo);
+	PaintBarPreview.bEnabled = bStart;
+	PaintBarPreview.bLoopDemo = bStart;
+	ShowMessage(bStart ? TEXT("Paint bar: demo loop") : TEXT("Paint bar: world coverage"));
 }
 
 UPaintSubsystem* ASamplePaintController::GetPaintSubsystem() const

@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MintChoco - 샷건, 차지샷 3단계, 가속 상태, 아이템 8종의 이펙트와 페인트탄 실측 대조표.">
+  <style>
+    /* standalone reset — the Artifact host normally supplies these */
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    img { max-width: 100%; }
+    [hidden] { display: none !important; }
+  </style>
+<title>민트초코 탄환 &amp; 이펙트 대조표</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+  :root {
+    --paper:#F6F7F4; --card:#FFFFFF; --ink:#1B211E; --muted:#6B7570;
+    --mint:#0F8A66; --mint-soft:#E2F2EC;
+    --cocoa:#7A5140; --cocoa-soft:#F2E9E4;
+    --amber:#A8730D; --amber-soft:#F7EEDB;
+    --rose:#B04058; --rose-soft:#F8E7EA;
+    --line:#E1E5E0; --line-strong:#C9D0CA;
+    --shade:#EDF0EC;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#121110; --card:#1B1917; --ink:#EDE9E3; --muted:#989289;
+      --mint:#4FD3A6; --mint-soft:#14312A;
+      --cocoa:#C99E86; --cocoa-soft:#2C221D;
+      --amber:#E3AC48; --amber-soft:#2E2515;
+      --rose:#E5808F; --rose-soft:#32191E;
+      --line:#2B2724; --line-strong:#3D3733;
+      --shade:#211E1B;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#121110; --card:#1B1917; --ink:#EDE9E3; --muted:#989289;
+    --mint:#4FD3A6; --mint-soft:#14312A;
+    --cocoa:#C99E86; --cocoa-soft:#2C221D;
+    --amber:#E3AC48; --amber-soft:#2E2515;
+    --rose:#E5808F; --rose-soft:#32191E;
+    --line:#2B2724; --line-strong:#3D3733;
+    --shade:#211E1B;
+  }
+
+  body {
+    background: var(--paper); color: var(--ink);
+    font-family: "Source Sans 3", system-ui, -apple-system, "Malgun Gothic", sans-serif;
+    font-size: 15px; line-height: 1.55;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 24px 72px; display: flex; flex-direction: column; gap: 44px; }
+
+  h1, h2, h3, .eyebrow { font-family: Archivo, system-ui, "Malgun Gothic", sans-serif; text-wrap: balance; }
+  h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 6px; }
+  h2 { font-size: 21px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+  h3 { font-size: 15px; font-weight: 600; margin: 0; }
+  .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: var(--mint); }
+  .sub { color: var(--muted); margin: 0; max-width: 62ch; }
+  code, .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  header { border-bottom: 2px solid var(--ink); padding-bottom: 22px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 14px; font-size: 12.5px; color: var(--muted); }
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  section { display: flex; flex-direction: column; gap: 16px; }
+  .sechead { display: flex; flex-direction: column; gap: 5px; border-left: 3px solid var(--mint); padding-left: 13px; }
+
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th { font-family: Archivo, sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.07em;
+             text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line-strong); white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--shade); }
+  td.name { font-weight: 600; white-space: nowrap; }
+  .asset { color: var(--muted); }
+  .dash { color: var(--muted); }
+
+  .tag { display: inline-block; font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 700;
+         padding: 1px 7px; border-radius: 3px; white-space: nowrap; }
+  .t-fx { background: var(--mint-soft); color: var(--mint); }
+  .t-none { background: var(--shade); color: var(--muted); }
+  .t-ball { background: var(--cocoa-soft); color: var(--cocoa); }
+  .t-warn { background: var(--amber-soft); color: var(--amber); }
+  .t-stun { background: var(--rose-soft); color: var(--rose); }
+
+  /* charge ramp */
+  .ramp { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 22px 24px 18px; }
+  .track { position: relative; height: 34px; margin: 30px 0 8px; }
+  .bar { position: absolute; inset: 13px 0 auto 0; height: 8px; border-radius: 4px; background: var(--shade); }
+  .bar-dead { position: absolute; left: 0; width: 30%; top: 0; bottom: 0; border-radius: 4px 0 0 4px; background: repeating-linear-gradient(135deg, var(--line-strong) 0 4px, transparent 4px 8px); }
+  .bar-live { position: absolute; left: 30%; right: 0; top: 0; bottom: 0; border-radius: 0 4px 4px 0; background: linear-gradient(90deg, var(--mint) 0%, var(--amber) 100%); }
+  .pip { position: absolute; top: 4px; width: 2px; height: 26px; background: var(--ink); transform: translateX(-1px); }
+  .pip span { position: absolute; top: -22px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+              font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 700; }
+  .pip small { position: absolute; top: 30px; left: 50%; transform: translateX(-50%); white-space: nowrap;
+               font-size: 11.5px; color: var(--muted); }
+  .blobs { display: flex; align-items: flex-end; justify-content: space-around; gap: 12px; margin-top: 46px;
+           padding-top: 20px; border-top: 1px dashed var(--line); }
+  .blob { display: flex; flex-direction: column; align-items: center; gap: 7px; flex: 1; }
+  .disc { border-radius: 50%; background: var(--mint); opacity: 0.88; }
+  .blob b { font-family: "JetBrains Mono", monospace; font-size: 12px; }
+  .blob small { color: var(--muted); font-size: 11.5px; text-align: center; }
+
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px;
+           display: flex; flex-direction: column; gap: 10px; }
+  .panel.flag { border-left: 3px solid var(--amber); }
+  .kv { display: flex; flex-direction: column; gap: 5px; font-size: 13.5px; }
+  .kv div { display: flex; justify-content: space-between; gap: 14px; }
+  .kv dt, .kv .k { color: var(--muted); }
+  .kv .v { text-align: right; }
+
+  .note { font-size: 13px; color: var(--muted); }
+  .note b { color: var(--ink); }
+  ul.gaps { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 11px; }
+  ul.gaps li { display: grid; grid-template-columns: 24px 1fr; gap: 11px; font-size: 13.5px; }
+  ul.gaps .mark { font-family: "JetBrains Mono", monospace; font-weight: 700; color: var(--amber); }
+  footer { border-top: 1px solid var(--line); padding-top: 16px; font-size: 12.5px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">MintChoco · 데이터 에셋 실측</p>
+    <h1>탄환 &amp; 이펙트 대조표</h1>
+    <p class="sub">샷건과 차지샷의 세 단계, 가속 상태, 아이템 8종이 각각 어떤 Niagara 이펙트와 어떤 페인트탄을 쓰고 있는지 한자리에 모았습니다. 모든 값은 에디터에서 데이터 에셋을 직접 읽은 것입니다.</p>
+    <div class="meta">
+      <span><b>기준</b> 2026-09-12 · 브랜치 QA</span>
+      <span><b>출처</b> <code>DA_Weapon_*</code> · <code>DA_Item_*</code> · <code>DA_Paintball_*</code> · <code>DA_Scatter_*</code></span>
+    </div>
+  </header>
+
+  <!-- ============ 1. 발사 ============ -->
+  <section>
+    <div class="sechead">
+      <p class="eyebrow">01 · 발사</p>
+      <h2>샷건과 차지샷</h2>
+      <p class="sub">둘은 클래스부터 다릅니다. 샷건은 실제 탄을 9발 뿌리는 <code>PaintGunProfile</code>이고, 차지샷은 탄을 쓰지 않는 히트스캔 <code>PaintSniperProfile</code>입니다.</p>
+    </div>
+
+    <div class="cols">
+      <div class="panel">
+        <h3>샷건 <span class="tag t-ball">DA_Weapon_Shotgun</span></h3>
+        <div class="kv">
+          <div><span class="k">발사 방식</span><span class="v">Single · <span class="num">8</span>발/초</span></div>
+          <div><span class="k">탄환</span><span class="v mono">DA_Paintball_Light</span></div>
+          <div><span class="k">산탄</span><span class="v"><span class="num">9</span>발 · Cone · ±<span class="num">8</span>°</span></div>
+          <div><span class="k">탄속</span><span class="v num">2,200 cm/s</span></div>
+          <div><span class="k">잉크 소모</span><span class="v num">4 %</span></div>
+          <div><span class="k">발사 이펙트</span><span class="v"><span class="tag t-fx">NS_ShotgunFire</span> ×1</span></div>
+          <div><span class="k">충전 이펙트</span><span class="v"><span class="tag t-none">없음</span></span></div>
+        </div>
+        <p class="note"><code>DA_Weapon_Fan</code>도 같은 <b>NS_ShotgunFire</b>를 공유합니다 — 샷건 이펙트를 손대면 Fan도 같이 바뀝니다.</p>
+      </div>
+
+      <div class="panel">
+        <h3>차지샷 <span class="tag t-ball">DA_Weapon_Sniper</span></h3>
+        <div class="kv">
+          <div><span class="k">발사 방식</span><span class="v">Charged · 만충 <span class="num">3</span>초</span></div>
+          <div><span class="k">탄환</span><span class="v"><span class="tag t-none">없음 · 히트스캔</span></span></div>
+          <div><span class="k">사거리</span><span class="v num">10,000 cm (100 m)</span></div>
+          <div><span class="k">착탄 브러시</span><span class="v mono">DA_Brush_Paintball</span></div>
+          <div><span class="k">도포량</span><span class="v">착탄 <span class="num">2.0</span> · 궤적 <span class="num">0.5</span></span></div>
+          <div><span class="k">HitPower</span><span class="v"><span class="num">100</span> (전 무기 최대)</span></div>
+          <div><span class="k">잉크 소모</span><span class="v num">4 %</span></div>
+        </div>
+        <p class="note">궤적(Trail)은 <b>HitPower 0</b>이라 칠하기만 하고 맞히지 않습니다.</p>
+      </div>
+    </div>
+
+    <div class="ramp">
+      <h3>충전 구간 — 이펙트가 커지는 방식</h3>
+      <p class="note">누른 시간 ÷ <code>ChargeTime 3s</code> = 충전율. <code>MinChargeToFire</code>가 <b>0.3</b>이라, 30 % 미만에서 놓으면 <b>아무 일도 일어나지 않습니다</b>. 발사 이펙트 크기는 <code>MuzzleFXScale 6</code> × lerp(0.5 → 1.5)로 결정됩니다.</p>
+
+      <div class="track">
+        <div class="bar">
+          <div class="bar-dead"></div>
+          <div class="bar-live"></div>
+        </div>
+        <div class="pip" style="left:0%"><span>0.0</span><small>누름</small></div>
+        <div class="pip" style="left:30%"><span>0.3</span><small>발사 가능 최소</small></div>
+        <div class="pip" style="left:100%"><span>1.0</span><small>만충 · 3초</small></div>
+      </div>
+
+      <div class="blobs">
+        <div class="blob">
+          <div class="disc" style="width:26px;height:26px;background:var(--amber)"></div>
+          <b>NS_ChargeHold ×3</b>
+          <small>충전 중<br>총구에 루프 재생</small>
+        </div>
+        <div class="blob">
+          <div class="disc" style="width:30px;height:30px"></div>
+          <b>NS_ChargeFire ×3.0</b>
+          <small>부분 충전 발사 (0.3)<br>스턴 <span class="num">0.3</span>초</small>
+        </div>
+        <div class="blob">
+          <div class="disc" style="width:60px;height:60px"></div>
+          <b>NS_ChargeFire ×6.0</b>
+          <small>중간 충전 (0.65)<br>스턴 <span class="num">0.65</span>초</small>
+        </div>
+        <div class="blob">
+          <div class="disc" style="width:90px;height:90px"></div>
+          <b>NS_ChargeFire ×9.0</b>
+          <small>풀 충전 (1.0)<br>스턴 <span class="num">1.0</span>초</small>
+        </div>
+      </div>
+      <p class="note" style="margin-top:14px">원 크기는 실제 이펙트 배율 3 → 9 를 그대로 반영한 것입니다. 스턴 시간은 <code>Impact.StunDuration 1s</code> × 충전율이라 충전이 곧 경직 시간입니다.</p>
+    </div>
+  </section>
+
+  <!-- ============ 2. 가속 ============ -->
+  <section>
+    <div class="sechead">
+      <p class="eyebrow">02 · 상태</p>
+      <h2>가속 상태 (스피드 스타)</h2>
+    </div>
+    <div class="cols">
+      <div class="panel">
+        <div class="kv">
+          <div><span class="k">이동 속도</span><span class="v num">1,500 cm/s</span></div>
+          <div><span class="k">지속</span><span class="v"><span class="num">3</span>초 → 약 <span class="num">45</span> m</span></div>
+          <div><span class="k">자국 간격</span><span class="v"><span class="num">40</span> cm → 약 <span class="num">112</span>개</span></div>
+          <div><span class="k">자국 브러시</span><span class="v mono">DA_Brush_Rainbow</span></div>
+          <div><span class="k">늘림 배율</span><span class="v num">2.5 ×</span></div>
+          <div><span class="k">팀색 복귀</span><span class="v num">2 초</span></div>
+        </div>
+        <p class="note">속도 값은 프로필이 아니라 <code>UUnitMovementComponent::SpeedBoostSpeed</code>에 있습니다. 서버와 클라이언트가 같은 무브에서 같은 값을 써야 하기 때문입니다.</p>
+      </div>
+      <div class="panel flag">
+        <h3>가속 상태에는 Niagara 이펙트가 없습니다</h3>
+        <p class="note"><code>ActivateFX</code>가 비어 있고, <code>SpeedStarAbility</code>도 이펙트를 스폰하지 않습니다. 현재 가속의 시각 표현은 <b>바닥에 남는 무지개 자국뿐</b>입니다.</p>
+        <p class="note"><code>NS_DashTrail</code> 에셋이 프로젝트에 있지만 <b>어디에서도 참조되지 않습니다</b>. 최근 커밋 &ldquo;랜딩, 대쉬 이펙트 수정중&rdquo;의 작업 중 산출물로 보입니다 — 연결만 하면 바로 쓸 수 있습니다.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3. 아이템 ============ -->
+  <section>
+    <div class="sechead">
+      <p class="eyebrow">03 · 아이템 8종</p>
+      <h2>이펙트와 사용 탄환</h2>
+      <p class="sub">지속시간 <span class="num">0</span>은 즉발 아이템입니다 — GE도 상태 태그도 붙지 않고, 이어받은 액터가 나머지를 처리합니다.</p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>아이템</th><th>지속</th><th>발동 FX</th><th>고유 이펙트</th><th>사용 탄환</th><th>구성</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="name">스위트 스피너</td><td class="num">2 초</td>
+            <td><span class="tag t-none">없음</span></td>
+            <td class="dash">—</td>
+            <td><span class="tag t-ball">SweetSpiner</span></td>
+            <td class="asset"><code>DA_Weapon_SpinnerVolley</code> 1발 · 600 cm/s · 0.1발/초 · 잉크 0 %</td>
+          </tr>
+          <tr>
+            <td class="name">스피드 스타</td><td class="num">3 초</td>
+            <td><span class="tag t-none">없음</span></td>
+            <td>무지개 자국 <span class="asset">(브러시)</span></td>
+            <td class="dash">탄환 없음</td>
+            <td class="asset"><code>DA_Brush_Rainbow</code> · 40 cm 간격 · 도포량 2.0</td>
+          </tr>
+          <tr>
+            <td class="name">꿀풍선</td><td class="num">즉발</td>
+            <td><span class="tag t-none">없음</span></td>
+            <td><span class="tag t-fx">NS_HoneyBalloonBurst</span></td>
+            <td><span class="tag t-ball">HoneyBalloon</span></td>
+            <td class="asset">48발 · 400 cm/s → 반경 약 163 cm · 던지기 3,000 cm/s · <span class="tag t-stun">스턴 반경 300 cm</span></td>
+          </tr>
+          <tr>
+            <td class="name">초콜릿 분수</td><td class="num">즉발</td>
+            <td><span class="tag t-none">없음</span></td>
+            <td class="dash">— <span class="asset">(돔 <code>BP_ChocolateFountain</code>)</span></td>
+            <td><span class="tag t-ball">ChocolateFountain</span></td>
+            <td class="asset">3발 · 900 cm/s · 피치 0° 수평</td>
+          </tr>
+          <tr>
+            <td class="name">무한 탄환</td><td class="num">5 초</td>
+            <td><span class="tag t-none">없음</span></td>
+            <td>잉크병 재질 오버라이드 <span class="asset">(마지막 1초 점멸)</span></td>
+            <td class="dash">탄환 없음</td>
+            <td class="asset">지속시간이 전부 — 무기가 태그를 보고 비용을 0으로 침</td>
+          </tr>
+          <tr>
+            <td class="name">히어로 랜딩</td><td class="num">6 초</td>
+            <td><span class="tag t-none">없음</span> <span class="asset">(배율만 1.5)</span></td>
+            <td><span class="tag t-fx">Start</span> <span class="tag t-fx">Hover</span> <span class="tag t-fx">Land</span></td>
+            <td><span class="tag t-ball">HeroLanding</span></td>
+            <td class="asset">1발 · 445 cm/s · <code>NS_HeroLanding{Start,Hover,Land}</code></td>
+          </tr>
+          <tr>
+            <td class="name">꿀벌</td><td class="num">즉발</td>
+            <td><span class="tag t-none">없음</span></td>
+            <td><span class="tag t-fx">NS_BeeHit</span></td>
+            <td><span class="tag t-ball">Heavy</span></td>
+            <td class="asset">20발 · <span class="tag t-warn">100 cm/s</span> · 피치 20–70° · <code>BP_Bee</code></td>
+          </tr>
+          <tr>
+            <td class="name">디저트 폭격</td><td class="num">즉발</td>
+            <td><span class="tag t-none">없음</span></td>
+            <td><span class="tag t-fx">NS_DessertImpact</span> <span class="asset">(탄의 ImpactFX)</span></td>
+            <td><span class="tag t-ball">Bomb</span></td>
+            <td class="asset">3열 · 행 간격 150 cm · 최대 200행 · <code>RainClass</code> 비어 있음 → 기본 <code>APaintRain</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ 4. 탄환 도감 ============ -->
+  <section>
+    <div class="sechead">
+      <p class="eyebrow">04 · 탄환 도감</p>
+      <h2>페인트탄 10종</h2>
+      <p class="sub">중력 배율이 사거리를 좌우합니다: 45°로 던진 탄의 사거리 ≈ <code>v² / (980 × 중력)</code>. 같은 속도라도 중력 1인 탄은 중력 0.25인 탄의 <span class="num">1/4</span>밖에 날지 않습니다.</p>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>탄환</th><th>반경</th><th>중력</th><th>브러시</th><th>도포량</th><th>HitPower</th><th>스턴</th><th>ImpactFX</th><th>쓰는 곳</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="name">Light</td><td class="num">5 cm</td><td class="num">0.4</td><td class="mono asset">Paintball</td><td class="num">0.4</td><td class="num">3</td><td class="dash">—</td><td><span class="tag t-none">없음</span></td><td class="asset">Auto · <b>Shotgun</b></td></tr>
+          <tr><td class="name">Standard</td><td class="num">6 cm</td><td class="num">0.25</td><td class="mono asset">Paintball</td><td class="num">1.0</td><td class="num">10</td><td class="dash">—</td><td><span class="tag t-none">없음</span></td><td class="asset">SemiAuto</td></tr>
+          <tr><td class="name">Heavy</td><td class="num">12 cm</td><td class="num">1.0</td><td class="mono asset">Mop</td><td class="num">1.6</td><td class="num">25</td><td class="dash">—</td><td><span class="tag t-none">없음</span></td><td class="asset">Lob · <b>꿀벌</b> · BP_Balloon</td></tr>
+          <tr><td class="name">Heavy_Trail</td><td class="num">12 cm</td><td class="num">1.0</td><td class="mono asset">Mop</td><td class="num">1.6</td><td class="num">25</td><td class="dash">—</td><td><span class="tag t-none">없음</span></td><td class="asset">Fan <span class="asset">(비행 중 궤적 도포)</span></td></tr>
+          <tr><td class="name">HeavyStun</td><td class="num">12 cm</td><td class="num">1.0</td><td class="mono asset">Mop</td><td class="num">1.6</td><td class="num">25</td><td><span class="tag t-stun">0.25 s</span></td><td><span class="tag t-none">없음</span></td><td><span class="tag t-warn">참조 없음</span></td></tr>
+          <tr><td class="name">Bomb</td><td class="num">50 cm</td><td class="num">0.25</td><td class="mono asset">Bomb</td><td class="num">3.0</td><td class="num">10</td><td class="dash">—</td><td><span class="tag t-fx">DessertImpact</span></td><td class="asset">디저트 폭격</td></tr>
+          <tr><td class="name">HoneyBalloon</td><td class="num">25 cm</td><td class="num">1.0</td><td class="mono asset">HoneyBalloon</td><td class="num">3.0</td><td class="num">10</td><td class="dash">—</td><td><span class="tag t-none">없음</span></td><td class="asset">꿀풍선</td></tr>
+          <tr><td class="name">HeroLanding</td><td class="num">50 cm</td><td class="num">0.25</td><td class="mono asset">Bomb</td><td class="num">3.0</td><td class="num">10</td><td class="dash">—</td><td><span class="tag t-none">없음</span></td><td class="asset">히어로 랜딩</td></tr>
+          <tr><td class="name">ChocolateFountain</td><td class="num">25 cm</td><td class="num">1.0</td><td class="mono asset">ChocolateFountain</td><td class="num">3.0</td><td class="num">10</td><td class="dash">—</td><td><span class="tag t-none">없음</span></td><td class="asset">초콜릿 분수</td></tr>
+          <tr><td class="name">SweetSpiner</td><td class="num">15 cm</td><td class="num">1.0</td><td class="mono asset">HoneyBalloon</td><td class="num">3.0</td><td class="num">10</td><td class="dash">—</td><td><span class="tag t-none">없음</span></td><td class="asset">스위트 스피너</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">브러시 이름은 <code>DA_Brush_</code> 접두어를 생략했습니다. <b>SweetSpiner</b>만 <code>SuperArmorDuration</code>이 0이라, 맞은 쪽에 슈퍼아머가 붙지 않아 연속으로 맞힐 수 있습니다.</p>
+  </section>
+
+  <!-- ============ 5. 비어 있는 곳 ============ -->
+  <section>
+    <div class="sechead">
+      <p class="eyebrow">05 · 눈에 띄는 것</p>
+      <h2>확인해 볼 값</h2>
+      <p class="sub">표를 만들면서 드러난 것들입니다. 의도된 설정일 수도 있어 고치지 않고 적어만 둡니다.</p>
+    </div>
+    <div class="panel">
+      <ul class="gaps">
+        <li><span class="mark">1</span><div><b>아이템 8종 전부 <code>ActivateFX</code>가 비어 있습니다.</b> 아이템을 쓰는 순간 플레이어 발밑에서 터지는 공통 연출이 없습니다. 히어로 랜딩만 <code>ActivateFXScale 1.5</code>가 설정돼 있는데, 정작 재생할 이펙트가 없어 이 값은 아무 일도 하지 않습니다.</div></li>
+        <li><span class="mark">2</span><div><b><code>NS_DashTrail</code>이 고아 에셋입니다.</b> 프로젝트에 존재하지만 어떤 블루프린트·데이터 에셋·C++도 참조하지 않습니다. 가속 상태에 붙일 자리가 비어 있습니다.</div></li>
+        <li><span class="mark">3</span><div><b><code>DA_Paintball_HeavyStun</code>도 참조가 없습니다.</b> Heavy와 모든 값이 같고 <code>StunDuration 0.25초</code>만 다릅니다 — 스턴이 붙는 Lob 변형으로 만들어 두고 연결하지 않은 것으로 보입니다.</div></li>
+        <li><span class="mark">4</span><div><b>꿀벌의 파열 속도 100 cm/s는 유난히 낮습니다.</b> Heavy 탄의 중력이 1이라 사거리가 100² / 980 ≈ <span class="num">10</span> cm입니다. 벌이 닿은 자리에 그대로 떨어뜨리는 의도라면 맞지만, 다른 광역 아이템(꿀풍선 163 cm)과는 두 자릿수 차이입니다.</div></li>
+        <li><span class="mark">5</span><div><b>초콜릿 분수는 피치가 0–0°로 고정입니다.</b> 3발이 모두 수평으로 날아갑니다. 위쪽 반구로 퍼뜨리는 다른 파열과 달리 의도적으로 수평인지 확인이 필요합니다.</div></li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    에디터에서 <code>ObjectTools.get_properties</code>로 각 데이터 에셋을 직접 읽어 작성했습니다. 값을 바꾸면 이 표도 같이 갱신해야 합니다.
+  </footer>
+
+</div>
+</body>
+</html>

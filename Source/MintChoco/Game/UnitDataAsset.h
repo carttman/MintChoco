@@ -11,7 +11,8 @@ class UAnimMontage;
 class UAnimSequenceBase;
 class UNiagaraSystem;
 class USkeletalMesh;
-class USoundBase;
+class USoundBank;
+class UStaticMesh;
 
 /**
  * 유닛이 수행하는 동작.
@@ -30,6 +31,13 @@ enum class EUnitAction : uint8
 	Fire	UMETA(DisplayName = "페인트 발사"),
 	Hit		UMETA(DisplayName = "피격"),
 	Death	UMETA(DisplayName = "사망"),
+	/** 스피드 스타가 켜 둔 속도 부스트. 상태가 지속되는 동안 FX가 계속 붙어 있는다. */
+	SpeedBoost	UMETA(DisplayName = "속도 부스트"),
+	/**
+	 * 차지샷을 충전하는 동안 잡는 자세. 놓을 때까지 이어져야 하므로 **루프로** 재생되고,
+	 * 방아쇠를 놓는 순간 걷어낸다. 발사 동작(Fire)과 같은 슬롯에 두면 자연스럽게 이어진다.
+	 */
+	Charge		UMETA(DisplayName = "충전"),
 };
 
 /**
@@ -71,8 +79,12 @@ struct FUnitActionFeedback
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
 	FName FXSocket = NAME_None;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
-	TObjectPtr<USoundBase> Sound;
+	/**
+	 * 소켓 기준 오프셋(cm). 소켓과 함께 돌기 때문에 +X가 그 본이 보는 앞쪽이다. 발밑 이펙트를
+	 * 조금 앞으로 빼는 것처럼, 에셋을 건드리지 않고 위치만 미세 조정할 때 쓴다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback", meta = (ForceUnits = "cm"))
+	FVector FXOffset = FVector::ZeroVector;
 };
 
 /**
@@ -101,8 +113,33 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Visual")
 	TSubclassOf<UAnimInstance> AnimClass;
 
+	/** 손에 드는 총. 비어 있으면 이 캐릭터는 총을 들지 않는다. 메시의 Gun 소켓에 붙는다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Visual")
+	TObjectPtr<UStaticMesh> GunMesh;
+
+	/**
+	 * 대시(이동 가속) 동안 발밑에 보이는 보드. 비어 있으면 보드 없이 달린다. 메시의 Board 소켓에
+	 * 붙으므로 위치·회전은 소켓에서 맞춘다. 총과 같은 방식으로 평소에는 숨어 있다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Visual")
+	TObjectPtr<UStaticMesh> BoardMesh;
+
+	/**
+	 * 마지막 발사 후 총을 보여 두는 시간(초). 애님 블루프린트의 FireHoldTime과 같은
+	 * 값으로 두어야 상체 조준 자세와 총이 함께 사라진다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Visual", meta = (ClampMin = "0", ForceUnits = "s"))
+	float GunVisibleHoldTime = 0.5f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
 	TMap<EUnitAction, FUnitActionFeedback> ActionFeedback;
+
+	/**
+	 * 이 캐릭터만 다르게 낼 소리(Audio.Unit.* : 대시, 착지, 발소리, 스턴). 바꿀 태그만 넣는다;
+	 * 없는 태그는 프로젝트 기본 뱅크(UGameAudioSettings::Bank)로 내려간다. 비어 있으면 전부 기본.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
+	TObjectPtr<USoundBank> Sounds;
 
 	/** 등록되지 않은 동작이면 nullptr. 호출부는 이 함수만 쓰고 맵을 직접 뒤지지 않는다. */
 	const FUnitActionFeedback* FindFeedback(EUnitAction Action) const;

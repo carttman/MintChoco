@@ -7,6 +7,9 @@
 #include "PaintWeaponProfile.generated.h"
 
 class APawn;
+class UNiagaraSystem;
+class UPaintCrosshairWidget;
+class USoundBank;
 
 /** How long one trigger pull lasts. Part of the profile, so one asset says when it fires as well as what flies. */
 UENUM(BlueprintType)
@@ -24,13 +27,24 @@ enum class EPaintFireMode : uint8
 
 /**
  * One shot's worth of input, sampled by the weapon right before it fires its profile. On the
- * server the view comes from the owning client's RPC, the muzzle from the server's own pawn.
+ * server the view comes from the owning client's RPC and the muzzle is derived from that same
+ * view, so both machines fly the same shot.
  */
 struct FPaintFireContext
 {
 	UWorld* World = nullptr;
 	APawn* Instigator = nullptr;
+
+	/**
+	 * Where the shot's physics starts: on the sight line at the pawn's depth (PaintAim::FireOrigin),
+	 * facing along the view. Never the animated socket, which would bend every shot with the pose
+	 * and differ between the owner and the server.
+	 */
 	FTransform Muzzle;
+
+	/** Where the shot appears to start: the gun's muzzle socket. Unset means the same as Muzzle. */
+	TOptional<FVector> VisualMuzzle;
+
 	FVector ViewOrigin = FVector::ZeroVector;
 	FVector ViewDirection = FVector::ForwardVector;
 	uint8 PaintId = 0;
@@ -59,6 +73,10 @@ struct FPaintShot
 	UPROPERTY()
 	FVector_NetQuantize Muzzle = FVector::ZeroVector;
 
+	/** Where the ball's mesh, or a tracer, starts before it merges onto the path that leaves Muzzle. */
+	UPROPERTY()
+	FVector_NetQuantize VisualMuzzle = FVector::ZeroVector;
+
 	UPROPERTY()
 	FVector_NetQuantizeNormal Direction = FVector::ForwardVector;
 
@@ -71,6 +89,13 @@ struct FPaintShot
 
 	UPROPERTY()
 	uint8 PaintId = 0;
+
+	/**
+	 * How charged the shot was, in 1/255 steps; 255 for every non-charged mode. The machines that
+	 * only replay the shot have no press of their own to measure, so the muzzle FX scale rides here.
+	 */
+	UPROPERTY()
+	uint8 Charge = 255;
 };
 
 /**
@@ -107,6 +132,13 @@ public:
 	/** Replays the visible side of a shot another machine accepted. Nothing here may paint. */
 	virtual void PlayCosmetic(UWorld& World, APawn* Instigator, const FPaintShot& Shot) const {}
 
+	/**
+	 * Where the next shot from this context would land, for the crosshair's impact marker. Returns
+	 * false when the profile has nothing to predict: a hitscan or a stroke lands where the
+	 * crosshair rests. Never launches or paints; the context arrives without authority.
+	 */
+	virtual bool PredictImpact(const FPaintFireContext& Context, FVector& OutAimPoint, FVector& OutImpact) const { return false; }
+
 	/** Warns once, at equip time, about asset references that would otherwise fail as "nothing happens". */
 	virtual void LogUnsetReferences(const UObject* Owner) const {}
 
@@ -116,10 +148,23 @@ public:
 		return FireMode == EPaintFireMode::Automatic || FireMode == EPaintFireMode::Continuous;
 	}
 
-	/** Seconds between shots while held. 0 means Continuous, which fires once per tick. */
+	/**
+	 * Seconds between shots. 0 means Continuous, which fires once per tick.
+	 *
+	 * Single reads it too, as a floor between two pulls: without one a click-spammer fires as fast
+	 * as the mouse reports, which is what the shotgun did before this existed. Charged paces itself
+	 * with ChargeTime instead and has no interval.
+	 */
 	float GetShotInterval() const
 	{
-		return FireMode == EPaintFireMode::Automatic ? 1.0f / FMath::Max(ShotsPerSecond, 0.1f) : 0.0f;
+		switch (FireMode)
+		{
+		case EPaintFireMode::Automatic:
+		case EPaintFireMode::Single:
+			return 1.0f / FMath::Max(ShotsPerSecond, 0.1f);
+		default:
+			return 0.0f;
+		}
 	}
 
 	/**
@@ -150,6 +195,73 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cadence",
 		meta = (ClampMin = "0", ClampMax = "1", EditCondition = "FireMode == EPaintFireMode::Charged"))
 	float MinChargeToFire = 1.0f;
+
+	/**
+	 * Played once per accepted shot, on every machine that renders the shooter. Attached to the
+	 * owner's muzzle socket so it follows the gun; unset plays nothing.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX")
+	TObjectPtr<UNiagaraSystem> MuzzleFX;
+
+	/** Uniform scale MuzzleFX spawns at, before any charge scaling. 1 is the asset's own size. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX", meta = (ClampMin = "0.01"))
+	float MuzzleFXScale = 1.0f;
+
+	/**
+	 * In Charged, the multiplier at MinChargeToFire (X) and at a full charge (Y). A weapon that
+	 * only fires at a full charge can reach Y alone, so lowering MinChargeToFire is what makes the
+	 * range visible.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX",
+		meta = (EditCondition = "FireMode == EPaintFireMode::Charged"))
+	FVector2D MuzzleFXChargeScale = FVector2D(0.5, 1.5);
+
+	/**
+	 * Looping FX for a Charged weapon's hold: spawned at the muzzle when the trigger goes down and
+	 * switched off when the shot leaves or the hold is cancelled. Unset shows nothing.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX",
+		meta = (EditCondition = "FireMode == EPaintFireMode::Charged"))
+	TObjectPtr<UNiagaraSystem> ChargeFX;
+
+	/** Uniform scale ChargeFX spawns at. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX",
+		meta = (ClampMin = "0.01", EditCondition = "FireMode == EPaintFireMode::Charged"))
+	float ChargeFXScale = 1.0f;
+
+	/**
+	 * Sounds this weapon plays differently (Audio.Weapon.*: Fire, Empty, ChargeLoop, ChargeReady).
+	 * Holds only the tags to change; a tag missing here falls through to the project bank
+	 * (UGameAudioSettings::Bank). Unset means every sound comes from the project bank.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "FX")
+	TObjectPtr<USoundBank> Sounds;
+
+	/**
+	 * Uniform scale one shot's muzzle FX spawns at. Charged walks between the ends of
+	 * MuzzleFXChargeScale by how far past MinChargeToFire the shot got; every other mode is fixed.
+	 */
+	UFUNCTION(BlueprintPure, Category = "FX")
+	float GetMuzzleFXScale(float ChargeFraction) const
+	{
+		if (FireMode != EPaintFireMode::Charged)
+		{
+			return MuzzleFXScale;
+		}
+		const float Minimum = FMath::Clamp(MinChargeToFire, 0.0f, 1.0f);
+		// A full-charge-only weapon has one reachable size; dividing by zero here would be it too.
+		const float Alpha = Minimum >= 1.0f
+			? 1.0f
+			: FMath::Clamp((ChargeFraction - Minimum) / (1.0f - Minimum), 0.0f, 1.0f);
+		return MuzzleFXScale * FMath::Lerp(static_cast<float>(MuzzleFXChargeScale.X), static_cast<float>(MuzzleFXChargeScale.Y), Alpha);
+	}
+
+	/**
+	 * The crosshair drawn while this weapon is the one the player is using (the primary, or the
+	 * secondary while its trigger is held). Unset falls back to the HUD's default, the bracket.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "HUD")
+	TSubclassOf<UPaintCrosshairWidget> CrosshairClass;
 
 private:
 	/** Percent of a full ink tank one accepted shot spends. Read it through GetInkCostPerShot. */

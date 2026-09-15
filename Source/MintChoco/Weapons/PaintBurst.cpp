@@ -2,7 +2,12 @@
 
 #include "Engine/World.h"
 #include "Net/UnrealNetwork.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
+#include "Game/TeamLook.h"
 #include "Weapons/PaintballProfile.h"
 
 void PaintBurst::ComputeDirections(int32 Seed, int32 Count, float MinPitchDeg, float MaxPitchDeg, TArray<FVector>& OutDirections)
@@ -91,6 +96,8 @@ void APaintBurst::Burst()
 	}
 	bBurst = true;
 
+	SpawnBurstFX();
+
 	// 서버의 탄이 칠하고, 클라이언트의 탄은 같은 궤적의 그림이다.
 	const bool bCosmetic = !HasAuthority();
 
@@ -103,5 +110,31 @@ void APaintBurst::Burst()
 		const int32 BallSeed = static_cast<int32>(HashCombineFast(static_cast<uint32>(Params.Seed), static_cast<uint32>(Index)));
 		const FTransform SpawnTransform(Directions[Index].Rotation(), Origin);
 		Params.Paintball->Launch(*World, SpawnTransform, /*Instigator=*/nullptr, Directions[Index] * Params.Speed, Params.PaintId, BallSeed, bCosmetic);
+	}
+}
+
+void APaintBurst::SpawnBurstFX()
+{
+	UWorld* const World = GetWorld();
+	if (!World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	// 액터가 복제되어 머신마다 한 번 BeginPlay를 지나므로 소리도 여기서 한 번이다.
+	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_Burst, GetActorLocation());
+
+	if (!Params.BurstFX)
+	{
+		return;
+	}
+
+	// 회전을 주지 않는다. 이 연출은 밑동이 바닥에 놓인 물기둥이라 늘 월드 위로 솟아야 하는데,
+	// 히트 노멀을 따르게 하면 벽에서 터졌을 때 기둥이 벽을 뚫고 옆으로 눕는다. 꿀풍선은
+	// 벽에 맞아도 터지므로(AItemProjectile::HandleWorldHit) 그 경우가 실제로 나온다.
+	if (UNiagaraComponent* const FX = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			World, Params.BurstFX, GetActorLocation(), FRotator::ZeroRotator, FVector(Params.BurstFXScale)))
+	{
+		FX->SetVariableLinearColor(TeamLook::NiagaraTintParameter, TeamLook::GetColor(Params.PaintId, World));
 	}
 }

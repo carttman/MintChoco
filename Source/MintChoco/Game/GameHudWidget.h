@@ -7,6 +7,7 @@
 
 #include "GameHudWidget.generated.h"
 
+class UPaintCrosshairHostWidget;
 class UTextBlock;
 
 /** 화면 중앙에 무엇을 띄울지. 순수 계산의 결과라 테스트가 월드 없이 검사한다. */
@@ -61,6 +62,14 @@ protected:
 	UPROPERTY(meta = (BindWidgetOptional))
 	TObjectPtr<UTextBlock> Txt_Countdown;
 
+	/**
+	 * 크로스헤어 자리. 블루프린트에 이 이름의 UPaintCrosshairHostWidget 이 있으면 그것을 쓰고,
+	 * 없으면 NativeConstruct 가 루트 캔버스에 풀스크린으로 하나 붙인다(에디터 작업 없이 바로 뜬다).
+	 * 어떤 크로스헤어가 뜨는지는 호스트가 활성 무기의 프로필을 보고 정한다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UPaintCrosshairHostWidget> CrosshairHost;
+
 	/** 남은 시간이 이 값(초) 이하가 되면 타이머가 TimerWarningColor로 바뀐다. */
 	UPROPERTY(EditDefaultsOnly, Category = "Match HUD", meta = (ClampMin = "0", ForceUnits = "s"))
 	float TimerWarningSeconds = 30.0f;
@@ -100,6 +109,12 @@ private:
 	double PlayingEnteredAt = -1.0;
 	EMatchPhase LastPhase = EMatchPhase::WaitingForPlayers;
 	bool bSawPhase = false;
+
+	/** 마지막으로 중앙에 띄운 초. 숫자가 바뀌는 프레임에만 초읽기 소리가 난다. 0은 "숫자 아님". */
+	int32 LastCountdownNumber = 0;
+
+	/** 지난 프레임의 경고 여부. 0→1 에지에서 경고음과 막판 곡. */
+	bool bWasWarning = false;
 
 	void UpdateTimer(const AGameGameState& State, float Remaining);
 	void UpdateCenter(const AGameGameState& State, float Remaining, double Now);

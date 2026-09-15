@@ -1,18 +1,56 @@
 #include "Paint/PaintSubsystem.h"
 
 #include "Async/Async.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMeshActor.h"
+#include "EngineUtils.h"
+#include "Materials/MaterialInterface.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
 #include "Tasks/Task.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Paint/PaintAtlasBaker.h"
 #include "Paint/PaintLog.h"
+#include "Paint/PaintPlatformCoverage.h"
 #include "Paint/PaintSettings.h"
 #include "Paint/PaintSplatEffect.h"
 #include "Paint/PaintableComponent.h"
 #include "Screen/ScreenFadeSubsystem.h"
+
+void UPaintSubsystem::OnWorldBeginPlay(UWorld& InWorld)
+{
+	Super::OnWorldBeginPlay(InWorld);
+	if (!PaintPlatformCoverage::IsEnabled(&InWorld)) return;
+	const UPaintSettings& Settings = UPaintSettings::Get();
+	UStaticMesh* SourceRamp = Settings.PlatformRampSourceMesh.LoadSynchronous();
+	UStaticMesh* Ramp = Settings.PlatformRampMesh.LoadSynchronous();
+	UMaterialInterface* Material = Settings.PlatformRampMaterial.LoadSynchronous();
+	if (!Ramp || !Material)
+	{
+		UE_LOG(LogPaint, Error, TEXT("Playable platforms: test ramp mesh/material is missing."));
+		return;
+	}
+	int32 Count = 0;
+	for (TActorIterator<AStaticMeshActor> It(&InWorld); It; ++It)
+	{
+		UStaticMeshComponent* Mesh = It->GetStaticMeshComponent();
+		if (!Mesh || !Mesh->GetStaticMesh() || (Mesh->GetStaticMesh() != Ramp && Mesh->GetStaticMesh() != SourceRamp) ||
+			It->FindComponentByClass<UPaintableComponent>()) continue;
+		// Only the play-world instance changes; the shared mesh, material and other maps stay untouched.
+		Mesh->SetStaticMesh(Ramp);
+		Mesh->SetMaterial(0, Material);
+		UPaintableComponent* Paintable = NewObject<UPaintableComponent>(*It, NAME_None, RF_Transient);
+		It->AddInstanceComponent(Paintable);
+		Paintable->RegisterComponent();
+		++Count;
+	}
+	UE_LOG(LogPaint, Log, TEXT("Playable platforms: enabled only in %s; %d test ramps registered."),
+		*InWorld.GetOutermost()->GetName(), Count);
+}
 
 void UPaintSubsystem::RegisterPaintable(UPaintableComponent* Paintable)
 {
@@ -82,6 +120,10 @@ void UPaintSubsystem::ApplySplat(const FPaintSplat& Splat)
 		SpawnSideSplatEffect(Splat);
 		return;
 	}
+
+	// The one per-splat hook every machine passes (the server directly, a client from the replicated
+	// log). A volley lands many in one frame; the bank's concurrency limit keeps that to a few voices.
+	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_Splat, Splat.Location);
 
 	// A physics overlap rather than the registry: collision, not a bounding box, decides which
 	// surfaces the stamp can reach, and it is the same query a projectile hit came from.

@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Blueprint/UserWidget.h"
+#include "UI/MenuWidget.h"
 #include "CreateRoomPopupWidget.generated.h"
 
 /**
@@ -12,12 +12,15 @@
  * 버튼은 숨기지 않고 비활성화만 한다: 자리는 그대로 있고 회색으로 보인다.
  */
 UCLASS()
-class MINTCHOCO_API UCreateRoomPopupWidget : public UUserWidget
+class MINTCHOCO_API UCreateRoomPopupWidget : public UMenuWidget
 {
 	GENERATED_BODY()
 
 public:
 	virtual void NativeConstruct() override;
+
+	/** 만들기 버튼은 거절이면 오류음, 아니면 클릭음을 OnCreateRoom이 직접 낸다. */
+	virtual bool ShouldAutoSound(const UButton* Button) const override { return Button != Btn_Create.Get(); }
 
 	UPROPERTY()
 	TObjectPtr<class UOnlineSessionsSubsystem> OSS;

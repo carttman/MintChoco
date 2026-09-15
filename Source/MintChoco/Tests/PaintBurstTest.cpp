@@ -55,4 +55,17 @@ bool FPaintBurstDirectionsTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+/** 배율 기본값은 에셋 원래 크기다: 값을 넣지 않은 아이템의 연출이 갑자기 커지거나 사라지지 않는다. */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPaintBurstFXScaleDefaultTest,
+	"MintChoco.Weapons.Burst.FXScaleDefault",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FPaintBurstFXScaleDefaultTest::RunTest(const FString& Parameters)
+{
+	const FPaintBurstParams Params;
+	TestEqual(TEXT("BurstFXScale defaults to 1"), Params.BurstFXScale, 1.0f);
+	return true;
+}
+
 #endif

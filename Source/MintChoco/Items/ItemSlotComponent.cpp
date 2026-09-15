@@ -2,7 +2,13 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimSequenceBase.h"
+#include "Animation/Skeleton.h"
+#include "Components/AudioComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
@@ -10,8 +16,11 @@
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 #include "NiagaraComponent.h"
+#include "NiagaraComponentPool.h"
 #include "NiagaraFunctionLibrary.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Game/Unit.h"
 #include "Game/UnitMovementComponent.h"
 #include "Ink/InkBottleComponent.h"
@@ -48,6 +57,8 @@ void UItemSlotComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	TagEventHandle.Reset();
 
+	StopAllAnimationSounds(0.0f);
+
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -55,6 +66,13 @@ void UItemSlotComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 	DOREPLIFETIME(UItemSlotComponent, HeldItem);
+
+	// 소유자는 자기가 조준을 시작했다는 것을 이미 안다. 보내면 지연된 값이 예측을 되돌린다.
+	DOREPLIFETIME_CONDITION(UItemSlotComponent, bAiming, COND_SkipOwner);
+
+	// 자세 교체도 같다: 소유자는 자기 어빌리티가 구간을 굴리므로 이미 알고 있다.
+	DOREPLIFETIME_CONDITION(UItemSlotComponent, PoseOverride, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(UItemSlotComponent, PoseOverrideBlend, COND_SkipOwner);
 }
 
 UAbilitySystemComponent* UItemSlotComponent::GetAbilitySystem() const
@@ -143,11 +161,23 @@ void UItemSlotComponent::SetHeldItem(UItemProfile* Item)
 
 	// RepNotify는 값을 바꾼 권한 쪽에서는 불리지 않으므로 서버(리슨 호스트 포함)는 직접 알린다.
 	OnHeldItemChanged.Broadcast(HeldItem);
+
+	// 조준 중에 다른 아이템을 주웠다. 확정되면 엉뚱한 아이템이 소모되므로 조준을 물린다.
+	// 양쪽이 같은 복제 값을 보고 각자 물리므로 RPC가 필요 없다(아래 OnRep도 같은 이유다).
+	if (HeldItem)
+	{
+		CancelItemAim();
+	}
 }
 
 void UItemSlotComponent::OnRep_HeldItem()
 {
 	OnHeldItemChanged.Broadcast(HeldItem);
+
+	if (HeldItem)
+	{
+		CancelItemAim();
+	}
 }
 
 bool UItemSlotComponent::TryUseHeldItem()
@@ -163,6 +193,272 @@ bool UItemSlotComponent::TryUseHeldItem()
 	return AbilitySystem->TryActivateAbilityByClass(HeldItem->AbilityClass);
 }
 
+bool UItemSlotComponent::HandleFireInput()
+{
+	return RouteItemInput(EItemAbilityInput::Confirm);
+}
+
+bool UItemSlotComponent::HandleCancelInput()
+{
+	return RouteItemInput(EItemAbilityInput::Cancel);
+}
+
+bool UItemSlotComponent::RouteItemInput(EItemAbilityInput Input)
+{
+	UItemAbility* const Ability = FindItemAbilityForInput(Input);
+	if (!Ability)
+	{
+		return false;
+	}
+
+	// 조준의 확정·취소는 서버도 알아야 한다: 던지는 것도, 슬롯을 비우거나 그대로 두는 것도 서버다.
+	// 먼저 로컬에서 처리하고 알린다. 순서가 반대면 아래 호출이 이미 끝난 어빌리티를 만난다.
+	const bool bNeedsServer = Ability->IsAiming() && !HasAuthority();
+	Ability->HandleInput(Input);
+
+	if (bNeedsServer)
+	{
+		ServerItemInput(Input);
+	}
+	return true;
+}
+
+void UItemSlotComponent::ServerItemInput_Implementation(EItemAbilityInput Input)
+{
+	UItemAbility* const Ability = FindItemAbilityForInput(Input);
+
+	// 조준 중인 것만 받는다. 서버의 인스턴스가 아직 조준에 들어가지 않았다면(활성화 RPC와
+	// 경합) 아무 일도 하지 않는다: 아이템은 슬롯에 남으므로 다시 쓰면 된다.
+	if (Ability && Ability->IsAiming())
+	{
+		Ability->HandleInput(Input);
+	}
+}
+
+UItemAbility* UItemSlotComponent::FindItemAbilityForInput(EItemAbilityInput Input) const
+{
+	UAbilitySystemComponent* const AbilitySystem = GetAbilitySystem();
+	if (!AbilitySystem)
+	{
+		return nullptr;
+	}
+
+	FScopedAbilityListLock ListLock(*AbilitySystem);
+	for (const FGameplayAbilitySpec& Spec : AbilitySystem->GetActivatableAbilities())
+	{
+		for (UGameplayAbility* const Instance : Spec.GetAbilityInstances())
+		{
+			UItemAbility* const Item = Cast<UItemAbility>(Instance);
+			if (Item && Item->IsActive() && Item->WantsInput(Input))
+			{
+				return Item;
+			}
+		}
+	}
+	return nullptr;
+}
+
+const UItemProfile* UItemSlotComponent::GetPoseItem() const
+{
+	// 조준이 먼저다: 조준 중에는 아직 효과가 시작되지 않았고, 그 아이템은 아직 슬롯에 있다.
+	return (bAiming && HeldItem) ? ToRawPtr(HeldItem) : ToRawPtr(EffectItem);
+}
+
+const UItemProfile* UItemSlotComponent::GetAnimationItem() const
+{
+	const UItemProfile* const PoseItem = GetPoseItem();
+	return PoseItem ? PoseItem : ToRawPtr(LastFeedbackItem);
+}
+
+void UItemSlotComponent::PlayAnimationSound(const FGameplayTag& Tag, FName Socket)
+{
+	if (GetNetMode() == NM_DedicatedServer || !Tag.IsValid())
+	{
+		return;
+	}
+
+	// 같은 태그가 울리는 중이면 갈아 끼운다. 구간이 시작마다 다시 오므로(클립이 한 바퀴 더 돌 때)
+	// 그대로 두면 소리가 겹쳐 쌓인다.
+	StopAnimationSound(Tag, 0.0f);
+
+	const ACharacter* const Character = Cast<ACharacter>(GetOwner());
+	USceneComponent* const AttachTo = Character && Character->GetMesh() ? Character->GetMesh() : GetOwner()->GetRootComponent();
+	if (!AttachTo)
+	{
+		return;
+	}
+
+	const FName AttachSocket = Socket != NAME_None && AttachTo->DoesSocketExist(Socket) ? Socket : NAME_None;
+	const UItemProfile* const Item = GetAnimationItem();
+	if (UAudioComponent* const Sound = UGameAudioSubsystem::PlayAttached(Tag, AttachTo, AttachSocket, Item ? Item->Sounds.Get() : nullptr))
+	{
+		AnimationSounds.Add(Tag, Sound);
+	}
+}
+
+void UItemSlotComponent::StopAnimationSound(const FGameplayTag& Tag, float FadeOut)
+{
+	TObjectPtr<UAudioComponent> Sound;
+	if (AnimationSounds.RemoveAndCopyValue(Tag, Sound) && Sound)
+	{
+		if (FadeOut > 0.0f)
+		{
+			Sound->FadeOut(FadeOut, 0.0f);
+		}
+		else
+		{
+			Sound->Stop();
+		}
+	}
+}
+
+void UItemSlotComponent::StopAllAnimationSounds(float FadeOut)
+{
+	TArray<FGameplayTag> Tags;
+	AnimationSounds.GenerateKeyArray(Tags);
+	for (const FGameplayTag& Tag : Tags)
+	{
+		StopAnimationSound(Tag, FadeOut);
+	}
+}
+
+UAnimSequenceBase* UItemSlotComponent::GetItemPose() const
+{
+	if (PoseOverride)
+	{
+		return PoseOverride;
+	}
+	const UItemProfile* const Item = GetPoseItem();
+	return Item ? Item->PoseAnimation : nullptr;
+}
+
+EItemPoseBlend UItemSlotComponent::GetItemPoseBlend() const
+{
+	if (PoseOverride)
+	{
+		return PoseOverrideBlend;
+	}
+	const UItemProfile* const Item = GetPoseItem();
+	return Item ? Item->PoseBlend : EItemPoseBlend::FullBody;
+}
+
+void UItemSlotComponent::SetItemPoseOverride(UAnimSequenceBase* Animation, EItemPoseBlend Blend)
+{
+	PoseOverride = Animation;
+	PoseOverrideBlend = Blend;
+}
+
+void UItemSlotComponent::SetAiming(bool bNewAiming)
+{
+	bAiming = bNewAiming;
+}
+
+void UItemSlotComponent::PlayInstantUseFeedback(const UItemProfile* Item)
+{
+	if (!Item)
+	{
+		return;
+	}
+
+	// 서버(리슨 호스트 포함)와 예측 발동한 소유 클라이언트가 여기를 지난다. 둘 다 지금 재생하고,
+	// 서버만 나머지에게 보낸다.
+	PlayUseFeedback(*Item);
+
+	if (HasAuthority())
+	{
+		MulticastItemUsed(Item);
+	}
+}
+
+void UItemSlotComponent::MulticastItemUsed_Implementation(const UItemProfile* Item)
+{
+	const APawn* const Pawn = Cast<APawn>(GetOwner());
+	if (!Item || HasAuthority() || (Pawn && Pawn->IsLocallyControlled()))
+	{
+		// 서버는 보내는 자리에서, 소유자는 예측 발동 때 이미 재생했다. 남은 구경꾼만 여기까지 온다.
+		return;
+	}
+	PlayUseFeedback(*Item);
+}
+
+void UItemSlotComponent::PlayUseFeedback(const UItemProfile& Item)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	LastFeedbackItem = &Item;
+	PlayUseAnimation(Item);
+
+	const ACharacter* const Character = Cast<ACharacter>(GetOwner());
+	USceneComponent* const AttachTo = Character && Character->GetMesh() ? Character->GetMesh() : GetOwner()->GetRootComponent();
+
+	// 발동음을 애니메이션 노티파이에 맡긴 아이템은 여기서 내지 않는다(UAnimNotify_ItemSound).
+	if (!Item.bActivateSoundFromAnimation)
+	{
+		UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Item_Activate, AttachTo, NAME_None, Item.Sounds);
+	}
+
+	// 즉발 아이템에는 끌 시점이 없으므로 스스로 정리되게 둔다(지속형은 태그가 내려갈 때 끈다).
+	if (Item.ActivateFX)
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAttached(
+			Item.ActivateFX, AttachTo, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator,
+			EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true);
+	}
+}
+
+void UItemSlotComponent::PlayUseAnimation(const UItemProfile& Item)
+{
+	UAnimSequenceBase* const Animation = Item.UseAnimation.Animation;
+	const ACharacter* const Character = Cast<ACharacter>(GetOwner());
+	USkeletalMeshComponent* const Mesh = Character ? Character->GetMesh() : nullptr;
+	UAnimInstance* const AnimInstance = Mesh ? Mesh->GetAnimInstance() : nullptr;
+	if (!Animation || !AnimInstance)
+	{
+		return;
+	}
+
+	// 스켈레톤이 다른 클립은 재생 자체는 되지만 포즈가 적용되지 않아, 아무 일도 일어나지 않은
+	// 것처럼 보인다. 프로필의 칸에는 스켈레톤 필터가 없어서 다른 캐릭터의 클립을 고르기 쉽다.
+	const USkeletalMesh* const MeshAsset = Mesh->GetSkeletalMeshAsset();
+	const USkeleton* const MeshSkeleton = MeshAsset ? MeshAsset->GetSkeleton() : nullptr;
+	if (MeshSkeleton && Animation->GetSkeleton() != MeshSkeleton)
+	{
+		UE_LOG(LogMintChoco, Warning,
+			TEXT("%s: %s의 사용 동작 %s는 스켈레톤이 다릅니다(%s ≠ %s). 재생해도 보이지 않습니다."),
+			*GetNameSafe(GetOwner()), *Item.GetName(), *Animation->GetName(),
+			*GetNameSafe(Animation->GetSkeleton()), *GetNameSafe(MeshSkeleton));
+		return;
+	}
+
+	// 몽타주 에셋 없이 시퀀스를 슬롯에 얹는다(AUnit::PlayFeedbackMontage와 같은 경로다).
+	const UAnimMontage* const Played = AnimInstance->PlaySlotAnimationAsDynamicMontage(
+		Animation, Item.UseAnimation.Slot, Item.UseAnimation.BlendIn, Item.UseAnimation.BlendOut);
+
+	if (!Played)
+	{
+		UE_LOG(LogMintChoco, Warning, TEXT("%s: %s의 사용 동작 %s를 재생하지 못했습니다."),
+			*GetNameSafe(GetOwner()), *Item.GetName(), *Animation->GetName());
+		return;
+	}
+
+	// 여기까지 왔는데 화면에 아무것도 없다면 애님 그래프에 그 이름의 Slot 노드가 없는 것이다.
+	// 엔진은 그 경우를 실패로 치지 않는다: 몽타주는 정상적으로 돌고 소비하는 노드만 없다.
+	UE_LOG(LogMintChoco, Verbose, TEXT("%s: %s의 사용 동작 %s를 %s 슬롯에 올렸습니다."),
+		*GetNameSafe(GetOwner()), *Item.GetName(), *Animation->GetName(), *Item.UseAnimation.Slot.ToString());
+}
+
+void UItemSlotComponent::CancelItemAim()
+{
+	UItemAbility* const Ability = FindItemAbilityForInput(EItemAbilityInput::Cancel);
+	if (Ability && Ability->IsAiming())
+	{
+		Ability->HandleInput(EItemAbilityInput::Cancel);
+	}
+}
+
 bool UItemSlotComponent::IsSpeedBoostAuthorized() const
 {
 	if (HeldItem && HeldItem->GrantsSpeedBoost())
@@ -176,8 +472,16 @@ bool UItemSlotComponent::IsSpeedBoostAuthorized() const
 
 void UItemSlotComponent::HandleTagChanged(const FGameplayTag Tag, int32 NewCount)
 {
+	// 스턴에 걸리면 조준이 끊긴다(스턴 중에는 아이템을 쓸 수 없으므로 조준만 걸려 있는 것도
+	// 이상하다). 아이템은 슬롯에 남는다. 태그는 모든 머신에 복제되므로 각자 물린다.
+	if (NewCount > 0 && Tag == ItemTags::State_Status_Stunned)
+	{
+		CancelItemAim();
+	}
+
 	// 부모 태그(State.Item, State)의 변화도 같이 오므로 아이템에 해당하는 잎 태그만 받는다.
-	const UItemProfile* const Item = UItemSettings::Get().FindItemByStateTag(Tag);
+	// 프로필을 그대로 붙잡아 두므로(EffectItem) const로 받지 않는다.
+	UItemProfile* const Item = UItemSettings::Get().FindItemByStateTag(Tag);
 	if (!Item)
 	{
 		return;
@@ -193,13 +497,26 @@ void UItemSlotComponent::HandleTagChanged(const FGameplayTag Tag, int32 NewCount
 		SetInkLook(bActive, Item->Duration);
 	}
 
+	// 유지 자세는 태그를 따라간다. 태그는 모든 머신에 복제되므로 자세도 어디서나 같다.
 	if (bActive)
 	{
+		EffectItem = Item;
 		StartEffectFeedback(*Item, Tag);
 	}
 	else
 	{
+		if (EffectItem == Item)
+		{
+			EffectItem = nullptr;
+		}
 		StopEffectFeedback(Tag);
+		// 만료음. 태그가 내려가는 것을 모든 머신이 보므로 각자 낸다. 프로필은 위에서 태그로 찾은 것이다.
+		if (GetNetMode() != NM_DedicatedServer)
+		{
+			const ACharacter* const Character = Cast<ACharacter>(GetOwner());
+			USceneComponent* const AttachTo = Character && Character->GetMesh() ? Character->GetMesh() : GetOwner()->GetRootComponent();
+			UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Item_Expire, AttachTo, NAME_None, Item->Sounds);
+		}
 	}
 }
 
@@ -226,12 +543,16 @@ void UItemSlotComponent::StartEffectFeedback(const UItemProfile& Item, const FGa
 		return;
 	}
 
+	LastFeedbackItem = &Item;
+	PlayUseAnimation(Item);
+
 	const ACharacter* const Character = Cast<ACharacter>(GetOwner());
 	USceneComponent* const AttachTo = Character && Character->GetMesh() ? Character->GetMesh() : GetOwner()->GetRootComponent();
 
-	if (Item.ActivateSound)
+	// 발동음을 애니메이션 노티파이에 맡긴 아이템은 여기서 내지 않는다(UAnimNotify_ItemSound).
+	if (!Item.bActivateSoundFromAnimation)
 	{
-		UGameplayStatics::SpawnSoundAttached(Item.ActivateSound, AttachTo);
+		UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Item_Activate, AttachTo, NAME_None, Item.Sounds);
 	}
 
 	// 갱신(같은 아이템 재사용)은 태그 수가 1에서 1로 머물러 여기까지 오지 않는다. 그래도
@@ -240,7 +561,8 @@ void UItemSlotComponent::StartEffectFeedback(const UItemProfile& Item, const FGa
 	{
 		UNiagaraComponent* const FX = UNiagaraFunctionLibrary::SpawnSystemAttached(
 			Item.ActivateFX, AttachTo, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator,
-			EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true);
+			FVector(Item.ActivateFXScale), EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true,
+			ENCPoolMethod::None);
 		if (FX)
 		{
 			EffectComponents.Add(Tag, FX);
@@ -255,6 +577,10 @@ void UItemSlotComponent::StopEffectFeedback(const FGameplayTag& Tag)
 	{
 		FX->Deactivate();
 	}
+
+	// 효과가 끝나면(스턴으로 끊긴 경우 포함) 자세 클립도 내려가므로 구간 소리는 노티파이가 끄지만,
+	// 블렌드 아웃 중에 다른 자세로 덮이는 등 NotifyEnd가 늦거나 빠지는 경우를 여기서 막는다.
+	StopAllAnimationSounds(0.1f);
 }
 
 void UItemSlotComponent::MulticastSpinnerShot_Implementation(const UPaintGunProfile* Volley, const FPaintShot& Shot)
@@ -266,6 +592,55 @@ void UItemSlotComponent::MulticastSpinnerShot_Implementation(const UPaintGunProf
 		return;
 	}
 	Volley->PlayCosmetic(*GetWorld(), Cast<APawn>(GetOwner()), Shot);
+}
+
+void UItemSlotComponent::MulticastPlayFXAt_Implementation(UNiagaraSystem* System, FVector_NetQuantize Location, float Scale)
+{
+	// 리슨 호스트도 그려야 하므로 HasAuthority로 거르지 않는다. 아무도 예측하지 않는 연출이라
+	// 어느 머신에서도 두 번 나올 일이 없다.
+	UWorld* const World = GetWorld();
+	if (!System || !World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+		World, System, Location, FRotator::ZeroRotator, FVector(Scale));
+}
+
+void UItemSlotComponent::MulticastPlayAttachedFX_Implementation(UNiagaraSystem* System, float Scale, float ZOffset, float Duration)
+{
+	UWorld* const World = GetWorld();
+	AActor* const Owner = GetOwner();
+	USceneComponent* const AttachTo = Owner ? Owner->GetRootComponent() : nullptr;
+	if (!System || !World || !AttachTo || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	// 캡슐 루트에 붙인다: 메시는 애니메이션으로 흔들리지만 캡슐은 폰의 위치 그 자체다.
+	UNiagaraComponent* const FX = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		System, AttachTo, NAME_None, FVector(0.0f, 0.0f, ZOffset), FRotator::ZeroRotator,
+		FVector(Scale), EAttachLocation::KeepRelativeOffset, /*bAutoDestroy=*/true, ENCPoolMethod::None);
+	if (!FX || Duration <= 0.0f)
+	{
+		return;
+	}
+
+	// 핸들을 멤버로 들고 있지 않는 이유: 이 연출은 겹쳐 쓸 수 있고, 각자 제 타이머로 꺼지면
+	// 슬롯이 상태를 기억할 필요가 없다. 약참조라 폰이 먼저 죽어도 안전하다.
+	FTimerHandle StopHandle;
+	const TWeakObjectPtr<UNiagaraComponent> WeakFX(FX);
+	World->GetTimerManager().SetTimer(
+		StopHandle,
+		[WeakFX]()
+		{
+			if (UNiagaraComponent* const Live = WeakFX.Get())
+			{
+				// 스폰만 멈춘다. 떠 있던 파티클은 제 수명을 마치고 사라진다.
+				Live->Deactivate();
+			}
+		},
+		Duration, false);
 }
 
 void UItemSlotComponent::RestartInkLook(float Duration)

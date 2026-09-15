@@ -8,6 +8,7 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "LobbyWidget.h"
 #include "Components/EditableTextBox.h"
+#include "Game/TeamLook.h"
 
 void ULobbyUserWidget::SetInfo(ALobbyPlayerState* InPlayerState)
 {
@@ -28,26 +29,16 @@ void ULobbyUserWidget::RefreshUI()
 	bool IsLocalPlayer = false;
 	FText TeamText;
 	if (PlayerState->Team == Teams::Mint)
-	{
 		TeamText = FText::FromString("Mint");
-
-		FColor MintColor = FColor(62, 180, 137, 255);
-		Txt_Team->SetColorAndOpacity(FSlateColor(MintColor));
-	}
 	else if (PlayerState->Team == Teams::Choco)
-	{
 		TeamText = FText::FromString("Choco");
-
-		FColor ChocoColor = FColor::FromHex("#D2691E");
-		Txt_Team->SetColorAndOpacity(FSlateColor(ChocoColor));
-	}
 	else
-	{
 		TeamText = FText::FromString("Select Team!");
 
-		FColor Color = FColor(0, 0, 0, 255);
-		Txt_Team->SetColorAndOpacity(FSlateColor(Color));
-	}
+	const FColor TeamColor = Teams::IsValidId(PlayerState->Team)
+		? TeamLook::GetDisplayColor(PlayerState->Team, GetWorld())
+		: FColor(0, 0, 0, 255);
+	Txt_Team->SetColorAndOpacity(FSlateColor(TeamColor));
 
 	Txt_Team->SetText(TeamText);
 

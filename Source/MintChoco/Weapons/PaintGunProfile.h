@@ -21,6 +21,13 @@ class MINTCHOCO_API UPaintGunProfile : public UPaintWeaponProfile
 public:
 	virtual bool Fire(const FPaintFireContext& Context, FPaintStrokeState& Stroke, FPaintShot& OutShot) const override;
 	virtual void PlayCosmetic(UWorld& World, APawn* Instigator, const FPaintShot& Shot) const override;
+
+	/**
+	 * Flies the centre pellet, spread aside, from the muzzle with the ball's gravity (both phases
+	 * when DropAfter is set) until it hits something or the ball's life span runs out. OutImpact is
+	 * the hit, or where the ball would die in the air.
+	 */
+	virtual bool PredictImpact(const FPaintFireContext& Context, FVector& OutAimPoint, FVector& OutImpact) const override;
 	virtual void LogUnsetReferences(const UObject* Owner) const override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gun")
@@ -34,6 +41,13 @@ public:
 	float AimTraceDistance = 10000.0f;
 
 private:
+	/**
+	 * The player aims with the camera, not the barrel: finds what the crosshair rests on
+	 * (OutAimPoint) and the unit direction from the muzzle that converges on it. A target closer
+	 * than the muzzle or behind it falls back to the view direction.
+	 */
+	void ComputeAim(const FPaintFireContext& Context, FVector& OutAimPoint, FVector& OutDirection) const;
+
 	/** Scatters the shot and launches one ball per pellet. Returns true when at least one flew. */
 	bool Launch(UWorld& World, APawn* Instigator, const FPaintShot& Shot, bool bCosmetic) const;
 };

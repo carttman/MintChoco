@@ -7,6 +7,7 @@
 #include "GameplayTagContainer.h"
 #include "GameFramework/Character.h"
 #include "Game/UnitDataAsset.h"
+#include "Game/UnitMovementComponent.h"
 #include "Unit.generated.h"
 
 class UAbilitySystemComponent;
@@ -113,6 +114,15 @@ public:
 	bool IsMovementInputLocked() const;
 
 	/**
+	 * 몸통이 지금 조준 방향(컨트롤 Yaw)을 봐야 하는지. 무브먼트 컴포넌트가 매 무브마다 묻는다.
+	 *
+	 * 방아쇠를 당기고 있거나, 충전 중이거나, 마지막 발사 뒤 FaceAimHoldSeconds 안이면 참.
+	 * 소유자는 방아쇠 상태를 직접 알고, 서버와 관전 머신은 복제된 충전 상태와 OnFired 시각으로
+	 * 같은 답을 낸다. 이동 입력은 여기 없다 — 그쪽은 무브먼트가 가속으로 스스로 안다.
+	 */
+	bool WantsToFaceAim() const;
+
+	/**
 	 * 서버 전용. 아이템 스턴을 건다(UItemSettings::StunDuration, 이어서 SuperArmorDuration).
 	 * 슈퍼아머거나 이미 스턴이면 false.
 	 */
@@ -161,12 +171,30 @@ public:
 	UUnitMovementComponent* GetUnitMovement() const;
 
 	/**
-	 * 대시 중인지. 애님 블루프린트가 이 값으로 스프린트 상태를 고른다.
+	 * 대시 중인지. 애님 블루프린트가 이 값으로 보드 상태(시작·루프·끝)를 고르고, 무기가
+	 * 방아쇠를 막는 조건으로 쓴다.
 	 *
-	 * 소유 클라이언트는 예측된 값을 즉시 보고, 나머지 클라이언트는 복제로 받는다.
+	 * 소유 클라이언트와 서버는 무브먼트 알림(HandleDashStateChanged)에서 바로 쓰고, 나머지
+	 * 클라이언트는 서버 값을 복제로 받는다.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Unit|Dash")
 	bool IsDashing() const { return bIsDashing; }
+
+	/**
+	 * 보드를 보일지. 애님 인스턴스가 대시 동작(Dash_* 상태)이 실제로 도는 동안 참으로 세운다.
+	 * 대시 키가 아니라 동작을 따르므로, 키만 누르고 동작이 시작되지 않는 경우(제자리, 공중)에는
+	 * 보드가 나오지 않는다. 카메라 페이드는 UpdateBoardVisibility가 따로 합친다.
+	 */
+	void SetBoardShown(bool bShown);
+
+	/**
+	 * 히어로 랜딩 단계. 애님 블루프린트가 이 값으로 준비·시작 자세를 고른다.
+	 *
+	 * 단계 기계는 압축 플래그로 굴러가므로 소유자와 서버에만 있다. 다른 클라이언트의 무브먼트는
+	 * SimulatedTick만 돌아 단계를 모르므로, 그쪽에는 서버가 복제한 값을 준다(대시와 같은 규칙).
+	 */
+	UFUNCTION(BlueprintPure, Category = "Unit|HeroLanding")
+	EHeroLandingPhase GetHeroLandingPhase() const;
 
 	/**
 	 * 서버 전용. 런타임에 캐릭터를 교체한다.
@@ -212,9 +240,33 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera")
 	TObjectPtr<UMaterialInterface> CameraFadeMaterial;
 
+	/**
+	 * 슈퍼아머 동안 테두리로 그리는 재질. 비어 있으면 하이라이트가 없다.
+	 *
+	 * 껍데기 메시(OutlineMesh)의 모든 슬롯에 깔린다. 정점을 법선 방향으로 밀고 앞면을
+	 * 잘라내는 재질이어야 테두리로 보인다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Status")
+	TObjectPtr<UMaterialInterface> SuperArmorOutlineMaterial;
+
+	/**
+	 * 슈퍼아머 테두리를 그리는 껍데기 메시. 캐릭터 메시와 같은 메시를 리더 포즈로 따라가고,
+	 * 머티리얼이 정점을 법선 방향으로 밀어 살짝 부풀린다. 앞면은 머티리얼에서 잘라내므로
+	 * 원본 캐릭터에 가려지지 않는 실루엣 바깥쪽만 남는다. 평소에는 꺼 둔다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Status")
+	TObjectPtr<USkeletalMeshComponent> OutlineMesh;
+
 	/** 조작에 쓰이는 입력 에셋. 비어 있으면 이 유닛은 플레이어 입력을 받지 못한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UUnitInputConfig> InputConfig;
+
+	/**
+	 * 마지막 발사 뒤 몸통이 조준 방향을 계속 따르는 시간(초). 애님 인스턴스의 FireHoldTime과
+	 * 같은 값이어야 총 든 자세가 내려가는 순간 몸통도 같이 풀린다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Aim", meta = (ClampMin = "0", ForceUnits = "s"))
+	float FaceAimHoldSeconds = 0.5f;
 
 	/**
 	 * 주무기. 모든 유닛이 하나씩 들고, 주 발사 입력이 이 방아쇠를 당긴다.
@@ -264,6 +316,22 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ink")
 	TObjectPtr<UStaticMeshComponent> InkSurface;
 
+	/**
+	 * 손에 든 총. 평소에는 숨어 있고 발사 연출 동안에만 보인다.
+	 * 어떤 메시인지와 얼마나 보일지는 UnitData가 정한다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+	TObjectPtr<UStaticMeshComponent> GunMesh;
+
+	/**
+	 * 대시 중 발밑의 보드. 평소에는 숨어 있고 대시 **동작**이 시작되면 보이며 끝나면 숨는다.
+	 * 스폰하지 않고 켜고 끄므로 복제가 필요 없다: 각 머신의 애님 인스턴스가 자기 화면의 상태
+	 * 기계를 보고 SetBoardShown으로 세우므로, 그 머신이 그리는 동작과 항상 일치한다.
+	 * 어떤 메시인지는 UnitData가 정한다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Unit|Dash")
+	TObjectPtr<UStaticMeshComponent> BoardMesh;
+
 	void Move(const FInputActionValue& Value);
 	void Look(const FInputActionValue& Value);
 	void StartFire();
@@ -300,6 +368,9 @@ private:
 	/** 실제로 대시 상태가 바뀔 때 무브먼트 컴포넌트가 알려준다. */
 	void HandleDashStateChanged(bool bDashing);
 
+	/** 서버 전용. 무브먼트의 단계 변화를 복제 값으로 옮긴다. */
+	void HandleHeroLandingPhaseChanged(EHeroLandingPhase NewPhase);
+
 	/** 무기의 페인트 id가 바뀌면(로컬 세팅이든 복제든) 잉크병을 그 팀 색으로 맞춘다. */
 	UFUNCTION()
 	void HandlePaintIdChanged(uint8 PaintId);
@@ -313,6 +384,53 @@ private:
 
 	/** 연출의 몽타주 부분: 몽타주 에셋이 있으면 그것을, 없으면 Animation을 슬롯에 동적 몽타주로. */
 	void PlayFeedbackMontage(const struct FUnitActionFeedback& Feedback);
+
+	/**
+	 * 차지샷 충전이 시작·종료될 때. 무기가 알려 준다(UPaintWeaponComponent::OnChargingChanged).
+	 *
+	 * 충전 중에는 총이 계속 들려 있어야 한다. 총은 캐릭터 메시의 Gun 소켓에 붙어 있어서,
+	 * 자세가 내려가면 발사 지점이 쉬는 손으로 돌아간다.
+	 */
+	UFUNCTION()
+	void HandleChargingChanged(bool bCharging);
+
+	/**
+	 * 충전 자세를 UpperBody 슬롯에 루프로 건다.
+	 *
+	 * 애님 그래프가 이 슬롯이 도는지를 보고 상체 자세를 켜므로(Is Slot Active), 그래프에
+	 * 따로 배선할 것이 없다 — 슬롯을 채우는 것이 곧 신호다.
+	 */
+	void StartChargePose();
+
+	/** 걸어 둔 충전 자세만 지목해 세운다. 슬롯째 세우면 방금 시작한 발사 동작까지 끊긴다. */
+	void StopChargePose();
+
+	/** 지금 걸려 있는 충전 자세 몽타주. 없으면 비어 있다. */
+	TWeakObjectPtr<class UAnimMontage> ChargePose;
+
+	/** 한 발 나갈 때마다. 총을 보이게 하고 유지 시간을 처음부터 다시 센다. */
+	void ShowGunForFire();
+
+	/** 유지 시간이 다 됐을 때. */
+	void HideGun();
+
+	/** 보임 의도와 카메라 페이드를 합쳐 실제 가시성을 정한다. */
+	void UpdateGunVisibility();
+
+	/** 대시 동작이 돌고 있고 카메라 페이드가 아닐 때만 보드가 보인다. */
+	void UpdateBoardVisibility();
+
+	/** 발사 연출이 요구하는 총의 상태. 실제로 보이는지는 카메라 페이드까지 봐야 안다. */
+	bool bGunVisible = false;
+
+	/** 애님 인스턴스가 세우는 보드 상태. 실제로 보이는지는 카메라 페이드까지 봐야 안다. */
+	bool bBoardShown = false;
+
+	/** 총을 숨기는 타이머. 발사마다 다시 걸려 마지막 한 발에서만 만료된다. */
+	FTimerHandle GunHideTimer;
+
+	/** 이 머신의 월드 시계로 잰 마지막 발사 시각. 한 번도 안 쐈으면 음수. */
+	double LastFireTime = -1.0;
 
 	UFUNCTION()
 	void OnRep_IsDashing();
@@ -359,6 +477,16 @@ private:
 	UPROPERTY(ReplicatedUsing = OnRep_IsDashing)
 	bool bIsDashing = false;
 
+	/**
+	 * 애니메이션용 히어로 랜딩 단계. 소유자와 서버는 무브먼트에서 직접 읽으므로 쓰지 않는다.
+	 * 대시와 같은 이유로 여기 있다: 단계 자체는 압축 플래그라 다른 클라이언트에 닿지 않는다.
+	 */
+	UPROPERTY(ReplicatedUsing = OnRep_HeroLandingPhase)
+	EHeroLandingPhase ReplicatedHeroPhase = EHeroLandingPhase::None;
+
+	UFUNCTION()
+	void OnRep_HeroLandingPhase();
+
 	/** 지속되는 트레일이라 시작할 때 만들고 끝날 때 직접 꺼야 한다. */
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> DashTrailComponent;
@@ -370,4 +498,12 @@ private:
 	TWeakObjectPtr<UEnhancedInputLocalPlayerSubsystem> AppliedInputSubsystem;
 
 	FDelegateHandle StunTagHandle;
+
+	/** 슈퍼아머 태그가 서고 내릴 때, 모든 머신에서. 태그는 복제되므로 어디서나 같이 보인다. */
+	void HandleSuperArmorTagChanged(const FGameplayTag Tag, int32 NewCount);
+
+	/** 지금 슈퍼아머인지에 맞춰 테두리 메시를 켜고 끈다. */
+	void UpdateSuperArmorOutline();
+
+	FDelegateHandle SuperArmorTagHandle;
 };

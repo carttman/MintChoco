@@ -7,6 +7,9 @@
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
+#include "Game/TeamLook.h"
 #include "MintChoco.h"
 #include "Weapons/PaintProjectile.h"
 #include "Weapons/PaintBurst.h"
@@ -84,6 +87,11 @@ void ABalloon::ReceivePaintHit_Implementation(float HitPower, uint8 PaintId, con
 	const bool bBurst = State.Hit(HitPower, PaintId, MaxHealth);
 	ApplyLook();
 	BP_OnHit(State.GetFraction(MaxHealth), State.LastTeam);
+	// 소리는 머신마다 한 번: 서버는 여기서, 클라이언트는 OnRep_State에서. 터지는 타격은 Pop 쪽 소리만.
+	if (!bBurst)
+	{
+		UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_Balloon_Hit, GetActorLocation());
+	}
 
 	if (bBurst)
 	{
@@ -96,6 +104,7 @@ void ABalloon::Pop(int32 PoppingTeam)
 	bPopped = true;
 	ApplyLook();
 	BP_OnPopped(PoppingTeam);
+	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_Balloon_Pop, GetActorLocation());
 
 	// 팀이 없는 타격만으로 터졌다면(예약 id) 뿌릴 색이 없다. 터지기만 한다.
 	if (Teams::IsValidId(PoppingTeam) && BurstPaintball)
@@ -117,6 +126,7 @@ void ABalloon::Inflate()
 	bPopped = false;
 	ApplyLook();
 	BP_OnInflated();
+	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_Balloon_Inflate, GetActorLocation());
 }
 
 void ABalloon::MulticastBurst_Implementation(int32 Seed, uint8 PaintId)
@@ -146,6 +156,11 @@ void ABalloon::OnRep_State()
 {
 	ApplyLook();
 	BP_OnHit(State.GetFraction(MaxHealth), State.LastTeam);
+	// 터진 타격은 bPopped 복제가 같은 프레임에 와서 Pop 소리를 낸다. 여기서는 맞는 소리만.
+	if (!bPopped)
+	{
+		UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_Balloon_Hit, GetActorLocation());
+	}
 }
 
 void ABalloon::OnRep_Popped()
@@ -154,10 +169,12 @@ void ABalloon::OnRep_Popped()
 	if (bPopped)
 	{
 		BP_OnPopped(State.LastTeam);
+		UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_Balloon_Pop, GetActorLocation());
 	}
 	else
 	{
 		BP_OnInflated();
+		UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_Balloon_Inflate, GetActorLocation());
 	}
 }
 
@@ -179,7 +196,7 @@ void ABalloon::ApplyLook()
 	{
 		if (UMaterialInstanceDynamic* const Dynamic = GetOrCreateMaterial())
 		{
-			Dynamic->SetVectorParameterValue(ColorParameterName, FLinearColor(Teams::GetDisplayColor(State.LastTeam)));
+			Dynamic->SetVectorParameterValue(ColorParameterName, TeamLook::GetColor(State.LastTeam, GetWorld()));
 		}
 	}
 	else if (Material)

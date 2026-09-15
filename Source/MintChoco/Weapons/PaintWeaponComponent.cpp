@@ -2,18 +2,27 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
+#include "Components/AudioComponent.h"
 #include "Game/GameGameState.h"
+#include "Game/TeamLook.h"
+#include "Game/Unit.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "NiagaraComponent.h"
+#include "NiagaraComponentPool.h"
+#include "NiagaraFunctionLibrary.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
 #include "Ink/InkTankComponent.h"
 #include "Items/ItemGameplayTags.h"
 #include "Paint/PaintLog.h"
+#include "Weapons/PaintAimMath.h"
 
 UPaintWeaponComponent::UPaintWeaponComponent()
 {
@@ -38,6 +47,14 @@ bool UPaintWeaponComponent::IsTriggerBlocked() const
 	{
 		return true;
 	}
+	// A unit on the dash board cannot fire. The owner sees its predicted dash, the server the
+	// flag from the move, so PullTrigger and ServerFire agree; the dash start also cancels a
+	// trigger that was already held (AUnit::HandleDashStateChanged).
+	const AUnit* const Unit = Cast<AUnit>(GetOwnerPawn());
+	if (Unit && Unit->IsDashing())
+	{
+		return true;
+	}
 	if (TriggerBlockedTags.IsEmpty())
 	{
 		return false;
@@ -56,6 +73,30 @@ bool UPaintWeaponComponent::IsShotFree() const
 	return AbilitySystem && AbilitySystem->HasAnyMatchingGameplayTags(FreeShotTags);
 }
 
+float UPaintWeaponComponent::GetEffectiveShotInterval() const
+{
+	if (!Profile)
+	{
+		return 0.0f;
+	}
+	const float Interval = Profile->GetShotInterval();
+	// Continuous has no interval at all; shortening 0 would turn it into a per-tick floor.
+	if (Interval <= 0.0f || !IsShotFree())
+	{
+		return Interval;
+	}
+	return FMath::Min(Interval, FreeShotInterval);
+}
+
+float UPaintWeaponComponent::GetEffectiveChargeTime() const
+{
+	if (!Profile)
+	{
+		return 0.0f;
+	}
+	return IsShotFree() ? FMath::Min(Profile->ChargeTime, FreeShotChargeTime) : Profile->ChargeTime;
+}
+
 void UPaintWeaponComponent::BeginPlay()
 {
 	Super::BeginPlay();
@@ -70,7 +111,14 @@ void UPaintWeaponComponent::BeginPlay()
 
 void UPaintWeaponComponent::EndPlay(const EEndPlayReason::Type Reason)
 {
+	// CancelTrigger returns at once when the trigger was already let go, so the loop is stopped
+	// here as well: a pawn destroyed mid-charge would otherwise leave it running on the mesh.
 	CancelTrigger();
+	StopChargeFX();
+	if (UWorld* const World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ChargeReadyTimer);
+	}
 	Super::EndPlay(Reason);
 }
 
@@ -80,6 +128,9 @@ void UPaintWeaponComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 
 	DOREPLIFETIME(UPaintWeaponComponent, Profile);
 	DOREPLIFETIME(UPaintWeaponComponent, PaintId);
+
+	// The owner started its own loop from its own press; sending it back would only restart it late.
+	DOREPLIFETIME_CONDITION(UPaintWeaponComponent, bCharging, COND_SkipOwner);
 }
 
 void UPaintWeaponComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -153,7 +204,8 @@ void UPaintWeaponComponent::OnRep_Profile()
 
 void UPaintWeaponComponent::PullTrigger()
 {
-	if (bTriggerHeld || !Profile || IsTriggerBlocked())
+	const UWorld* const World = GetWorld();
+	if (bTriggerHeld || !Profile || !World || IsTriggerBlocked())
 	{
 		return;
 	}
@@ -164,19 +216,32 @@ void UPaintWeaponComponent::PullTrigger()
 	switch (Profile->FireMode)
 	{
 	case EPaintFireMode::Single:
-		FireOnce();
+		// One pull, one shot, but never faster than the cadence. The trigger still counts as held
+		// so the release path stays symmetric; only the shot is skipped.
+		if (World->GetTimeSeconds() - LastShotTime >= GetEffectiveShotInterval())
+		{
+			FireWhenAimReady();
+		}
+		else
+		{
+			// 연사 간격에 걸려 이 당김은 넘어가지만, 자세는 유지해야 다음 발이 기다리지 않는다.
+			SetAiming(true);
+		}
 		break;
 	case EPaintFireMode::Automatic:
-		FireOnce();
+		FireWhenAimReady();
 		GetWorld()->GetTimerManager().SetTimer(
-			ShotTimer, this, &UPaintWeaponComponent::OnShotTimer, Profile->GetShotInterval(), /*bLoop=*/true);
+			ShotTimer, this, &UPaintWeaponComponent::OnShotTimer, GetEffectiveShotInterval(), /*bLoop=*/true);
 		break;
 	case EPaintFireMode::Continuous:
-		FireOnce();
+		FireWhenAimReady();
 		SetComponentTickEnabled(true);
 		break;
 	case EPaintFireMode::Charged:
 		PressTime = GetWorld()->GetTimeSeconds();
+		// 충전하는 내내 자세를 든다. 누르는 순간 올라가서 놓을 때까지 그대로다.
+		SetAiming(true);
+		SetCharging(true);
 		break;
 	}
 }
@@ -201,12 +266,67 @@ void UPaintWeaponComponent::CancelTrigger()
 		return;
 	}
 
+	// 준비 중인 첫 발이 있으면 그 발이 나간 뒤에 해제를 마저 한다. 짧게 툭 클릭해도
+	// 한 발은 반드시 나가야 하고, 그 발은 자세가 올라온 뒤에 나가야 한다.
+	if (bShotPending)
+	{
+		bCancelAfterPendingShot = true;
+		return;
+	}
+
 	bTriggerHeld = false;
 	Stroke.Reset();
+	// Every way a hold ends - the shot, a cancel, a profile swap - passes through here.
+	SetCharging(false);
+	// 쏜 뒤의 여운은 애님 인스턴스의 FireHoldTime 이 맡는다. 여기서는 “쏘려고 들고 있다” 를 내린다.
+	SetAiming(false);
 	SetComponentTickEnabled(false);
 	if (const UWorld* const World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(ShotTimer);
+	}
+}
+
+void UPaintWeaponComponent::SetAiming(bool bNewAiming)
+{
+	bAiming = bNewAiming;
+}
+
+void UPaintWeaponComponent::FireWhenAimReady()
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 이미 들고 있거나, 방금 쏴서 자세가 아직 내려오지 않았으면 기다릴 것이 없다.
+	const bool bPoseAlreadyUp = bAiming || (World->GetTimeSeconds() - LastShotTime <= AimHoldSeconds);
+	SetAiming(true);
+
+	if (bPoseAlreadyUp)
+	{
+		FireOnce();
+		return;
+	}
+
+	// 자세가 올라오는 동안 기다린다. 0 이면 다음 틱 — 타이머는 0 이하를 “해제” 로 읽으므로
+	// 아주 작은 값을 준다.
+	bShotPending = true;
+	World->GetTimerManager().SetTimer(AimReadyTimer, this, &UPaintWeaponComponent::FireAfterAimReady,
+		FMath::Max(AimReadyDelay, UE_SMALL_NUMBER), /*bLoop=*/false);
+}
+
+void UPaintWeaponComponent::FireAfterAimReady()
+{
+	bShotPending = false;
+	FireOnce();
+
+	// 준비를 기다리는 사이에 방아쇠가 풀렸다면 이제 해제를 처리한다.
+	if (bCancelAfterPendingShot)
+	{
+		bCancelAfterPendingShot = false;
+		CancelTrigger();
 	}
 }
 
@@ -218,7 +338,183 @@ float UPaintWeaponComponent::GetChargeFraction() const
 		return 0.0f;
 	}
 	const double Held = World->GetTimeSeconds() - PressTime;
-	return static_cast<float>(FMath::Clamp(Held / FMath::Max(static_cast<double>(Profile->ChargeTime), UE_DOUBLE_KINDA_SMALL_NUMBER), 0.0, 1.0));
+	return static_cast<float>(FMath::Clamp(Held / FMath::Max(static_cast<double>(GetEffectiveChargeTime()), UE_DOUBLE_KINDA_SMALL_NUMBER), 0.0, 1.0));
+}
+
+void UPaintWeaponComponent::SetCharging(bool bNewCharging)
+{
+	if (HasAuthority())
+	{
+		bCharging = bNewCharging;
+	}
+	else
+	{
+		ServerSetCharging(bNewCharging);
+	}
+
+	// The machine that set the value never gets its own OnRep, and a dedicated server draws nothing.
+	if (GetNetMode() != NM_DedicatedServer)
+	{
+		ApplyChargingVisuals(bNewCharging);
+	}
+}
+
+void UPaintWeaponComponent::ServerSetCharging_Implementation(bool bNewCharging)
+{
+	// The server never saw the press, so it takes the owner's word - but only for a weapon that
+	// charges at all, and only while the trigger is allowed. A shot is refused here the same way.
+	if (bNewCharging && (!Profile || Profile->FireMode != EPaintFireMode::Charged || IsTriggerBlocked()))
+	{
+		return;
+	}
+
+	bCharging = bNewCharging;
+
+	// A listen server renders this pawn too, and OnRep never fires on the machine that assigned.
+	if (GetNetMode() != NM_DedicatedServer)
+	{
+		ApplyChargingVisuals(bNewCharging);
+	}
+}
+
+void UPaintWeaponComponent::OnRep_Charging()
+{
+	ApplyChargingVisuals(bCharging);
+}
+
+void UPaintWeaponComponent::ApplyChargingVisuals(bool bNewCharging)
+{
+	if (bNewCharging)
+	{
+		StartChargeFX();
+		// The ready cue rings when a full charge would be reached. The watchers only know when the
+		// hold started, so each machine measures from its own copy of that moment.
+		const float ChargeTime = GetEffectiveChargeTime();
+		if (UWorld* const World = GetWorld(); World && ChargeTime > 0.0f)
+		{
+			World->GetTimerManager().SetTimer(ChargeReadyTimer, this, &UPaintWeaponComponent::PlayChargeReadyCue, ChargeTime, /*bLoop=*/false);
+		}
+	}
+	else
+	{
+		StopChargeFX();
+		if (UWorld* const World = GetWorld())
+		{
+			World->GetTimerManager().ClearTimer(ChargeReadyTimer);
+		}
+	}
+
+	// 캐릭터가 총을 들고 자세를 잡는 것은 연출만의 일이 아니다: 발사 지점이 그 순간의
+	// 총구라서, 자세가 잡혀 있어야 탄이 총열에서 나간다.
+	OnChargingChanged.Broadcast(bNewCharging);
+}
+
+void UPaintWeaponComponent::StartChargeFX()
+{
+	if (!Profile || !GetWorld())
+	{
+		return;
+	}
+
+	// The loop rides the muzzle like the FX; without a socket it sits on the owner. Stopped in StopChargeFX.
+	if (!ChargeAudioComponent)
+	{
+		FName AudioSocket = NAME_None;
+		USceneComponent* AudioAttachment = GetMuzzleAttachment(AudioSocket);
+		if (!AudioAttachment && GetOwner())
+		{
+			AudioAttachment = GetOwner()->GetRootComponent();
+		}
+		ChargeAudioComponent = UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Weapon_ChargeLoop, AudioAttachment, AudioSocket, Profile->Sounds);
+	}
+
+	if (ChargeFXComponent || !Profile->ChargeFX)
+	{
+		return;
+	}
+
+	const FVector Scale(Profile->ChargeFXScale);
+	FName AttachSocket = NAME_None;
+	if (USceneComponent* const Attachment = GetMuzzleAttachment(AttachSocket))
+	{
+		ChargeFXComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+			Profile->ChargeFX, Attachment, AttachSocket, FVector::ZeroVector, FRotator::ZeroRotator,
+			Scale, EAttachLocation::SnapToTarget,
+			// Deactivate leaves the last particles to finish and then cleans itself up; false would
+			// pile a dead component on the mesh for every charge.
+			/*bAutoDestroy=*/true, ENCPoolMethod::None);
+	}
+	else
+	{
+		const FTransform Muzzle = GetMuzzleTransform();
+		ChargeFXComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			GetWorld(), Profile->ChargeFX, Muzzle.GetLocation(), Muzzle.Rotator(), Scale);
+	}
+
+	TintTeamFX(ChargeFXComponent);
+}
+
+void UPaintWeaponComponent::StopChargeFX()
+{
+	if (ChargeFXComponent)
+	{
+		ChargeFXComponent->Deactivate();
+		ChargeFXComponent = nullptr;
+	}
+	if (ChargeAudioComponent)
+	{
+		ChargeAudioComponent->Stop();
+		ChargeAudioComponent = nullptr;
+	}
+}
+
+void UPaintWeaponComponent::PlayChargeReadyCue()
+{
+	if (!Profile)
+	{
+		return;
+	}
+	FName Socket = NAME_None;
+	USceneComponent* Attachment = GetMuzzleAttachment(Socket);
+	if (!Attachment && GetOwner())
+	{
+		Attachment = GetOwner()->GetRootComponent();
+	}
+	UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Weapon_ChargeReady, Attachment, Socket, Profile->Sounds);
+}
+
+void UPaintWeaponComponent::PlayFireSound()
+{
+	UWorld* const World = GetWorld();
+	if (!Profile || !World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	// Attached, like the flash: a shot fired on the move should not leave its sound behind.
+	FName Socket = NAME_None;
+	USceneComponent* Attachment = GetMuzzleAttachment(Socket);
+	if (!Attachment && GetOwner())
+	{
+		Attachment = GetOwner()->GetRootComponent();
+	}
+	UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Weapon_Fire, Attachment, Socket, Profile->Sounds);
+}
+
+void UPaintWeaponComponent::PlayEmptyCue()
+{
+	const UWorld* const World = GetWorld();
+	const APawn* const Pawn = GetOwnerPawn();
+	if (!World || !Profile || !Pawn || !Pawn->IsLocallyControlled())
+	{
+		return;
+	}
+	const double Now = World->GetTimeSeconds();
+	if (Now - LastEmptyCueTime < EmptyCueInterval)
+	{
+		return;
+	}
+	LastEmptyCueTime = Now;
+	UGameAudioSubsystem::Play2D(this, AudioTags::Audio_Weapon_Empty, Profile->Sounds);
 }
 
 void UPaintWeaponComponent::SetSeedOverride(bool bInUseFixedSeed, int32 InFixedSeed)
@@ -265,8 +561,15 @@ void UPaintWeaponComponent::SpendShot()
 
 bool UPaintWeaponComponent::FireOnce()
 {
-	if (!bTriggerHeld || !Profile || !GetWorld() || !CanAffordShot())
+	if (!bTriggerHeld || !Profile || !GetWorld())
 	{
+		return false;
+	}
+	// A dry tank is the one refusal the shooter should hear. The server's copy of this check
+	// (ServerFire) stays silent: the owner already heard its own.
+	if (!CanAffordShot())
+	{
+		PlayEmptyCue();
 		return false;
 	}
 
@@ -296,6 +599,9 @@ bool UPaintWeaponComponent::FireOnce()
 		return false;
 	}
 
+	// The machines that only replay this shot size their flash by it.
+	Shot.Charge = static_cast<uint8>(FMath::RoundToInt(ChargeFraction * 255.0f));
+
 	// With authority this is the real spend; the owner's is a prediction the replicated tank corrects.
 	SpendShot();
 
@@ -308,9 +614,12 @@ bool UPaintWeaponComponent::FireOnce()
 		// The owner sees its ball leave at once and the server's version of the shot never
 		// reaches it (the multicast skips the owner), so the two cannot pile up.
 		Profile->PlayCosmetic(*Context.World, Context.Instigator, Shot);
-		ServerFire(Seed, ViewOrigin, ViewDirection, static_cast<uint8>(FMath::RoundToInt(ChargeFraction * 255.0f)));
+		ServerFire(Seed, ViewOrigin, ViewDirection, Shot.Charge);
 	}
 
+	PlayMuzzleFX(ChargeFraction);
+	PlayFireSound();
+	LastShotTime = GetWorld()->GetTimeSeconds();
 	OnFired.Broadcast(Seed);
 	return true;
 }
@@ -335,8 +644,11 @@ void UPaintWeaponComponent::ServerFire_Implementation(int32 Seed, FVector_NetQua
 	FPaintShot Shot;
 	if (Profile->Fire(Context, FreshStroke, Shot))
 	{
+		Shot.Charge = Charge;
 		SpendShot();
 		MulticastShotFired(Shot);
+		PlayMuzzleFX(Context.ChargeFraction);
+		PlayFireSound();
 		OnFired.Broadcast(Seed);
 	}
 }
@@ -354,6 +666,8 @@ void UPaintWeaponComponent::MulticastShotFired_Implementation(const FPaintShot& 
 		Profile->PlayCosmetic(*GetWorld(), GetOwnerPawn(), Shot);
 	}
 	// Feedback on the machines that only watch: the owner and the server raised theirs when they fired.
+	PlayMuzzleFX(Shot.Charge / 255.0f);
+	PlayFireSound();
 	OnFired.Broadcast(Shot.Seed);
 }
 
@@ -361,7 +675,13 @@ void UPaintWeaponComponent::BuildContext(FPaintFireContext& OutContext, const FV
 {
 	OutContext.World = GetWorld();
 	OutContext.Instigator = GetOwnerPawn();
-	OutContext.Muzzle = ComputeMuzzleTransform(ViewOrigin, ViewDirection);
+
+	// The physics leaves the sight line at the pawn's depth, the same on the owner and on the
+	// server that only got the view; the socket merely says where the shot looks like it left.
+	const AActor* const Anchor = OutContext.Instigator ? static_cast<const AActor*>(OutContext.Instigator) : GetOwner();
+	const FVector Origin = PaintAim::FireOrigin(ViewOrigin, ViewDirection, Anchor ? Anchor->GetActorLocation() : ViewOrigin, FireOriginForwardMargin);
+	OutContext.Muzzle = FTransform(ViewDirection.Rotation(), Origin);
+	OutContext.VisualMuzzle = ComputeVisualMuzzle(ViewOrigin, ViewDirection).GetLocation();
 	OutContext.ViewOrigin = ViewOrigin;
 	OutContext.ViewDirection = ViewDirection;
 	OutContext.PaintId = PaintId;
@@ -405,20 +725,119 @@ FTransform UPaintWeaponComponent::GetMuzzleTransform() const
 	FVector ViewOrigin;
 	FVector ViewDirection;
 	GetOwnerView(ViewOrigin, ViewDirection);
-	return ComputeMuzzleTransform(ViewOrigin, ViewDirection);
+	return ComputeVisualMuzzle(ViewOrigin, ViewDirection);
 }
 
-FTransform UPaintWeaponComponent::ComputeMuzzleTransform(const FVector& ViewOrigin, const FVector& ViewDirection) const
+bool UPaintWeaponComponent::PredictNextImpact(FVector& OutViewOrigin, FVector& OutViewDirection, FVector& OutAimPoint, FVector& OutImpact) const
 {
+	if (!Profile || !GetWorld())
+	{
+		return false;
+	}
+	GetOwnerView(OutViewOrigin, OutViewDirection);
+
+	FPaintFireContext Context;
+	BuildContext(Context, OutViewOrigin, OutViewDirection, 1.0f);
+	Context.Seed = NextSeed;
+	Context.bAuthority = false;
+	return Profile->PredictImpact(Context, OutAimPoint, OutImpact);
+}
+
+
+void UPaintWeaponComponent::SetMuzzleSource(USceneComponent* Component, FName SocketName)
+{
+	MuzzleSource = Component;
+	MuzzleSourceSocket = SocketName;
+}
+
+FTransform UPaintWeaponComponent::ComputeVisualMuzzle(const FVector& ViewOrigin, const FVector& ViewDirection) const
+{
+	// A weapon mesh carries its own muzzle. It is checked first so the shot appears to leave the
+	// barrel rather than the hand that holds it; the socket lives on the mesh because barrel
+	// lengths differ between characters that share one skeleton.
+	if (const USceneComponent* const Source = MuzzleSource.Get())
+	{
+		if (!MuzzleSourceSocket.IsNone() && Source->DoesSocketExist(MuzzleSourceSocket))
+		{
+			return Source->GetSocketTransform(MuzzleSourceSocket);
+		}
+	}
+
 	const AActor* const Owner = GetOwner();
 	const ACharacter* const Character = Cast<ACharacter>(Owner);
 	const USkeletalMeshComponent* const Mesh =
 		Character ? Character->GetMesh() : Owner->FindComponentByClass<USkeletalMeshComponent>();
-	if (Mesh && !MuzzleSocketName.IsNone() && Mesh->DoesSocketExist(MuzzleSocketName))
+	if (Mesh && !VisualMuzzleSocketName.IsNone() && Mesh->DoesSocketExist(VisualMuzzleSocketName))
 	{
-		return Mesh->GetSocketTransform(MuzzleSocketName);
+		return Mesh->GetSocketTransform(VisualMuzzleSocketName);
 	}
 
-	// Socketless, the muzzle hangs off the view - which on the server is the view the owner sent.
-	return FTransform(ViewDirection.Rotation(), ViewOrigin + ViewDirection * MuzzleFallbackOffset);
+	// Socketless, the visual muzzle hangs off the view - which on the server is the view the owner sent.
+	return FTransform(ViewDirection.Rotation(), ViewOrigin + ViewDirection * VisualMuzzleFallbackOffset);
+}
+
+USkeletalMeshComponent* UPaintWeaponComponent::GetMuzzleMesh() const
+{
+	AActor* const Owner = GetOwner();
+	ACharacter* const Character = Cast<ACharacter>(Owner);
+	USkeletalMeshComponent* const Mesh =
+		Character ? Character->GetMesh() : (Owner ? Owner->FindComponentByClass<USkeletalMeshComponent>() : nullptr);
+	return (Mesh && !VisualMuzzleSocketName.IsNone() && Mesh->DoesSocketExist(VisualMuzzleSocketName)) ? Mesh : nullptr;
+}
+
+USceneComponent* UPaintWeaponComponent::GetMuzzleAttachment(FName& OutSocket) const
+{
+	// 총 메시가 총구를 갖고 있으면 그쪽이 먼저다. ComputeVisualMuzzle 과 같은 순서라야
+	// 탄이 나오는 것으로 보이는 곳과 불꽃이 피는 곳이 같다.
+	if (USceneComponent* const Source = MuzzleSource.Get())
+	{
+		if (!MuzzleSourceSocket.IsNone() && Source->DoesSocketExist(MuzzleSourceSocket))
+		{
+			OutSocket = MuzzleSourceSocket;
+			return Source;
+		}
+	}
+
+	if (USkeletalMeshComponent* const Mesh = GetMuzzleMesh())
+	{
+		OutSocket = VisualMuzzleSocketName;
+		return Mesh;
+	}
+
+	OutSocket = NAME_None;
+	return nullptr;
+}
+
+void UPaintWeaponComponent::PlayMuzzleFX(float ChargeFraction)
+{
+	UWorld* const World = GetWorld();
+	if (!Profile || !Profile->MuzzleFX || !World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	const FVector Scale(Profile->GetMuzzleFXScale(ChargeFraction));
+
+	// Attached, so a one-shot flash stays on the barrel while the gun moves.
+	FName AttachSocket = NAME_None;
+	if (USceneComponent* const Attachment = GetMuzzleAttachment(AttachSocket))
+	{
+		TintTeamFX(UNiagaraFunctionLibrary::SpawnSystemAttached(
+			Profile->MuzzleFX, Attachment, AttachSocket, FVector::ZeroVector, FRotator::ZeroRotator,
+			Scale, EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true, ENCPoolMethod::None));
+		return;
+	}
+
+	// Socketless: the muzzle hangs off the view, so the flash is left where the shot left from.
+	const FTransform Muzzle = GetMuzzleTransform();
+	TintTeamFX(UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+		World, Profile->MuzzleFX, Muzzle.GetLocation(), Muzzle.Rotator(), Scale));
+}
+
+void UPaintWeaponComponent::TintTeamFX(UNiagaraComponent* FX) const
+{
+	if (FX)
+	{
+		FX->SetVariableLinearColor(TeamLook::NiagaraTintParameter, TeamLook::GetColor(PaintId, GetWorld()));
+	}
 }

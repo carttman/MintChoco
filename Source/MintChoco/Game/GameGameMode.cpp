@@ -229,6 +229,26 @@ void AGameGameMode::SpawnNextItem()
 	UE_LOG(LogMintChoco, Verbose, TEXT("아이템 예고: %s at %s, %.1f초 뒤 등장."), *GetNameSafe(Item), *GetNameSafe(Point), Warning);
 }
 
+void AGameGameMode::EndMatchByKnockout(int32 Team)
+{
+	AGameGameState* const State = GetGameState<AGameGameState>();
+	if (!State || State->IsMatchEnded())
+	{
+		return;
+	}
+
+	// 끝난 경기에 아이템이 계속 나올 이유가 없다. 시간 만료 경로와 같은 정리다.
+	GetWorldTimerManager().ClearTimer(ItemSpawnTimer);
+	// 이 타이머가 나중에 터져도 SetMatchResult가 막지만, 남겨 둘 이유가 없다.
+	GetWorldTimerManager().ClearTimer(MatchTimer);
+
+	const float Fraction = State->GetWorldCoverage().GetFraction(static_cast<uint8>(Team));
+	State->SetMatchResult(Team);
+
+	UE_LOG(LogMintChoco, Log, TEXT("KO 승리: %s (점유율 %.1f%%를 %.1f초 유지, 남은 시간 %.1f초)"),
+		Teams::GetDisplayName(Team), Fraction * 100.0f, State->GetKnockoutHoldSeconds(), State->GetRemainingTime());
+}
+
 void AGameGameMode::OnMatchTimeExpired()
 {
 	// 끝난 경기에 아이템이 계속 나올 이유가 없다. 이미 놓인 것은 그대로 둔다.

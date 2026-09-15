@@ -89,6 +89,13 @@ struct MINTCHOCO_API FPaintDeposit
 	static bool ReceivesSplat(const FHitResult& Hit);
 
 	/**
+	 * The hit surface owns a paint buffer and keeps paint facing this way, so a splat submitted
+	 * here stays. False means the contact can only ever be a passing effect - useful to a producer
+	 * that would rather skip such a contact than spawn one effect actor per sample.
+	 */
+	static bool KeepsPaint(const FHitResult& Hit);
+
+	/**
 	 * Asks the hit surface whether it keeps paint facing this way and flags the splat transient
 	 * when it does not, or when the hit actor has no paint buffer at all. Every producer of a
 	 * splat calls this before submitting, so the decision is made once, on the authority, where

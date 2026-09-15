@@ -8,6 +8,7 @@
 #include "UnitAnimInstance.generated.h"
 
 class AUnit;
+class UAnimSequenceBase;
 
 /** 애니메이션 변수 계산의 순수 부분. 월드 없이 테스트한다. */
 struct MINTCHOCO_API FUnitAnimMath
@@ -20,6 +21,12 @@ struct MINTCHOCO_API FUnitAnimMath
 	 * 1D 블렌드스페이스에 방향 축을 줄 때 쓴다.
 	 */
 	static float MoveDirectionDegrees(const FVector& Velocity, const FRotator& ActorRotation);
+
+	/**
+	 * 마지막 발사 후 HoldSeconds가 아직 지나지 않았는지. LastFiredTime이 음수면 한 번도 쏘지 않은 것이다.
+	 * HoldSeconds가 0 이하면 항상 거짓.
+	 */
+	static bool IsFireHoldActive(double Now, double LastFiredTime, float HoldSeconds);
 };
 
 /**
@@ -39,6 +46,7 @@ class MINTCHOCO_API UUnitAnimInstance : public UAnimInstance
 public:
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+	virtual void NativeUninitializeAnimation() override;
 
 protected:
 	//~ 이동
@@ -86,9 +94,63 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Unit|State")
 	bool bIsStunned = false;
 
-	/** 히어로 랜딩 단계. None이면 평소. */
+	/**
+	 * 로코모션 상태 기계가 대시 상태(이름이 DashStatePrefix로 시작하는 Dash_Start/Loop/End)에
+	 * 있는지. bIsDashing이 "키를 누르고 있다"라면 이것은 "보드 동작이 실제로 돌고 있다"이다.
+	 * 전이가 시작되는 프레임부터 참이라 보드(AUnit::SetBoardShown)가 동작과 함께 나타나고
+	 * 끝 동작이 끝나야 사라진다. 한 프레임 전 상태를 읽는다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|State")
+	bool bDashAnimationActive = false;
+
+	/**
+	 * 히어로 랜딩 단계. None이면 평소.
+	 *
+	 * 준비(Rise·Hover), 건너가기(Approach), 내리꽂기(Dive), 착지 경직(Recover) 자세를 여기서
+	 * 고른다. 착지 동작은 Recover 동안 돌면 되고, 그 길이는 LandingRecoverTime이 정한다 —
+	 * 그동안은 움직일 수도 없으므로 동작과 조작이 어긋나지 않는다.
+	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Unit|State")
 	EHeroLandingPhase HeroLandingPhase = EHeroLandingPhase::None;
+
+	/**
+	 * 히어로 랜딩 중인지(단계가 None이 아닌지). 상체 레이어를 끄는 조건으로 쓴다.
+	 *
+	 * 히어로 랜딩 자세는 로코모션 스테이트 머신 안에 있어 상체 레이어보다 위에 있다. 그래서
+	 * 발사 직후 FireHoldTime 동안은 조준 상체가 랜딩 자세를 덮어쓴다. 랜딩 중에는 방아쇠가
+	 * 막혀 있으므로(State.Item.HeroLanding) 상체 조준을 켤 이유가 없다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|State")
+	bool bIsHeroLanding = false;
+
+	//~ 아이템
+
+	/**
+	 * 효과가 도는(또는 조준 중인) 아이템의 유지 자세. 없으면 nullptr.
+	 *
+	 * 시퀀스 플레이어의 Sequence 핀에 바인딩하고 Loop를 켜서 쓴다. 아이템이 몇 개로 늘어도
+	 * 애님 그래프는 그대로이고, 새 아이템은 프로필의 PoseAnimation을 채우는 것으로 끝난다.
+	 * 상태 태그(와 조준 플래그)에서 오므로 모든 머신에서 같은 자세가 나온다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|Item")
+	TObjectPtr<UAnimSequenceBase> ItemPose;
+
+	/** 유지할 아이템 자세가 있는지(덮는 범위와 무관). */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|Item")
+	bool bHasItemPose = false;
+
+	/**
+	 * 전신을 덮는 유지 자세가 있는지. 전신 블렌드의 조건.
+	 *
+	 * 범위별로 따로 내보내는 이유는 애님 그래프에서 AND·NOT을 엮지 않게 하기 위해서다. 둘은
+	 * 동시에 참이 되지 않으므로 두 가지를 차례로 물려도 한 번에 하나만 켜진다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|Item")
+	bool bHasFullBodyItemPose = false;
+
+	/** 상체만 덮는 유지 자세가 있는지. 상체 블렌드의 조건. */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|Item")
+	bool bHasUpperBodyItemPose = false;
 
 	//~ 조준·사격
 
@@ -102,6 +164,36 @@ protected:
 	/** 주무기 방아쇠가 당겨져 있는지. 소유 머신에서만 참이 된다(방아쇠는 복제되지 않는다). */
 	UPROPERTY(BlueprintReadOnly, Category = "Unit|Aim")
 	bool bIsFiring = false;
+
+	/**
+	 * 주무기나 보조 무기가 마지막으로 한 발 쏜 뒤 FireHoldTime초 동안 참. 쏠 때마다 다시 늘어난다.
+	 *
+	 * 무기의 OnFired를 받으므로 모든 머신에서 같다: 소유자는 예측 발사 순간, 서버는 실제 발사,
+	 * 다른 클라이언트는 샷 멀티캐스트가 도착한 순간. 짧게 클릭한 단발도 이 시간만큼 조준 자세가
+	 * 유지된다. 상체 에임 오프셋 전환(Blend Poses by bool)에 쓴다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|Aim")
+	bool bRecentlyFired = false;
+
+	/**
+	 * 무기 하나라도 지금 조준 자세를 요구하는 중인지. 방아쇠를 당긴 순간부터 놓을 때까지,
+	 * 그리고 차지샷을 충전하는 내내 참이다(UPaintWeaponComponent::IsAiming).
+	 *
+	 * bRecentlyFired 가 쏜 **뒤**의 여운을 맡는다면 이쪽은 쏘기 **전**과 충전 **중**을 맡는다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|Aim")
+	bool bIsAiming = false;
+
+	/**
+	 * **상체 조준 자세를 켜고 끄는 값. 애님 그래프는 이것 하나만 보면 된다.**
+	 *
+	 * bIsAiming(쏘기 전 · 충전 중)과 bRecentlyFired(쏜 뒤 FireHoldTime)를 합친 것이다.
+	 * 그래서 자세는 방아쇠를 당기는 순간 올라가 충전 내내 유지되고, 쏜 뒤에도 잠시 남았다가
+	 * 내려온다 — 총이 사라지는 시점(GunVisibleHoldTime)과도 맞는다. 대시 중에는 항상 거짓이다:
+	 * 보드 위에서는 쏘지 못하므로 여운이 보드 자세를 덮을 이유가 없다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|Aim")
+	bool bWeaponPoseHeld = false;
 
 	//~ 튜닝
 
@@ -117,6 +209,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning", meta = (ClampMin = "0"))
 	float AimPitchInterpSpeed = 18.0f;
 
+	/** 마지막 발사 후 bRecentlyFired를 유지하는 시간(초). */
+	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning", meta = (ClampMin = "0", ForceUnits = "s"))
+	float FireHoldTime = 0.5f;
+
+	/** 대시 상태를 찾을 상태 기계의 이름. 애님 그래프의 상태 기계 노드 이름과 같아야 한다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning")
+	FName LocomotionMachineName = TEXT("Locomotion");
+
+	/** 이 접두사로 시작하는 상태가 대시 동작이다(Dash_Start, Dash_Loop, Dash_End). */
+	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning")
+	FString DashStatePrefix = TEXT("Dash");
+
 private:
 	/** 소유 폰. 유닛이 아니면 이동·공중 값만 채우고 상태는 기본값으로 둔다. */
 	UPROPERTY(Transient)
@@ -124,4 +228,23 @@ private:
 
 	/** 첫 업데이트에서는 보간 없이 맞춘다(0에서 미끄러져 올라오지 않게). */
 	bool bAimPitchInitialized = false;
+
+	/** 두 무기의 OnFired에서. 이 머신의 월드 시각을 기록한다. */
+	UFUNCTION()
+	void HandleWeaponFired(int32 Seed);
+
+	/** 발사 알림을 받을 유닛을 바꾼다. 옛 유닛의 무기에서는 풀고 새 유닛의 무기에 건다. nullptr이면 풀기만 한다. */
+	void BindWeapons(AUnit* NewUnit);
+
+	/** 발사 알림을 걸어 둔 유닛. 폰이 바뀌거나 사라지면 NativeUpdateAnimation이 다시 건다. */
+	TWeakObjectPtr<AUnit> BoundUnit;
+
+	/** 이 머신에서 마지막 발사를 본 월드 시각. 음수면 아직 없다. */
+	double LastFiredTime = -1.0;
+
+	/** LocomotionMachineName의 상태 기계 인덱스. 초기화 때 한 번 찾는다. 없으면 INDEX_NONE. */
+	int32 LocomotionMachineIndex = INDEX_NONE;
+
+	/** 현재 로코모션 상태가 대시 상태인지. */
+	bool IsInDashState() const;
 };

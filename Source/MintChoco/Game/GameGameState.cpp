@@ -1,7 +1,15 @@
 #include "Game/GameGameState.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSettings.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
+#include "Game/GameGameMode.h"
+#include "Game/GamePlayerState.h"
+#include "Game/PaintBar.h"
+#include "GameFramework/PlayerController.h"
+#include "Game/TeamLook.h"
 #include "Game/TeamTypes.h"
 #include "MintChoco.h"
 #include "Net/UnrealNetwork.h"
@@ -74,6 +82,9 @@ void AGameGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(AGameGameState, MatchPhase);
 	DOREPLIFETIME(AGameGameState, CountdownEndServerTime);
 	DOREPLIFETIME(AGameGameState, MatchDuration);
+	DOREPLIFETIME(AGameGameState, KnockoutEndServerTime);
+	DOREPLIFETIME(AGameGameState, KnockoutTeam);
+	DOREPLIFETIME(AGameGameState, bEndedByKnockout);
 }
 
 bool AGameGameState::AllowsPlayerInput(EMatchPhase Phase)
@@ -101,6 +112,23 @@ void AGameGameState::SetMatchPhase(EMatchPhase NewPhase)
 void AGameGameState::OnRep_MatchPhase()
 {
 	UE_LOG(LogMintChoco, Log, TEXT("경기 단계: %s"), *UEnum::GetDisplayValueAsText(MatchPhase).ToString());
+
+	// 소리와 음악은 복제된 단계를 보고 머신마다 각자 낸다(리슨 호스트는 SetMatchPhase가 여기로 보낸다).
+	if (MatchPhase == EMatchPhase::Playing)
+	{
+		UGameAudioSubsystem::Play2D(this, AudioTags::Audio_Match_Start);
+	}
+	if (UGameAudioSubsystem* const Audio = UGameAudioSubsystem::Get(this))
+	{
+		// 등록되지 않은 단계와 뱅크에 곡이 없는 태그는 하던 곡을 이어간다. PlayMusic에 빈 태그를
+		// 넘기면 곡이 꺼지므로 먼저 묻는다.
+		const FGameplayTag* const Track = UGameAudioSettings::Get().MusicByPhase.Find(MatchPhase);
+		if (Track && Audio->HasEvent(*Track))
+		{
+			Audio->PlayMusic(*Track);
+		}
+	}
+
 	BP_OnMatchPhaseChanged(MatchPhase);
 }
 
@@ -179,6 +207,22 @@ void AGameGameState::HandleMatchEnded()
 {
 	DrawCoverageDebug();
 
+	// 승패는 보는 사람의 팀에 달렸다. 로컬 플레이어의 PlayerState가 팀을 안다; 없으면(관전, 데디) 무승부 취급.
+	int32 LocalTeam = Teams::None;
+	if (const UWorld* const World = GetWorld())
+	{
+		const APlayerController* const Controller = World->GetFirstPlayerController();
+		const AGamePlayerState* const Player = Controller ? Controller->GetPlayerState<AGamePlayerState>() : nullptr;
+		if (Player)
+		{
+			LocalTeam = Player->GetTeam();
+		}
+	}
+	const FGameplayTag& Result = !Teams::IsValidId(WinningTeam) ? AudioTags::Audio_Match_End_Draw
+		: WinningTeam == LocalTeam ? AudioTags::Audio_Match_End_Win
+		: AudioTags::Audio_Match_End_Lose;
+	UGameAudioSubsystem::Play2D(this, Result);
+
 	BP_OnMatchEnded(WinningTeam);
 }
 
@@ -202,7 +246,7 @@ void AGameGameState::DrawCoverageDebug() const
 	{
 		const uint8 PaintId = static_cast<uint8>(Team);
 		GEngine->AddOnScreenDebugMessage(
-			CoverageDebugKeyBase + 1 + Team, Duration, Teams::GetDisplayColor(Team),
+			CoverageDebugKeyBase + 1 + Team, Duration, TeamLook::GetDisplayColor(Team, GetWorld()),
 			FString::Printf(TEXT("  %s  %6.2f%%   %.0f cm^2"),
 				Teams::GetDisplayName(Team),
 				WorldCoverage.GetFraction(PaintId) * 100.0f,
@@ -229,7 +273,7 @@ void AGameGameState::DrawCoverageDebug() const
 	if (bMatchEnded)
 	{
 		GEngine->AddOnScreenDebugMessage(
-			CoverageDebugKeyBase + 3 + Teams::Count, Duration, Teams::GetDisplayColor(WinningTeam),
+			CoverageDebugKeyBase + 3 + Teams::Count, Duration, TeamLook::GetDisplayColor(WinningTeam, GetWorld()),
 			FString::Printf(TEXT("  경기 종료 — %s (WinningTeam %d)"),
 				Teams::IsValidId(WinningTeam) ? Teams::GetDisplayName(WinningTeam) : TEXT("무승부"),
 				WinningTeam));
@@ -388,4 +432,134 @@ void AGameGameState::RefreshCoverage()
 
 	// RepNotify는 값을 쓴 권한자에게 오지 않으므로, 서버 화면은 여기서 직접 갱신한다.
 	DrawCoverageDebug();
+
+	// 커버리지가 막 갱신된 지금이 KO를 판정할 순간이다. 따로 타이머를 두면 두 값이 어긋난다.
+	UpdateKnockout();
+}
+
+// ---------------------------------------------------------------- KO 판정
+
+int32 FKnockoutMath::LeaderPastLine(const FPaintCoverage& Coverage, float ClashCoverage, float KoLine)
+{
+	if (KoLine <= 0.0f)
+	{
+		return Teams::None;
+	}
+
+	// 바의 왼쪽이 Mint, 오른쪽이 Choco. ComputeFill 은 두 팀에 같은 분모를 쓰므로 어느 쪽이 왼쪽이든 몫은 같다.
+	const FPaintBarFill Fill = FPaintBarMath::ComputeFill(
+		Coverage.GetFraction(static_cast<uint8>(Teams::Mint)), Coverage.GetFraction(static_cast<uint8>(Teams::Choco)), ClashCoverage);
+	static_assert(Teams::Mint == 0 && Teams::Choco == 1 && Teams::Count == 2, "Fills[] is indexed by team id");
+	const float Fills[Teams::Count] = {Fill.Left, Fill.Right};
+
+	int32 Leader = Teams::None;
+	float LeaderFill = 0.0f;
+	for (int32 Team = 0; Team < Teams::Count; ++Team)
+	{
+		if (FPaintBarMath::IsPastKoLine(Fills[Team], KoLine) && Fills[Team] > LeaderFill)
+		{
+			Leader = Team;
+			LeaderFill = Fills[Team];
+		}
+	}
+	return Leader;
+}
+
+float FKnockoutMath::Progress(float Remaining, float HoldSeconds)
+{
+	if (HoldSeconds <= 0.0f)
+	{
+		return 0.0f;
+	}
+	return FMath::Clamp(1.0f - Remaining / HoldSeconds, 0.0f, 1.0f);
+}
+
+bool AGameGameState::IsKnockoutPending() const
+{
+	// 팀과 시각이 같은 프레임에 복제되므로 둘 다 보고 판단한다. 경기가 끝난 뒤에는
+	// 남아 있던 게이지가 결과 화면 위에 겹치지 않도록 꺼진다.
+	return Teams::IsValidId(KnockoutTeam) && KnockoutEndServerTime > 0.0 && !bMatchEnded;
+}
+
+float AGameGameState::GetKnockoutRemaining() const
+{
+	if (!IsKnockoutPending())
+	{
+		return 0.0f;
+	}
+	return static_cast<float>(FMath::Max(0.0, KnockoutEndServerTime - GetServerWorldTimeSeconds()));
+}
+
+float AGameGameState::GetKnockoutProgress() const
+{
+	return IsKnockoutPending() ? FKnockoutMath::Progress(GetKnockoutRemaining(), KnockoutHoldSeconds) : 0.0f;
+}
+
+void AGameGameState::OnRep_KnockoutTeam()
+{
+	BP_OnKnockoutPendingChanged(IsKnockoutPending(), KnockoutTeam);
+}
+
+void AGameGameState::SetKnockoutTeam(int32 NewTeam)
+{
+	if (KnockoutTeam == NewTeam)
+	{
+		return;
+	}
+
+	KnockoutTeam = NewTeam;
+	// 시각을 팀보다 먼저 써 둔다. 한 번치로 함께 복제되므로 RepNotify가 둘 다 본 상태에서 돈다.
+	KnockoutEndServerTime = Teams::IsValidId(NewTeam)
+		? GetServerWorldTimeSeconds() + KnockoutHoldSeconds
+		: 0.0;
+
+	if (Teams::IsValidId(NewTeam))
+	{
+		UE_LOG(LogMintChoco, Log, TEXT("KO 카운트다운 시작: %s (점유율 %.1f%%, %.1f초)"),
+			Teams::GetDisplayName(NewTeam), WorldCoverage.GetFraction(static_cast<uint8>(NewTeam)) * 100.0f, KnockoutHoldSeconds);
+	}
+	else
+	{
+		UE_LOG(LogMintChoco, Log, TEXT("KO 카운트다운 취소: 판정선 밖으로 나왔다."));
+	}
+
+	// RepNotify는 값을 쓴 권한자에게 오지 않는다. 리슨 호스트의 UI도 같이 움직이도록 직접 부른다.
+	OnRep_KnockoutTeam();
+}
+
+void AGameGameState::UpdateKnockout()
+{
+	// 경기 중에만 센다. 카운트다운 단계나 종료 뒤의 점유율로 이길 수는 없다.
+	if (MatchPhase != EMatchPhase::Playing || bMatchEnded)
+	{
+		SetKnockoutTeam(Teams::None);
+		return;
+	}
+
+	const int32 Leader = FKnockoutMath::LeaderPastLine(WorldCoverage, ClashCoverage, KnockoutLine);
+
+	// 기준 아래로 내려왔거나 선두가 바뀌었다면 처음부터 다시 센다. SetKnockoutTeam이
+	// 같은 팀이면 아무것도 하지 않으므로, 유지되는 동안 시각은 그대로 남는다.
+	SetKnockoutTeam(Leader);
+	if (!Teams::IsValidId(Leader))
+	{
+		return;
+	}
+
+	if (GetServerWorldTimeSeconds() < KnockoutEndServerTime)
+	{
+		return;
+	}
+
+	// 다 버텼다. 게임 모드가 아이템 스폰까지 정리하고 끝낸다.
+	bEndedByKnockout = true;
+	if (AGameGameMode* const Mode = GetWorld() ? GetWorld()->GetAuthGameMode<AGameGameMode>() : nullptr)
+	{
+		Mode->EndMatchByKnockout(Leader);
+	}
+	else
+	{
+		// 게임 모드가 없는 구성(샘플 맵)에서도 결과는 남긴다.
+		SetMatchResult(Leader);
+	}
 }

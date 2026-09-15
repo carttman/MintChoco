@@ -6,6 +6,8 @@
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -13,6 +15,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/StaticMesh.h"
 #include "Game/GameGameState.h"
 #include "Game/GamePlayerState.h"
 #include "Game/TeamTypes.h"
@@ -34,7 +37,14 @@
 #include "Paint/PaintSplat.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
+#include "TimerManager.h"
 #include "Weapons/PaintWeaponComponent.h"
+
+namespace
+{
+	/** 총 메시에 있는 총구 소켓. 발사 지점과 총구 화염이 같이 쓴다. */
+	const FName GunMuzzleSocketName(TEXT("Muzzle"));
+}
 
 AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UUnitMovementComponent>(
@@ -44,13 +54,13 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	// 발사와 스킬은 각자의 컴포넌트가 필요한 동안만 틱한다.
 	PrimaryActorTick.bCanEverTick = false;
 
-	// 캐릭터가 항상 카메라를 바라본다.
+	// 몸통 요는 무브먼트 컴포넌트가 돌린다(UUnitMovementComponent::PhysicsRotation).
 	//
-	// 조준 방향과 캐릭터 정면이 일치해야 총구가 화면 중앙을 향한다. 페인트 총은
-	// 움직이면서 쏘는 것이 기본 동작이라, 이동 방향을 바라보게 두면 옆으로 달리며
-	// 쏠 때마다 총이 몸을 통과한다. 대가로 옆·뒤로 걷는 스트레이프 애니메이션이
-	// 필요하다.
-	bUseControllerRotationYaw = true;
+	// 가만히 서서 둘러볼 때는 카메라만 돌고 몸통은 그대로다. 이동 입력이 있거나 쏘는 동안에만
+	// 컨트롤 Yaw를 향해 RotationRate로 돈다. 조준 방향과 정면이 일치해야 총구가 화면 중앙을
+	// 향하므로, 쏘는 동안은 몸통이 카메라를 따르고 이동은 카메라 기준 스트레이프다. 여기서
+	// 컨트롤 Yaw를 직접 붙이면 매 프레임 스냅되어 둘러보기가 불가능해진다.
+	bUseControllerRotationYaw = false;
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationRoll = false;
 
@@ -117,6 +127,34 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	InkSurface->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	InkSurface->SetGenerateOverlapEvents(false);
 	InkBottle->SetSurfaceMesh(InkSurface);
+
+	// 총도 메시의 소켓(Gun)에 붙는다. 소켓은 UnitData가 메시를 정한 뒤에야 존재하므로
+	// 여기서는 메시에만 붙이고 ApplyUnitData가 소켓으로 옮긴다(잉크병과 같은 이유).
+	// 평소에는 숨어 있고 발사 연출이 켜 준다.
+	GunMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("GunMesh"));
+	GunMesh->SetupAttachment(GetMesh());
+	GunMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	GunMesh->SetGenerateOverlapEvents(false);
+	GunMesh->SetCanEverAffectNavigation(false);
+	GunMesh->SetVisibility(false);
+
+	// 보드도 같은 규칙. Board 소켓은 ApplyUnitData가 메시를 정한 뒤 붙인다.
+	BoardMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoardMesh"));
+	BoardMesh->SetupAttachment(GetMesh());
+	BoardMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BoardMesh->SetGenerateOverlapEvents(false);
+	BoardMesh->SetCanEverAffectNavigation(false);
+	BoardMesh->SetVisibility(false);
+
+	// 테두리 껍데기. 캐릭터 메시와 같은 메시를 쓰고 포즈는 리더 포즈로 따라가므로 애니메이션을
+	// 두 번 돌리지 않는다. 그림자는 원본이 이미 드리우므로 끈다.
+	OutlineMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("OutlineMesh"));
+	OutlineMesh->SetupAttachment(GetMesh());
+	OutlineMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	OutlineMesh->SetGenerateOverlapEvents(false);
+	OutlineMesh->SetCanEverAffectNavigation(false);
+	OutlineMesh->SetCastShadow(false);
+	OutlineMesh->SetVisibility(false);
 }
 
 void AUnit::PossessedBy(AController* NewController)
@@ -164,6 +202,9 @@ void AUnit::BeginPlay()
 	{
 		StunTagHandle = AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_Stunned, EGameplayTagEventType::NewOrRemoved)
 			.AddUObject(this, &AUnit::HandleStunTagChanged);
+
+		SuperArmorTagHandle = AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_SuperArmor, EGameplayTagEventType::NewOrRemoved)
+			.AddUObject(this, &AUnit::HandleSuperArmorTagChanged);
 	}
 
 	// 빙의가 BeginPlay보다 먼저 온 경우(리슨 호스트)를 위해 한 번 더 맞춘다.
@@ -263,6 +304,9 @@ void AUnit::SetCameraFaded(bool bFaded)
 			MeshComponent->SetMaterial(Index, CameraFadeMaterial);
 		}
 		bCameraFaded = true;
+		UpdateGunVisibility();
+		UpdateBoardVisibility();
+		UpdateSuperArmorOutline();
 		return;
 	}
 
@@ -272,6 +316,9 @@ void AUnit::SetCameraFaded(bool bFaded)
 	}
 	CameraFadeOriginalMaterials.Reset();
 	bCameraFaded = false;
+	UpdateGunVisibility();
+	UpdateBoardVisibility();
+	UpdateSuperArmorOutline();
 }
 
 int32 AUnit::GetTeam() const
@@ -288,6 +335,23 @@ bool AUnit::IsStunned() const
 bool AUnit::HasSuperArmor() const
 {
 	return AbilitySystem && AbilitySystem->HasMatchingGameplayTag(ItemTags::State_Status_SuperArmor);
+}
+
+bool AUnit::WantsToFaceAim() const
+{
+	auto Weapons = { PaintWeapon.Get(), SecondaryWeapon.Get() };
+
+	for (const auto Weapon : Weapons)
+	{
+		if (!Weapon) continue;
+
+		if (Weapon->IsTriggerHeld() || Weapon->IsAiming() || Weapon->IsCharging())
+		{
+			return true;
+		}
+	}
+	const UWorld* const World = GetWorld();
+	return World && LastFireTime >= 0.0 && World->GetTimeSeconds() - LastFireTime <= FaceAimHoldSeconds;
 }
 
 bool AUnit::IsMovementInputLocked() const
@@ -313,6 +377,9 @@ bool AUnit::CanJumpInternal_Implementation() const
 void AUnit::Landed(const FHitResult& Hit)
 {
 	Super::Landed(Hit);
+
+	// 착지는 낙하를 계산하는 머신(소유자와 서버)에만 온다. 다른 플레이어의 착지음은 그래서 없다.
+	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_Unit_Land, Hit.ImpactPoint, UnitData ? UnitData->Sounds.Get() : nullptr);
 
 	// 히어로 랜딩의 내리꽂기가 끝났다. 단계 정리는 무브먼트 컴포넌트가, 효과는 어빌리티가 맡는다.
 	if (UUnitMovementComponent* const Movement = GetUnitMovement())
@@ -413,7 +480,29 @@ void AUnit::HandleStunTagChanged(const FGameplayTag Tag, int32 NewCount)
 			SecondaryWeapon->CancelTrigger();
 		}
 	}
+	// 태그는 모든 머신에 복제되므로 소리도 각자 낸다. 데디케이티드 서버는 서브시스템이 스스로 거른다.
+	UGameAudioSubsystem::PlayAttached(
+		bStunned ? AudioTags::Audio_Unit_Stun_Begin : AudioTags::Audio_Unit_Stun_End,
+		GetRootComponent(), NAME_None, UnitData ? UnitData->Sounds.Get() : nullptr);
 	BP_OnStunned(bStunned);
+}
+
+void AUnit::HandleSuperArmorTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+	UpdateSuperArmorOutline();
+	UGameAudioSubsystem::PlayAttached(
+		NewCount > 0 ? AudioTags::Audio_Unit_SuperArmor_Begin : AudioTags::Audio_Unit_SuperArmor_End,
+		GetRootComponent(), NAME_None, UnitData ? UnitData->Sounds.Get() : nullptr);
+}
+
+void AUnit::UpdateSuperArmorOutline()
+{
+	if (OutlineMesh)
+	{
+		// 카메라가 안에 들어와 몸이 반투명해진 동안에는 테두리도 감춘다. 껍데기는 불투명이라
+		// 그대로 두면 페이드된 몸 위에 실루엣만 둥둥 뜬다.
+		OutlineMesh->SetVisibility(HasSuperArmor() && !bCameraFaded);
+	}
 }
 
 void AUnit::Knockback(const FVector& From)
@@ -498,11 +587,27 @@ void AUnit::PostInitializeComponents()
 		CameraProbe->OnComponentEndOverlap.AddDynamic(this, &AUnit::OnCameraProbeEndOverlap);
 	}
 
+	// 벽 옆면 스플랫은 데칼이라 박스 안에 들어온 유닛에도 묻는다. 블루프린트가 붙인 메시까지 전부 받지 않게 한다.
+	TInlineComponentArray<UPrimitiveComponent*> Primitives(this);
+	for (UPrimitiveComponent* const Primitive : Primitives)
+	{
+		Primitive->SetReceivesDecals(false);
+	}
+
 	// 소유 클라이언트에서는 입력이, 서버에서는 압축 플래그가 이 알림을 낸다.
 	// 어느 쪽이든 실제로 상태가 바뀔 때만 한 번씩 온다.
 	if (UUnitMovementComponent* Movement = GetUnitMovement())
 	{
 		Movement->OnDashStateChanged.AddUObject(this, &AUnit::HandleDashStateChanged);
+		if (PaintWeapon)
+		{
+			PaintWeapon->OnChargingChanged.AddDynamic(this, &AUnit::HandleChargingChanged);
+		}
+		if (SecondaryWeapon)
+		{
+			SecondaryWeapon->OnChargingChanged.AddDynamic(this, &AUnit::HandleChargingChanged);
+		}
+		Movement->OnHeroLandingPhaseChanged.AddUObject(this, &AUnit::HandleHeroLandingPhaseChanged);
 	}
 	else
 	{
@@ -635,6 +740,13 @@ void AUnit::UseItem()
 // 컴포넌트에 Release/Cancel로 오는데, 그쪽은 아무것도 하지 않으므로 따로 걸러내지 않는다.
 void AUnit::StartFire()
 {
+	// 효과 중인 아이템이 좌클릭을 먼저 가져간다. 꿀풍선은 조준을 확정해 던지고, 히어로 랜딩은
+	// 공중에 멈춰 있으면 그 자리에서 내리꽂는다. 가져갔으면 무기에는 닿지 않는다.
+	if (ItemSlot && ItemSlot->HandleFireInput())
+	{
+		return;
+	}
+
 	if (PaintWeapon && !(SecondaryWeapon && SecondaryWeapon->IsTriggerHeld()))
 	{
 		PaintWeapon->PullTrigger();
@@ -659,6 +771,12 @@ void AUnit::CancelFire()
 
 void AUnit::StartSecondaryFire()
 {
+	// 우클릭은 조준 취소가 먼저다.
+	if (ItemSlot && ItemSlot->HandleCancelInput())
+	{
+		return;
+	}
+
 	if (SecondaryWeapon && !(PaintWeapon && PaintWeapon->IsTriggerHeld()))
 	{
 		SecondaryWeapon->PullTrigger();
@@ -707,6 +825,12 @@ void AUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_Stunned, EGameplayTagEventType::NewOrRemoved).Remove(StunTagHandle);
 	}
 	StunTagHandle.Reset();
+
+	if (AbilitySystem && SuperArmorTagHandle.IsValid())
+	{
+		AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_SuperArmor, EGameplayTagEventType::NewOrRemoved).Remove(SuperArmorTagHandle);
+	}
+	SuperArmorTagHandle.Reset();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -768,14 +892,57 @@ void AUnit::SetDashInput(bool bWantsToDash)
 
 void AUnit::HandleDashStateChanged(bool bDashing)
 {
-	// 서버만 다른 클라이언트에게 알릴 수 있다. 소유 클라이언트는 자기 예측으로
-	// 이미 알고 있으므로 복제에서 제외되어 있다.
-	if (HasAuthority())
+	// 이 알림은 무브먼트 플래그가 실제로 바뀐 머신(소유 클라이언트와 서버)에서만 온다. 소유
+	// 클라이언트는 복제에서 제외되어 있으므로(COND_SkipOwner) 여기서 직접 써야 자기 화면의
+	// IsDashing()이 예측값을 본다. 서버가 쓴 값은 나머지 클라이언트에게만 복제된다.
+	bIsDashing = bDashing;
+
+	// 보드를 타는 동안은 쏘지 못한다. 누르고 있던 방아쇠는 놓고, 충전 중이던 차지샷은 발사 없이
+	// 취소된다. 서버도 이 알림을 받으므로 ServerFire의 IsTriggerBlocked와 어긋나지 않는다.
+	if (bDashing)
 	{
-		bIsDashing = bDashing;
+		if (PaintWeapon)
+		{
+			PaintWeapon->CancelTrigger();
+		}
+		if (SecondaryWeapon)
+		{
+			SecondaryWeapon->CancelTrigger();
+		}
 	}
 
 	UpdateDashEffects(bDashing);
+}
+
+void AUnit::HandleHeroLandingPhaseChanged(EHeroLandingPhase NewPhase)
+{
+	// 복제는 서버만 한다. 소유 클라이언트도 이 알림을 받지만 자기 값은 무브먼트에서 직접 읽는다.
+	if (HasAuthority())
+	{
+		ReplicatedHeroPhase = NewPhase;
+	}
+}
+
+void AUnit::OnRep_HeroLandingPhase()
+{
+	// 프록시의 무브먼트는 단계 기계를 돌리지 않아 단계를 모른다. 내리꽂기가 중력 없는 직선인
+	// 것도 단계로 판단하므로(GetGravityZ), 복제된 값을 넣어 주지 않으면 프록시만 중력을 더
+	// 받아 서버보다 빨리 가라앉는다.
+	if (UUnitMovementComponent* const Movement = GetUnitMovement())
+	{
+		Movement->SetSimulatedHeroLandingPhase(ReplicatedHeroPhase);
+	}
+}
+
+EHeroLandingPhase AUnit::GetHeroLandingPhase() const
+{
+	// 이 머신이 단계 기계를 직접 돌리는 경우(소유자, 서버)에는 그 값이 가장 빠르고 정확하다.
+	if (IsLocallyControlled() || HasAuthority())
+	{
+		const UUnitMovementComponent* const Movement = GetUnitMovement();
+		return Movement ? Movement->GetHeroLandingPhase() : EHeroLandingPhase::None;
+	}
+	return ReplicatedHeroPhase;
 }
 
 void AUnit::OnRep_IsDashing()
@@ -789,6 +956,9 @@ void AUnit::UpdateDashEffects(bool bDashing)
 	{
 		return;
 	}
+
+	// 보드는 여기서 다루지 않는다. 대시 키가 아니라 대시 동작(애님 상태 기계)을 따르므로
+	// 애님 인스턴스가 SetBoardShown으로 세운다.
 
 	if (!bDashing)
 	{
@@ -814,11 +984,7 @@ void AUnit::UpdateDashEffects(bool bDashing)
 
 	// 몽타주와 소리는 진입 순간의 일회성 연출이라 공용 경로를 그대로 쓴다.
 	PlayFeedbackMontage(*Feedback);
-
-	if (Feedback->Sound)
-	{
-		UGameplayStatics::SpawnSoundAttached(Feedback->Sound, GetRootComponent());
-	}
+	UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Unit_Dash, GetRootComponent(), NAME_None, UnitData->Sounds);
 
 	// 트레일만 따로 붙잡는다. 지속되는 이펙트라 끝날 때 직접 꺼야 하기 때문이다.
 	if (Feedback->FX)
@@ -857,10 +1023,19 @@ void AUnit::PlayFeedbackMontage(const FUnitActionFeedback& Feedback)
 
 void AUnit::HandleWeaponFired(int32 Seed)
 {
+	// 몸통 방향 게이트는 서버도 봐야 하므로 연출을 거르기 전에 적는다.
+	if (const UWorld* const World = GetWorld())
+	{
+		LastFireTime = World->GetTimeSeconds();
+	}
+
 	if (GetNetMode() == NM_DedicatedServer)
 	{
 		return;
 	}
+
+	// 연출 에셋이 없어도 한 발은 나갔으므로, 총은 Feedback 조회보다 먼저 꺼낸다.
+	ShowGunForFire();
 
 	const FUnitActionFeedback* Feedback = UnitData ? UnitData->FindFeedback(EUnitAction::Fire) : nullptr;
 	if (!Feedback)
@@ -870,24 +1045,152 @@ void AUnit::HandleWeaponFired(int32 Seed)
 
 	PlayFeedbackMontage(*Feedback);
 
-	if (Feedback->Sound)
-	{
-		UGameplayStatics::SpawnSoundAttached(Feedback->Sound, GetRootComponent());
-	}
+	// 발사음은 무기 컴포넌트가 총구에서 낸다(Audio.Weapon.Fire, 무기 프로필의 Sounds).
 
-	// 총구 화염 같은 일회성 이펙트. 소켓이 없으면 폰 위치에.
+	// 총구 화염 같은 일회성 이펙트. 총에 Muzzle 소켓이 있으면 총구에서, 없으면 캐릭터 메시의
+	// FXSocket에서 튼다. 둘 다 없으면 폰 위치에. 소켓 회전을 그대로 따르므로 총구 소켓의
+	// 축이 총열 방향을 봐야 화염이 앞으로 뻗는다.
 	if (Feedback->FX)
 	{
-		if (Feedback->FXSocket != NAME_None)
+		USceneComponent* AttachComponent = nullptr;
+		FName AttachSocket = NAME_None;
+		if (GunMesh && GunMesh->DoesSocketExist(GunMuzzleSocketName))
+		{
+			AttachComponent = GunMesh;
+			AttachSocket = GunMuzzleSocketName;
+		}
+		else if (Feedback->FXSocket != NAME_None)
+		{
+			AttachComponent = GetMesh();
+			AttachSocket = Feedback->FXSocket;
+		}
+
+		if (AttachComponent)
 		{
 			UNiagaraFunctionLibrary::SpawnSystemAttached(
-				Feedback->FX, GetMesh(), Feedback->FXSocket,
+				Feedback->FX, AttachComponent, AttachSocket,
 				FVector::ZeroVector, FRotator::ZeroRotator, EAttachLocation::SnapToTarget, true);
 		}
 		else
 		{
 			UNiagaraFunctionLibrary::SpawnSystemAtLocation(GetWorld(), Feedback->FX, GetActorLocation(), GetActorRotation());
 		}
+	}
+}
+
+void AUnit::HandleChargingChanged(bool bCharging)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	if (!bCharging)
+	{
+		// 쏘고 끝났든 취소됐든 총은 평소처럼 잠시 남았다가 들어간다. 실제로 한 발 나갔다면
+		// HandleWeaponFired 가 곧 타이머를 다시 걸어 준다.
+		StopChargePose();
+		ShowGunForFire();
+		return;
+	}
+
+	// 충전하는 동안 총은 계속 들려 있어야 한다. 유지 타이머를 걷어 두지 않으면 충전 도중에
+	// 총이 사라지고, 그러면 발사 지점이 다시 쉬는 손으로 돌아간다.
+	GetWorldTimerManager().ClearTimer(GunHideTimer);
+	bGunVisible = true;
+	UpdateGunVisibility();
+
+	// 상체 자세는 UpperBody 슬롯이 정한다. 평소에는 이 슬롯으로 팔 내린 기본 포즈가 흐르고,
+	// 발사할 때만 잠깐 발사 동작이 얹힌다. 충전은 놓을 때까지 이어지므로 그 사이 자세를
+	// 붙들어 둘 것이 필요하다.
+	StartChargePose();
+}
+
+void AUnit::StartChargePose()
+{
+	StopChargePose();
+
+	const FUnitActionFeedback* const Feedback = UnitData ? UnitData->FindFeedback(EUnitAction::Charge) : nullptr;
+	UAnimInstance* const AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
+	if (!Feedback || !Feedback->Animation || !AnimInstance)
+	{
+		// 충전 자세를 등록하지 않은 캐릭터는 지금까지처럼 기본 포즈로 충전한다.
+		return;
+	}
+
+	// 슬롯 몽타주에는 “무한” 이 없다. 어떤 충전보다도 길게 돌 만큼만 반복해 두고, 실제로는
+	// 방아쇠를 놓는 순간 StopChargePose 가 세운다.
+	constexpr int32 LoopCount = 120;
+	ChargePose = AnimInstance->PlaySlotAnimationAsDynamicMontage(
+		Feedback->Animation, Feedback->AnimationSlot,
+		Feedback->AnimationBlendIn, Feedback->AnimationBlendOut, /*InPlayRate=*/1.0f, LoopCount);
+}
+
+void AUnit::StopChargePose()
+{
+	UAnimMontage* const Pose = ChargePose.Get();
+	ChargePose.Reset();
+	if (!Pose)
+	{
+		return;
+	}
+
+	if (UAnimInstance* const AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+	{
+		const FUnitActionFeedback* const Feedback = UnitData ? UnitData->FindFeedback(EUnitAction::Charge) : nullptr;
+		const float BlendOut = Feedback ? Feedback->AnimationBlendOut : 0.15f;
+		// 이 몽타주만 지목해서 세운다. 발사 동작이 이미 슬롯을 가져갔다면 아무 일도 일어나지 않는다.
+		AnimInstance->Montage_Stop(BlendOut, Pose);
+	}
+}
+
+void AUnit::ShowGunForFire()
+{
+	const float HoldTime = UnitData ? UnitData->GunVisibleHoldTime : 0.0f;
+	if (!GunMesh || HoldTime <= 0.0f)
+	{
+		return;
+	}
+
+	bGunVisible = true;
+	UpdateGunVisibility();
+
+	// 연사 중에는 발사마다 타이머가 새로 걸려 총이 계속 남는다. 마지막 한 발에서만 실제로 만료된다.
+	GetWorldTimerManager().SetTimer(GunHideTimer, this, &AUnit::HideGun, HoldTime, false);
+}
+
+void AUnit::HideGun()
+{
+	bGunVisible = false;
+	UpdateGunVisibility();
+}
+
+void AUnit::UpdateGunVisibility()
+{
+	if (GunMesh)
+	{
+		// 카메라가 안에 들어와 몸이 반투명해진 동안에는 총도 감춘다. 페이드는 스켈레탈 메시의
+		// 재질 슬롯만 바꾸므로(SetCameraFaded) 총만 불투명하게 남아 화면을 가린다.
+		GunMesh->SetVisibility(bGunVisible && !bCameraFaded);
+	}
+}
+
+void AUnit::SetBoardShown(bool bShown)
+{
+	if (bBoardShown == bShown)
+	{
+		return;
+	}
+	bBoardShown = bShown;
+	UpdateBoardVisibility();
+}
+
+void AUnit::UpdateBoardVisibility()
+{
+	if (BoardMesh)
+	{
+		// 총과 같은 이유로 카메라 페이드 중에는 감춘다.
+		BoardMesh->SetVisibility(bBoardShown && !bCameraFaded);
 	}
 }
 
@@ -900,6 +1203,7 @@ void AUnit::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimePro
 	// 소유자는 예측으로 이미 알고 있다. 보내면 자기가 아는 값을 한 번 더 받을 뿐이고,
 	// 지연 때문에 오히려 예측을 되돌리게 된다.
 	DOREPLIFETIME_CONDITION(AUnit, bIsDashing, COND_SkipOwner);
+	DOREPLIFETIME_CONDITION(AUnit, ReplicatedHeroPhase, COND_SkipOwner);
 }
 
 void AUnit::SetUnitData(UUnitDataAsset* NewUnitData)
@@ -951,4 +1255,47 @@ void AUnit::ApplyUnitData()
 	{
 		InkBottle->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("InkBottle"));
 	}
+
+	// 껍데기도 같은 메시로 맞추고 포즈를 넘겨받는다. 리더 포즈는 메시가 바뀔 때마다 다시
+	// 걸어야 본 매핑이 새 메시를 따라간다.
+	if (OutlineMesh && UnitData->Mesh)
+	{
+		OutlineMesh->SetSkeletalMesh(UnitData->Mesh);
+		OutlineMesh->SetLeaderPoseComponent(MeshComponent);
+
+		// 슬롯 수는 메시가 정하므로 메시를 넣은 뒤에 깐다.
+		for (int32 Index = 0; Index < OutlineMesh->GetNumMaterials(); ++Index)
+		{
+			OutlineMesh->SetMaterial(Index, SuperArmorOutlineMaterial);
+		}
+	}
+
+	// 메시가 바뀌면 총도 그 캐릭터의 것으로. Gun 소켓이 없는 메시면 병과 마찬가지로 발밑에 남는다.
+	if (GunMesh)
+	{
+		GunMesh->SetStaticMesh(UnitData->GunMesh);
+		GunMesh->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("Gun"));
+		UpdateGunVisibility();
+
+		// 발사 지점도 총구로 옮긴다. 총 모양이 캐릭터마다 다르므로 소켓은 총 메시에 있고,
+		// 총이나 Muzzle 소켓이 없으면 무기가 알아서 손 소켓으로 되돌아간다.
+		for (UPaintWeaponComponent* const Weapon : { PaintWeapon.Get(), SecondaryWeapon.Get() })
+		{
+			if (Weapon)
+			{
+				Weapon->SetMuzzleSource(GunMesh, GunMuzzleSocketName);
+			}
+		}
+	}
+
+	// 보드도 그 캐릭터의 것으로. Board 소켓이 없는 메시면 발밑이 아니라 메시 원점에 남는다.
+	if (BoardMesh)
+	{
+		BoardMesh->SetStaticMesh(UnitData->BoardMesh);
+		BoardMesh->AttachToComponent(MeshComponent, FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("Board"));
+		UpdateBoardVisibility();
+	}
+
+	// 메시가 교체되면 오버레이도 새 메시에 다시 걸어야 한다.
+	UpdateSuperArmorOutline();
 }
