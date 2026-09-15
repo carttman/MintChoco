@@ -35,6 +35,23 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Match")
 	bool IsReady() const { return bReady; }
 
+	/**
+	 * 서버 전용. 로비에서 넘어온 팀과 닉네임을 넣는다. 트래블 복사와 테스트가 쓴다.
+	 * 블루프린트의 ReceiveCopyProperties가 Team/Nickname에 직접 쓰는 것과 같은 일이다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Team")
+	void SetTeam(int32 InTeam) { Team = InTeam; }
+
+	UFUNCTION(BlueprintCallable, Category = "Team")
+	void SetNickname(const FText& InNickname) { Nickname = InNickname; }
+
+	/**
+	 * Seamless Travel로 다음 맵의 PlayerState에 값을 옮긴다. 이 클래스는 C++뿐이라
+	 * 블루프린트 ReceiveCopyProperties가 없으므로, 여기서 옮기지 않으면 로비로 돌아온
+	 * 플레이어는 팀도 이름도 없이 시작한다(리슨 호스트는 ClientInitialize도 오지 않는다).
+	 */
+	virtual void CopyProperties(APlayerState* PlayerState) override;
+
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 

@@ -811,6 +811,13 @@ void AUnit::StartFire()
 	if (PaintWeapon && !(SecondaryWeapon && SecondaryWeapon->IsTriggerHeld()))
 	{
 		PaintWeapon->PullTrigger();
+
+		// 당김이 받아들여졌으면 아이템의 마무리 동작(스위트 스피너의 끝 동작)을 기다리지 않는다.
+		// 조준 자세가 바로 올라와야 첫 발이 늦지 않는다. 서버는 발사와 충전에서 따로 끊는다.
+		if (ItemSlot && PaintWeapon->IsTriggerHeld())
+		{
+			ItemSlot->InterruptItemRecovery();
+		}
 	}
 }
 
@@ -841,6 +848,12 @@ void AUnit::StartSecondaryFire()
 	if (SecondaryWeapon && !(PaintWeapon && PaintWeapon->IsTriggerHeld()))
 	{
 		SecondaryWeapon->PullTrigger();
+
+		// 주무기와 같다: 아이템의 마무리 동작을 기다리지 않는다.
+		if (ItemSlot && SecondaryWeapon->IsTriggerHeld())
+		{
+			ItemSlot->InterruptItemRecovery();
+		}
 	}
 }
 
@@ -1090,6 +1103,13 @@ void AUnit::HandleWeaponFired(int32 Seed)
 		LastFireTime = World->GetTimeSeconds();
 	}
 
+	// 서버는 방아쇠를 보지 못하므로 발사에서 아이템의 마무리 동작을 끊는다. 서버가 끊어야 자세 교체가
+	// 풀려 구경꾼에게도 복제된다. 소유자는 당길 때 이미 끊었으므로 여기서는 아무 일도 없다.
+	if (ItemSlot)
+	{
+		ItemSlot->InterruptItemRecovery();
+	}
+
 	if (GetNetMode() == NM_DedicatedServer)
 	{
 		return;
@@ -1141,6 +1161,13 @@ void AUnit::HandleWeaponFired(int32 Seed)
 
 void AUnit::HandleChargingChanged(bool bCharging)
 {
+	// 충전 시작도 발사와 같다. 충전 자세가 아이템의 마무리 동작에 덮이지 않게 서버(리슨 호스트)도
+	// 여기서 끊는다. 데디케이티드 서버에는 이 알림이 오지 않으므로 발사(HandleWeaponFired)에서 끊긴다.
+	if (bCharging && ItemSlot)
+	{
+		ItemSlot->InterruptItemRecovery();
+	}
+
 	if (GetNetMode() == NM_DedicatedServer)
 	{
 		return;
@@ -1245,6 +1272,35 @@ void AUnit::SetBoardShown(bool bShown)
 	bBoardShown = bShown;
 	UpdateBoardVisibility();
 	UpdateBoardLoopSound();
+}
+
+void AUnit::SetMeshLean(float RollDegrees)
+{
+	USkeletalMeshComponent* const MeshComponent = GetMesh();
+	if (!MeshComponent || FMath::IsNearlyEqual(RollDegrees, MeshLeanDegrees, 1e-3f))
+	{
+		return;
+	}
+
+	// 기준은 처음 기울일 때 한 번 잡는다. 기울이는 동안 캐릭터의 기준 회전도 같이 바뀌므로, 매번 다시
+	// 읽으면 기울기가 쌓인다.
+	if (!bMeshRestCaptured)
+	{
+		MeshRestRotation = GetBaseRotationOffset();
+		bMeshRestCaptured = true;
+	}
+	MeshLeanDegrees = RollDegrees;
+
+	// 캡슐의 앞 축(X)을 중심으로 굴린다. 메시의 기준 회전(보통 요 -90)보다 바깥에서 곱해야 메시 축이 아니라
+	// 캐릭터 축으로 기운다. 양의 롤은 앞을 보며 시계 방향이라 머리가 오른쪽(+Y)으로 간다.
+	const FQuat Leaned = FRotator(0.0f, 0.0f, RollDegrees).Quaternion() * MeshRestRotation;
+
+	// 네트워크 스무딩(다른 클라이언트의 폰, 리슨 서버의 원격 폰)은 매 틱 메시 상대 회전을
+	// "스무딩 오프셋 × GetBaseRotationOffset"으로 다시 쓴다. 기준도 함께 바꿔야 기울기가 덮이지 않는다.
+	// 지금 걸려 있는 스무딩 오프셋은 그대로 보존한다.
+	const FQuat SmoothingOffset = MeshComponent->GetRelativeRotation().Quaternion() * GetBaseRotationOffset().Inverse();
+	CacheInitialMeshOffset(GetBaseTranslationOffset(), Leaned.Rotator());
+	MeshComponent->SetRelativeRotation(SmoothingOffset * Leaned);
 }
 
 void AUnit::UpdateBoardLoopSound()

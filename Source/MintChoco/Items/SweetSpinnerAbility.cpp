@@ -70,7 +70,6 @@ void UGA_SweetSpinner::OnItemActivated(AUnit& Unit, const UItemProfile& Profile)
 void UGA_SweetSpinner::SchedulePosePhases(AUnit& Unit)
 {
 	const float StartLength = Spinner->GetStartPhaseLength();
-	const float SpinLength = Spinner->GetSpinPhaseLength();
 
 	// 시작 동작이 있으면 상체에만 얹는다: 하체는 로코모션이 그대로 돌아 달리면서 준비할 수 있다.
 	if (Spinner->StartAnimation && StartLength > UE_KINDA_SMALL_NUMBER)
@@ -86,13 +85,8 @@ void UGA_SweetSpinner::SchedulePosePhases(AUnit& Unit)
 		EnterSpinPose();
 	}
 
-	// 마무리는 회전이 끝나는 시각에. 없으면 회전 자세가 효과 끝까지 간다.
-	if (Spinner->EndAnimation)
-	{
-		UAbilityTask_WaitDelay* const ToEnd = UAbilityTask_WaitDelay::WaitDelay(this, StartLength + SpinLength);
-		ToEnd->OnFinish.AddDynamic(this, &UGA_SweetSpinner::EnterEndPose);
-		ToEnd->ReadyForActivation();
-	}
+	// 끝 동작은 여기서 예약하지 않는다. 회전이 끝나면 효과(태그)가 내려가고 마무리가 시작되며
+	// OnRecoveryStarted가 그것을 얹는다. 끝 동작이 없으면 회전 자세가 효과 끝까지 간다.
 }
 
 void UGA_SweetSpinner::SetPose(UAnimSequenceBase* Animation, EItemPoseBlend Blend)
@@ -113,6 +107,24 @@ void UGA_SweetSpinner::EnterSpinPose()
 void UGA_SweetSpinner::EnterEndPose()
 {
 	SetPose(Spinner ? ToRawPtr(Spinner->EndAnimation) : nullptr, EItemPoseBlend::UpperBody);
+}
+
+float UGA_SweetSpinner::GetEffectDuration(const UItemProfile& Profile) const
+{
+	const USweetSpinnerProfile* const SpinnerProfile = Cast<USweetSpinnerProfile>(&Profile);
+	return SpinnerProfile ? SpinnerProfile->GetEffectPhaseLength() : Super::GetEffectDuration(Profile);
+}
+
+float UGA_SweetSpinner::GetRecoveryDuration(const UItemProfile& Profile) const
+{
+	const USweetSpinnerProfile* const SpinnerProfile = Cast<USweetSpinnerProfile>(&Profile);
+	return SpinnerProfile ? SpinnerProfile->GetEndPhaseLength() : 0.0f;
+}
+
+void UGA_SweetSpinner::OnRecoveryStarted(AUnit& Unit, const UItemProfile& Profile)
+{
+	// 회전이 끝났다. 상태 태그는 내려갔고 산탄도 더 나가지 않는다. 끝 동작만 상체에 얹는다.
+	EnterEndPose();
 }
 
 void UGA_SweetSpinner::StartVolleys()

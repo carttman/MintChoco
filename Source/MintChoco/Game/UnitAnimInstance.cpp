@@ -1,5 +1,6 @@
 #include "Game/UnitAnimInstance.h"
 
+#include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -36,6 +37,29 @@ bool FUnitAnimMath::IsFireHoldActive(double Now, double LastFiredTime, float Hol
 	return LastFiredTime >= 0.0 && HoldSeconds > 0.0f && Now - LastFiredTime <= HoldSeconds;
 }
 
+float FUnitAnimMath::YawRateDegrees(double PreviousYaw, double CurrentYaw, float DeltaSeconds)
+{
+	if (DeltaSeconds <= UE_KINDA_SMALL_NUMBER)
+	{
+		return 0.0f;
+	}
+	// NormalizeAxis는 몇 바퀴가 쌓인 값도 (-180, 180]로 접는다. 컨트롤 회전의 요는 0..360으로 오기도 한다.
+	return static_cast<float>(FRotator::NormalizeAxis(CurrentYaw - PreviousYaw) / DeltaSeconds);
+}
+
+float FUnitAnimMath::BoardLeanFromTurn(float GroundSpeed, float YawRateDegreesPerSecond, float LeanGravity, float MaxDegrees)
+{
+	if (LeanGravity <= UE_KINDA_SMALL_NUMBER)
+	{
+		return 0.0f;
+	}
+	// 원을 도는 구심 가속도는 속도 × 각속도(rad/s)이고, 그것과 중력의 비가 기울기의 탄젠트다.
+	const float Lateral = FMath::Max(GroundSpeed, 0.0f) * FMath::DegreesToRadians(YawRateDegreesPerSecond);
+	const float Lean = FMath::RadiansToDegrees(FMath::Atan(Lateral / LeanGravity));
+	const float Limit = FMath::Abs(MaxDegrees);
+	return FMath::Clamp(Lean, -Limit, Limit) * (MaxDegrees < 0.0f ? -1.0f : 1.0f);
+}
+
 // ---------------------------------------------------------------- UUnitAnimInstance
 
 void UUnitAnimInstance::NativeInitializeAnimation()
@@ -43,6 +67,7 @@ void UUnitAnimInstance::NativeInitializeAnimation()
 	Super::NativeInitializeAnimation();
 	Unit = Cast<AUnit>(TryGetPawnOwner());
 	bAimPitchInitialized = false;
+	bBodyYawInitialized = false;
 
 	// 상태 기계는 클래스에 구워져 있어 인스턴스마다 한 번만 찾으면 된다.
 	LocomotionMachineIndex = GetStateMachineIndex(LocomotionMachineName);
@@ -58,6 +83,7 @@ void UUnitAnimInstance::NativeUninitializeAnimation()
 	if (AUnit* const Bound = BoundUnit.Get())
 	{
 		Bound->SetBoardShown(false);
+		Bound->SetMeshLean(0.0f);
 	}
 	BindWeapons(nullptr);
 	Super::NativeUninitializeAnimation();
@@ -71,6 +97,18 @@ bool UUnitAnimInstance::IsInDashState() const
 	}
 	// 전이가 시작되는 순간 현재 상태가 목표 상태로 바뀌므로, 블렌드 중에도 대시로 친다.
 	return GetCurrentStateName(LocomotionMachineIndex).ToString().StartsWith(DashStatePrefix);
+}
+
+double UUnitAnimInstance::GetBodyYaw(const AUnit& InUnit) const
+{
+	// 보이는 몸의 요. 메시 월드 회전에서 기준 회전(요 -90과 기울기)을 걷어 캡슐 기준의 요만 남긴다.
+	// 소유자와 서버는 메시가 액터를 그대로 따르고, 다른 클라이언트는 복제 회전에 네트워크 스무딩이 걸린
+	// 메시라 복제 주기로 튀지 않는다. 그래서 모든 머신이 같은 식으로 잰다.
+	if (const USkeletalMeshComponent* const MeshComponent = GetSkelMeshComponent())
+	{
+		return (MeshComponent->GetComponentQuat() * InUnit.GetBaseRotationOffset().Inverse()).Rotator().Yaw;
+	}
+	return InUnit.GetActorRotation().Yaw;
 }
 
 void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
@@ -129,6 +167,28 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		bDashAnimationActive = IsInDashState();
 		Unit->SetBoardShown(bDashAnimationActive);
 
+		// 보드 기울기도 동작을 따른다. 보드 동작 중에는 몸이 도는 속도와 이동 속도만큼 회전 안쪽으로
+		// 기운다. 몸의 요는 보드 회전 제어기(FBoardTurn)가 부드럽게 돌린 것이라 기울기도 매끄럽다. 요는
+		// 보이는 메시에서 재므로 소유자·서버·다른 클라이언트가 같은 경로를 탄다. 회전 속도는 보드 밖에서도
+		// 계속 재 두어야 보드에 오르는 첫 프레임이 튀지 않는다.
+		const double BodyYaw = GetBodyYaw(*Unit);
+		const float YawRate = bBodyYawInitialized ? FUnitAnimMath::YawRateDegrees(LastBodyYaw, BodyYaw, DeltaSeconds) : 0.0f;
+		LastBodyYaw = BodyYaw;
+		bBodyYawInitialized = true;
+
+		const float TargetLean = bDashAnimationActive
+			? FUnitAnimMath::BoardLeanFromTurn(GroundSpeed, YawRate, BoardLeanGravity, BoardLeanMaxDegrees)
+			: 0.0f;
+		BoardLean = BoardLeanInterpSpeed > 0.0f
+			? FMath::FInterpTo(BoardLean, TargetLean, DeltaSeconds, BoardLeanInterpSpeed)
+			: TargetLean;
+		// 거의 섰으면 딱 맞춘다. 평소에는 메시 트랜스폼을 매 프레임 다시 쓰지 않게 하려는 것이다.
+		if (FMath::IsNearlyZero(TargetLean) && FMath::Abs(BoardLean) < 0.05f)
+		{
+			BoardLean = 0.0f;
+		}
+		Unit->SetMeshLean(BoardLean);
+
 		// 유닛에게 묻는다: 원격 폰의 단계는 무브먼트가 아니라 복제된 값에서 온다.
 		HeroLandingPhase = Unit->GetHeroLandingPhase();
 		bIsHeroLanding = HeroLandingPhase != EHeroLandingPhase::None;
@@ -166,6 +226,8 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		bIsDashing = false;
 		bIsStunned = false;
 		bDashAnimationActive = false;
+		BoardLean = 0.0f;
+		bBodyYawInitialized = false;
 		HeroLandingPhase = EHeroLandingPhase::None;
 		bIsHeroLanding = false;
 		bIsFiring = false;

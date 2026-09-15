@@ -88,6 +88,16 @@ public:
 	bool HandleCancelInput();
 
 	/**
+	 * 마무리 동작만 남은 아이템(UItemAbility::IsRecovering)을 지금 끝낸다. 발사와 아이템 사용이
+	 * 부른다: 그 입력은 마무리가 끝나기를 기다리지 않고 바로 나가야 한다. 마무리 중인 것이 없으면
+	 * 아무 일도 없다. Except는 지금 켜지는 어빌리티 자신이다.
+	 *
+	 * 어빌리티는 서버와 소유 클라이언트에만 있으므로 그 둘에서만 끊긴다. 구경꾼은 서버가 풀어 준
+	 * 자세 교체(PoseOverride)의 복제로 따라온다.
+	 */
+	void InterruptItemRecovery(const UItemAbility* Except = nullptr);
+
+	/**
 	 * 지금 유지할 아이템 자세. 없으면 nullptr. 애님 인스턴스가 매 프레임 읽어 ABP로 넘긴다.
 	 *
 	 * 효과 중인 아이템은 복제되는 상태 태그에서, 조준 중인 아이템은 복제되는 bAiming에서

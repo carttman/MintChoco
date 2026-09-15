@@ -145,6 +145,13 @@ public:
 	 */
 	virtual bool GrantsSpeedBoost() const { return false; }
 
+	/**
+	 * 효과 동안 슈퍼아머(State.Status.SuperArmor)를 주는 아이템인지. 참이면 어빌리티가 상태 태그와 함께
+	 * 슈퍼아머 태그를 GE에 싣는다: 스턴과 밀어내기가 먹지 않고 슈퍼아머 하이라이트가 켜지며, 효과가
+	 * 끝나면 함께 내려간다. 즉발 아이템은 GE가 없으므로 이 값과 무관하다.
+	 */
+	virtual bool GrantsSuperArmor() const { return false; }
+
 	/** 즉발 아이템인지(Duration 0). */
 	bool IsInstant() const { return Duration <= 0.0f; }
 

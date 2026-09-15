@@ -11,7 +11,7 @@
  * 스피드 스타: 잠시 고정 속도로 달리며 지나간 바닥을 자기 색으로 칠한다.
  *
  * 속도 값은 여기 없다. 이동 속도는 서버와 클라이언트가 같은 무브에서 같은 값을 써야
- * 하므로 UUnitMovementComponent::SpeedBoostSpeed 하나가 진실이고, 이 프로필은 그
+ * 하므로 UUnitMovementComponent::SpeedBoostMultiplier 하나가 진실이고, 이 프로필은 그
  * 부스트를 켜는 아이템이라는 것만 말한다(GrantsSpeedBoost).
  */
 UCLASS(BlueprintType)
@@ -50,6 +50,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SpeedStar", meta = (ClampMin = "0", ForceUnits = "s"))
 	float PaintFadeDuration = 2.0f;
 
+	/**
+	 * 효과 동안 슈퍼아머를 준다. 스턴과 밀어내기가 먹지 않고 슈퍼아머 하이라이트(외곽선)가 켜지며,
+	 * 효과가 끝나면 함께 풀린다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SpeedStar")
+	bool bSuperArmor = true;
+
 	virtual bool GrantsSpeedBoost() const override { return true; }
+	virtual bool GrantsSuperArmor() const override { return bSuperArmor; }
 	virtual void LogUnsetReferences(const UObject* Owner) const override;
 };

@@ -108,6 +108,8 @@ Tangent); `CustomizedUVs` and WPO are vertex-frequency. Everything else: `docs/T
 - Facing: the body yaw follows the camera only while moving or firing
   (`UUnitMovementComponent::PhysicsRotation` gate, `RotationRate.Yaw` 720, `AUnit::FaceAimHoldSeconds`);
   idle look-around leaves the body alone. Never turn `bUseControllerRotationYaw` back on.
+  While dashing (board) the yaw follows through `FBoardTurn` (smooth angular velocity with min/max
+  rate) instead of the constant 720, and the board lean is that turn rate × speed.
 - Firing origin: a shot's physics leaves the sight line at the pawn's depth (`PaintAim::FireOrigin`
   → `FPaintFireContext::Muzzle`); the gun socket is only `VisualMuzzle`, for FX, tracers and the
   ball mesh's merge onto the path (`UPaintballProfile::VisualMergeSeconds`). Never fire from the

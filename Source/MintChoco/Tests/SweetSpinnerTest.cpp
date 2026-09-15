@@ -136,4 +136,64 @@ bool FSweetSpinnerPhaseTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+/**
+ * 끝 동작은 효과 밖의 마무리다. 태그는 회전이 끝나는 시각에 내려가야 끝 동작 중에 총과 아이템이
+ * 바로 나가고, 마무리는 끝 클립 한 번이며 지속시간을 넘지 않는다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSweetSpinnerRecoveryTest,
+	"MintChoco.Items.SweetSpinner.Recovery",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FSweetSpinnerRecoveryTest::RunTest(const FString& Parameters)
+{
+	float Effect = 0.0f;
+	float Recovery = 0.0f;
+
+	// 시작 0.5 + 회전 2.0 = 2.5에 태그가 내려가고, 끝 클립 0.8이 남은 0.8에 딱 맞는다.
+	SweetSpinner::ComposeRecovery(0.5f, 2.0f, 0.8f, 3.3f, Effect, Recovery);
+	TestEqual(TEXT("태그는 회전이 끝나는 시각까지"), Effect, 2.5f, 1e-3f);
+	TestEqual(TEXT("마무리는 끝 클립 길이"), Recovery, 0.8f, 1e-3f);
+
+	// 남은 시간이 끝 클립보다 짧으면 지속시간에서 잘린다(예전에도 거기서 잘렸다).
+	SweetSpinner::ComposeRecovery(0.5f, 2.0f, 0.8f, 3.0f, Effect, Recovery);
+	TestEqual(TEXT("짧아도 태그는 회전 끝까지"), Effect, 2.5f, 1e-3f);
+	TestEqual(TEXT("마무리는 지속시간 안으로 잘린다"), Recovery, 0.5f, 1e-3f);
+
+	// 남은 시간이 더 길어도 끝 클립은 한 번만 돈다. 늘이면 루프하는 자세가 되감긴다.
+	SweetSpinner::ComposeRecovery(0.5f, 1.0f, 0.5f, 3.0f, Effect, Recovery);
+	TestEqual(TEXT("길어도 태그는 회전 끝까지"), Effect, 1.5f, 1e-3f);
+	TestEqual(TEXT("끝 클립은 한 번"), Recovery, 0.5f, 1e-3f);
+
+	// 끝 클립이 없으면 예전 동작: 효과가 지속시간 전체, 마무리 없음.
+	SweetSpinner::ComposeRecovery(0.5f, 2.0f, 0.0f, 3.0f, Effect, Recovery);
+	TestEqual(TEXT("끝 동작이 없으면 효과가 끝까지"), Effect, 3.0f, 1e-3f);
+	TestEqual(TEXT("끝 동작이 없으면 마무리 없음"), Recovery, 0.0f);
+
+	// 회전이 지속시간을 다 쓰면 끝 동작이 들어갈 틈이 없다.
+	SweetSpinner::ComposeRecovery(0.5f, 3.0f, 0.8f, 3.0f, Effect, Recovery);
+	TestEqual(TEXT("틈이 없으면 효과가 끝까지"), Effect, 3.0f, 1e-3f);
+	TestEqual(TEXT("틈이 없으면 마무리 없음"), Recovery, 0.0f);
+
+	// 회전 구간이 비어 있으면(클립 길이 0) 태그를 0초로 걸 수 없으니 예전 동작으로 둔다.
+	SweetSpinner::ComposeRecovery(0.0f, 0.0f, 0.8f, 3.0f, Effect, Recovery);
+	TestEqual(TEXT("회전이 비면 효과가 끝까지"), Effect, 3.0f, 1e-3f);
+	TestEqual(TEXT("회전이 비면 마무리 없음"), Recovery, 0.0f);
+
+	// 합은 절대 지속시간을 넘지 않는다.
+	for (const float Duration : {1.0f, 2.5f, 3.0f, 4.0f})
+	{
+		SweetSpinner::ComposeRecovery(0.5f, 2.0f, 0.8f, Duration, Effect, Recovery);
+		TestTrue(*FString::Printf(TEXT("지속 %.1f초: 효과 + 마무리가 넘지 않는다"), Duration), Effect + Recovery <= Duration + 1e-3f);
+	}
+
+	// 프로필: 클립이 하나도 없으면 효과가 지속시간 전체이고 마무리가 없다.
+	USweetSpinnerProfile* const Profile = NewObject<USweetSpinnerProfile>();
+	Profile->Duration = 2.0f;
+	TestEqual(TEXT("클립이 없는 프로필은 효과가 끝까지"), Profile->GetEffectPhaseLength(), 2.0f, 1e-3f);
+	TestEqual(TEXT("클립이 없는 프로필은 마무리 없음"), Profile->GetEndPhaseLength(), 0.0f);
+
+	return true;
+}
+
 #endif
