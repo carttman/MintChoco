@@ -78,6 +78,13 @@ void UItemAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle, cons
 		return;
 	}
 
+	// 다른 아이템의 마무리 동작을 기다리지 않는다. 그 자세 교체가 남아 있으면 새 아이템의 자세가 덮인다.
+	// 조준형도 마찬가지다: 조준 자세가 바로 올라와야 한다.
+	if (UItemSlotComponent* const Slot = Unit->GetItemSlot())
+	{
+		Slot->InterruptItemRecovery(this);
+	}
+
 	// 조준형: 아직 아무것도 일어나지 않는다. 슬롯도 그대로, GE도 없다. 좌클릭이 오면 ConfirmAim이
 	// 아래의 StartItem을 부르고, 우클릭이 오면 손대지 않은 채로 끝난다.
 	if (IsAimingItem())
@@ -120,6 +127,7 @@ void UItemAbility::StartItem()
 	}
 
 	AppliedEffect = FActiveGameplayEffectHandle();
+	bRecovering = false;
 
 	// 즉발: GE 없이 효과를 내고 바로 끝난다. 남는 것은 OnItemActivated가 스폰한 액터뿐이다.
 	if (Profile->IsInstant())
@@ -142,7 +150,9 @@ void UItemAbility::StartItem()
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
-	Spec.Data->SetSetByCallerMagnitude(ItemTags::Data_Item_Duration, Profile->Duration);
+	// 상태 태그가 걸려 있는 시간. 마무리 동작이 있는 아이템은 그 앞에서 태그를 내리고 마무리를 따로 굴린다.
+	const float EffectDuration = ResolveEffectDuration(*Profile);
+	Spec.Data->SetSetByCallerMagnitude(ItemTags::Data_Item_Duration, EffectDuration);
 	Spec.Data->DynamicGrantedTags.AddTag(StateTag);
 	Spec.Data->GetContext().AddSourceObject(Profile);
 	AppliedEffect = ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, Spec);
@@ -153,20 +163,20 @@ void UItemAbility::StartItem()
 		{
 			UAbilityTask_WaitGameplayEffectRemoved* const Wait = UAbilityTask_WaitGameplayEffectRemoved::WaitForGameplayEffectRemoved(this, AppliedEffect);
 			Wait->OnRemoved.AddDynamic(this, &UItemAbility::HandleEffectRemoved);
-			Wait->InvalidHandle.AddDynamic(this, &UItemAbility::HandleEffectRemoved);
+			Wait->InvalidHandle.AddDynamic(this, &UItemAbility::HandleEffectInvalid);
 			Wait->ReadyForActivation();
 		}
 		else
 		{
 			// 스펙이 거부된 경우(면역 등). 지금은 그런 GE가 없으므로 방어 코드다.
-			UAbilityTask_WaitDelay* const Delay = UAbilityTask_WaitDelay::WaitDelay(this, Profile->Duration);
+			UAbilityTask_WaitDelay* const Delay = UAbilityTask_WaitDelay::WaitDelay(this, EffectDuration);
 			Delay->OnFinish.AddDynamic(this, &UItemAbility::HandleDurationElapsed);
 			Delay->ReadyForActivation();
 		}
 	}
 	else
 	{
-		UAbilityTask_WaitDelay* const Delay = UAbilityTask_WaitDelay::WaitDelay(this, Profile->Duration);
+		UAbilityTask_WaitDelay* const Delay = UAbilityTask_WaitDelay::WaitDelay(this, EffectDuration);
 		Delay->OnFinish.AddDynamic(this, &UItemAbility::HandleDurationElapsed);
 		Delay->ReadyForActivation();
 	}
@@ -177,11 +187,77 @@ void UItemAbility::StartItem()
 
 void UItemAbility::HandleEffectRemoved(const FGameplayEffectRemovalInfo& RemovalInfo)
 {
+	// 강제로 걷혔다(FinishItem, 정리 등). 마무리를 보여 줄 이유가 없다.
+	if (RemovalInfo.bPrematureRemoval)
+	{
+		EndFromTimer();
+		return;
+	}
+	BeginRecoveryOrEnd();
+}
+
+void UItemAbility::HandleEffectInvalid(const FGameplayEffectRemovalInfo& RemovalInfo)
+{
 	EndFromTimer();
 }
 
 void UItemAbility::HandleDurationElapsed()
 {
+	BeginRecoveryOrEnd();
+}
+
+void UItemAbility::HandleRecoveryElapsed()
+{
+	EndFromTimer();
+}
+
+float UItemAbility::GetEffectDuration(const UItemProfile& Profile) const
+{
+	return Profile.Duration;
+}
+
+float UItemAbility::ResolveEffectDuration(const UItemProfile& Profile) const
+{
+	const float Wanted = GetEffectDuration(Profile);
+	return Wanted > UE_KINDA_SMALL_NUMBER ? FMath::Min(Wanted, Profile.Duration) : Profile.Duration;
+}
+
+void UItemAbility::BeginRecoveryOrEnd()
+{
+	if (!IsActive() || bRecovering)
+	{
+		return;
+	}
+
+	AUnit* const Unit = GetUnit();
+	const UItemProfile* const Profile = GetItemProfile();
+	const float Recovery = (Unit && Profile) ? GetRecoveryDuration(*Profile) : 0.0f;
+	if (Recovery <= UE_KINDA_SMALL_NUMBER)
+	{
+		EndFromTimer();
+		return;
+	}
+
+	// 상태 태그는 내려갔다(서버는 방금, 소유 클라이언트는 서버의 제거가 복제되는 대로). 무기와 다른
+	// 아이템이 풀리고, 어빌리티는 마무리 동작을 위해서만 산다.
+	bRecovering = true;
+
+	UAbilityTask_WaitDelay* const Delay = UAbilityTask_WaitDelay::WaitDelay(this, Recovery);
+	Delay->OnFinish.AddDynamic(this, &UItemAbility::HandleRecoveryElapsed);
+	Delay->ReadyForActivation();
+
+	OnRecoveryStarted(*Unit, *Profile);
+}
+
+void UItemAbility::InterruptRecovery()
+{
+	if (!bRecovering || !IsActive())
+	{
+		return;
+	}
+
+	// 끝나는 경로는 만료와 같다. 서버의 끝은 소유자에게 복제되고, 소유자의 끝은 자기만의 것이다.
+	// 서버는 자기가 받은 발사와 아이템 사용에서 따로 끊는다.
 	EndFromTimer();
 }
 
@@ -284,6 +360,7 @@ void UItemAbility::EndAbility(const FGameplayAbilitySpecHandle Handle, const FGa
 {
 	// 조준 중에 다른 이유로 끝났다(사망, 재발동, 스턴). 미리보기는 어떤 경로로 끝나든 치워져야 한다.
 	EndAim(/*bConfirmed=*/false);
+	bRecovering = false;
 
 	if (bItemStarted)
 	{

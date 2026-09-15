@@ -25,6 +25,9 @@ enum class EItemPoseBlend : uint8;
  * 돌리지 않는 데디케이티드 서버에서도 그대로 읽힌다(런타임 노티파이로는 그게 안 된다).
  *
  * 클라이언트는 슬롯 컴포넌트의 멀티캐스트로 같은 산탄을 연출로 본다. 잉크는 쓰지 않는다.
+ *
+ * 끝 동작은 효과 밖의 마무리다(UItemAbility의 recovery). 회전이 끝나면 상태 태그가 내려가 총과
+ * 다른 아이템이 풀리고, 끝 동작 중에 쏘거나 다른 아이템을 쓰면 끝 동작이 그 자리에서 끊긴다.
  */
 UCLASS()
 class MINTCHOCO_API UGA_SweetSpinner : public UItemAbility
@@ -46,10 +49,20 @@ protected:
 	virtual void OnItemActivated(AUnit& Unit, const UItemProfile& Profile) override;
 	virtual void OnItemEnded(AUnit& Unit, const UItemProfile& Profile) override;
 
+	/** 끝 동작이 있으면 회전이 끝나는 시각까지만 태그를 건다. */
+	virtual float GetEffectDuration(const UItemProfile& Profile) const override;
+
+	/** 끝 동작 한 번(지속시간 안으로 잘린다). */
+	virtual float GetRecoveryDuration(const UItemProfile& Profile) const override;
+
+	/** 끝 동작을 상체에 얹는다. */
+	virtual void OnRecoveryStarted(AUnit& Unit, const UItemProfile& Profile) override;
+
 private:
 	/**
-	 * 시작(상체) → 회전(전신) → 끝(상체)으로 자세를 넘길 타이머를 건다. 구간의 길이는 각 클립의
-	 * 길이가 정한다. 서버와 소유 클라이언트가 각자 굴리고, 나머지 머신은 슬롯의 복제로 따라온다.
+	 * 시작(상체) → 회전(전신)으로 자세를 넘길 타이머를 건다. 구간의 길이는 각 클립의 길이가 정한다.
+	 * 끝(상체)은 여기서 예약하지 않고 마무리가 시작될 때(OnRecoveryStarted) 얹는다. 서버와 소유
+	 * 클라이언트가 각자 굴리고, 나머지 머신은 슬롯의 복제로 따라온다.
 	 */
 	void SchedulePosePhases(AUnit& Unit);
 

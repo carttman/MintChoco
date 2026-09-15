@@ -3,6 +3,7 @@
 #include "AssetRegistry/ARFilter.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "Animation/AnimSequenceBase.h"
 #include "Modules/ModuleManager.h"
 
 #include "Items/BeeProfile.h"
@@ -83,6 +84,15 @@ bool FItemProfileAssetTest::RunTest(const FString& Parameters)
 			TestTrue(*FString::Printf(TEXT("%s: Turns is positive"), *Name), Spinner->Turns > 0.0f);
 			TestTrue(*FString::Printf(TEXT("%s: VolleyInterval fits the duration"), *Name),
 				Spinner->VolleyInterval > 0.0f && Spinner->VolleyInterval <= Spinner->Duration);
+			// 끝 동작은 효과 밖의 마무리다. 지속시간 안에 틈이 없으면 끝 동작이 아예 나오지 않는다.
+			if (Spinner->EndAnimation)
+			{
+				AddInfo(FString::Printf(TEXT("%s: Duration %.2f s = start %.2f + spin %.2f, effect %.2f, end %.2f (clip %.2f)"),
+					*Name, Spinner->Duration, Spinner->GetStartPhaseLength(), Spinner->GetSpinPhaseLength(),
+					Spinner->GetEffectPhaseLength(), Spinner->GetEndPhaseLength(), Spinner->EndAnimation->GetPlayLength()));
+				TestTrue(*FString::Printf(TEXT("%s: EndAnimation has time to play inside Duration"), *Name),
+					Spinner->GetEndPhaseLength() > 0.0f);
+			}
 			if (Spinner->Volley)
 			{
 				TestNotNull(*FString::Printf(TEXT("%s: Volley paintball"), *Name), Spinner->Volley->Paintball.Get());

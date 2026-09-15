@@ -751,6 +751,13 @@ void AUnit::StartFire()
 	if (PaintWeapon && !(SecondaryWeapon && SecondaryWeapon->IsTriggerHeld()))
 	{
 		PaintWeapon->PullTrigger();
+
+		// 당김이 받아들여졌으면 아이템의 마무리 동작(스위트 스피너의 끝 동작)을 기다리지 않는다.
+		// 조준 자세가 바로 올라와야 첫 발이 늦지 않는다. 서버는 발사와 충전에서 따로 끊는다.
+		if (ItemSlot && PaintWeapon->IsTriggerHeld())
+		{
+			ItemSlot->InterruptItemRecovery();
+		}
 	}
 }
 
@@ -781,6 +788,12 @@ void AUnit::StartSecondaryFire()
 	if (SecondaryWeapon && !(PaintWeapon && PaintWeapon->IsTriggerHeld()))
 	{
 		SecondaryWeapon->PullTrigger();
+
+		// 주무기와 같다: 아이템의 마무리 동작을 기다리지 않는다.
+		if (ItemSlot && SecondaryWeapon->IsTriggerHeld())
+		{
+			ItemSlot->InterruptItemRecovery();
+		}
 	}
 }
 
@@ -1030,6 +1043,13 @@ void AUnit::HandleWeaponFired(int32 Seed)
 		LastFireTime = World->GetTimeSeconds();
 	}
 
+	// 서버는 방아쇠를 보지 못하므로 발사에서 아이템의 마무리 동작을 끊는다. 서버가 끊어야 자세 교체가
+	// 풀려 구경꾼에게도 복제된다. 소유자는 당길 때 이미 끊었으므로 여기서는 아무 일도 없다.
+	if (ItemSlot)
+	{
+		ItemSlot->InterruptItemRecovery();
+	}
+
 	if (GetNetMode() == NM_DedicatedServer)
 	{
 		return;
@@ -1081,6 +1101,13 @@ void AUnit::HandleWeaponFired(int32 Seed)
 
 void AUnit::HandleChargingChanged(bool bCharging)
 {
+	// 충전 시작도 발사와 같다. 충전 자세가 아이템의 마무리 동작에 덮이지 않게 서버(리슨 호스트)도
+	// 여기서 끊는다. 데디케이티드 서버에는 이 알림이 오지 않으므로 발사(HandleWeaponFired)에서 끊긴다.
+	if (bCharging && ItemSlot)
+	{
+		ItemSlot->InterruptItemRecovery();
+	}
+
 	if (GetNetMode() == NM_DedicatedServer)
 	{
 		return;

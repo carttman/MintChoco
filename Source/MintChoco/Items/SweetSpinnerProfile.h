@@ -32,6 +32,16 @@ namespace SweetSpinner
 	 */
 	MINTCHOCO_API void ComposeVolleyWindow(float StartLength, float SpinLength, float InnerStart, float InnerEnd,
 		float Duration, float& OutStart, float& OutEnd);
+
+	/**
+	 * 효과(상태 태그)가 걸리는 시간과 그 뒤 마무리 동작의 시간(초).
+	 *
+	 * 마무리는 회전이 끝나는 시각에 시작해 끝 클립 한 번(EndLength)만큼 돌고, 지속시간을 넘지 않는다.
+	 * 끝 클립이 없거나, 회전이 지속시간을 다 쓰거나, 회전 구간이 비어 있으면 마무리는 0이고 효과가
+	 * 지속시간 전체를 쓴다(예전 동작).
+	 */
+	MINTCHOCO_API void ComposeRecovery(float StartLength, float SpinLength, float EndLength, float Duration,
+		float& OutEffect, float& OutRecovery);
 }
 
 /**
@@ -91,7 +101,11 @@ public:
 	TObjectPtr<UAnimSequenceBase> SpinAnimation;
 
 	/**
-	 * 회전이 끝난 뒤의 마무리. 상체에만 얹힌다. 비어 있으면 회전 자세가 효과가 끝날 때까지 간다.
+	 * 회전이 끝난 뒤의 마무리. 상체에만 얹히고 한 번만 돈다. 비어 있으면 회전 자세가 효과가 끝날
+	 * 때까지 간다.
+	 *
+	 * 마무리는 효과 밖이다: 회전이 끝나는 순간 상태 태그가 내려가므로, 이 동작 중에 총을 쏘거나
+	 * 다른 아이템을 쓰면 기다리지 않고 바로 나가고 이 동작은 그 자리에서 끊긴다.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spinner|Animation")
 	TObjectPtr<UAnimSequenceBase> EndAnimation;
@@ -104,6 +118,12 @@ public:
 
 	/** 발사 구간(초). 회전 구간 안이고, 표시가 있으면 그 안이다. */
 	void GetVolleyWindow(float& OutStart, float& OutEnd) const;
+
+	/** 상태 태그가 걸려 있는 시간(초). 끝 동작이 있으면 회전이 끝나는 시각까지다. */
+	float GetEffectPhaseLength() const;
+
+	/** 끝 동작(마무리)의 길이(초). 끝 클립 한 번이고 지속시간을 넘지 않는다. 없으면 0. */
+	float GetEndPhaseLength() const;
 
 	/** 주어진 구간을 VolleyInterval로 나눈 발사 횟수. 최소 1. */
 	int32 GetVolleyCount(float Window) const;

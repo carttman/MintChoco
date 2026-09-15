@@ -258,6 +258,37 @@ UItemAbility* UItemSlotComponent::FindItemAbilityForInput(EItemAbilityInput Inpu
 	return nullptr;
 }
 
+void UItemSlotComponent::InterruptItemRecovery(const UItemAbility* Except)
+{
+	UAbilitySystemComponent* const AbilitySystem = GetAbilitySystem();
+	if (!AbilitySystem)
+	{
+		return;
+	}
+
+	// 먼저 모으고 나중에 끝낸다. 끝나는 어빌리티는 "끝나면 제거" 표시로 스펙 목록을 바꿀 수 있다.
+	TArray<UItemAbility*> Recovering;
+	{
+		FScopedAbilityListLock ListLock(*AbilitySystem);
+		for (const FGameplayAbilitySpec& Spec : AbilitySystem->GetActivatableAbilities())
+		{
+			for (UGameplayAbility* const Instance : Spec.GetAbilityInstances())
+			{
+				UItemAbility* const Item = Cast<UItemAbility>(Instance);
+				if (Item && Item != Except && Item->IsRecovering())
+				{
+					Recovering.Add(Item);
+				}
+			}
+		}
+	}
+
+	for (UItemAbility* const Item : Recovering)
+	{
+		Item->InterruptRecovery();
+	}
+}
+
 const UItemProfile* UItemSlotComponent::GetPoseItem() const
 {
 	// 조준이 먼저다: 조준 중에는 아직 효과가 시작되지 않았고, 그 아이템은 아직 슬롯에 있다.

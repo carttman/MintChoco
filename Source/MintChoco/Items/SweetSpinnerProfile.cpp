@@ -48,6 +48,27 @@ void SweetSpinner::ComposeVolleyWindow(float StartLength, float SpinLength, floa
 	OutEnd = FMath::Clamp(SpinBegin + InnerStop, OutStart, FMath::Max(Duration, 0.0f));
 }
 
+void SweetSpinner::ComposeRecovery(float StartLength, float SpinLength, float EndLength, float Duration,
+	float& OutEffect, float& OutRecovery)
+{
+	const float SafeDuration = FMath::Max(Duration, 0.0f);
+	const float SpinFinish = FMath::Clamp(FMath::Max(StartLength, 0.0f) + FMath::Max(SpinLength, 0.0f), 0.0f, SafeDuration);
+	const float Remaining = SafeDuration - SpinFinish;
+
+	// 마무리가 없으면 효과가 끝까지 간다. 회전 자세가 지속시간이 끝날 때까지 이어진다.
+	if (EndLength <= UE_KINDA_SMALL_NUMBER || Remaining <= UE_KINDA_SMALL_NUMBER || SpinFinish <= UE_KINDA_SMALL_NUMBER)
+	{
+		OutEffect = SafeDuration;
+		OutRecovery = 0.0f;
+		return;
+	}
+
+	// 끝 클립은 한 번만 돈다. 자세 시퀀스는 애님 그래프에서 루프하므로, 남은 시간이 더 길다고
+	// 늘려 두면 끝 동작이 되감겨 다시 시작한다.
+	OutEffect = SpinFinish;
+	OutRecovery = FMath::Min(EndLength, Remaining);
+}
+
 float USweetSpinnerProfile::GetStartPhaseLength() const
 {
 	return StartAnimation ? FMath::Min(StartAnimation->GetPlayLength(), Duration) : 0.0f;
@@ -69,6 +90,24 @@ void USweetSpinnerProfile::GetVolleyWindow(float& OutStart, float& OutEnd) const
 	SweetSpinner::FindVolleyWindow(SpinAnimation, InnerStart, InnerEnd);
 
 	SweetSpinner::ComposeVolleyWindow(GetStartPhaseLength(), SpinLength, InnerStart, InnerEnd, Duration, OutStart, OutEnd);
+}
+
+float USweetSpinnerProfile::GetEffectPhaseLength() const
+{
+	float Effect = 0.0f;
+	float Recovery = 0.0f;
+	SweetSpinner::ComposeRecovery(GetStartPhaseLength(), GetSpinPhaseLength(),
+		EndAnimation ? EndAnimation->GetPlayLength() : 0.0f, Duration, Effect, Recovery);
+	return Effect;
+}
+
+float USweetSpinnerProfile::GetEndPhaseLength() const
+{
+	float Effect = 0.0f;
+	float Recovery = 0.0f;
+	SweetSpinner::ComposeRecovery(GetStartPhaseLength(), GetSpinPhaseLength(),
+		EndAnimation ? EndAnimation->GetPlayLength() : 0.0f, Duration, Effect, Recovery);
+	return Recovery;
 }
 
 int32 USweetSpinnerProfile::GetVolleyCount(float Window) const
