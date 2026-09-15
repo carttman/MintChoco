@@ -113,6 +113,33 @@ DA_Brush_Feet_T            ← DA_Brush_HeroLanding 복제. 두 무기의 FeetDe
 
 ---
 
+## 유닛 — 상태 연출
+
+### 스턴 중 머리 위 FX (`EUnitAction::Stun`)
+
+스턴에 걸려 있는 내내 머리 위에 이펙트가 붙어 있다가 풀리면 걷힌다.
+
+- **어디에**: 기존 **연출 피드백 시스템**(`FUnitActionFeedback`)에 붙였다. `EUnitAction`에 `Stun`을
+  더하고, `AUnit`에 `StunFXComponent`와 `UpdateStunFX(bool)`를 두어
+  **`AUnit::HandleStunTagChanged()`**에서 부른다.
+- **왜 그 자리인가**: 스턴 태그(`State.Status.Stunned`)는 모든 머신에 복제되고, 걸릴 때와 풀릴 때
+  양쪽 다 이미 이 함수로 들어온다. 스턴 소리(`Audio.Unit.Stun.Begin/End`)도 같은 자리에서 난다.
+- **지속 시간을 따로 재지 않는다.** 태그가 사라질 때 끄면 그것이 곧 스턴 시간이다. 타이머를
+  따로 걸면 `TryApplyStun(StunSeconds, ...)` 값과 어긋날 여지가 생긴다.
+- **정리**: 대시 트레일과 같다. `Deactivate()`로 새 스폰만 멈춰 떠 있던 파티클은 수명대로
+  사라지게 하고, `bAutoDestroy=true`라 꺼진 컴포넌트가 메시에 쌓이지 않는다.
+  태그 이벤트가 두 번 와도 FX가 둘로 늘지 않도록 막아 뒀다.
+- **대체한 것**: 없다. 스턴에 붙은 시각 연출이 아예 없었다(소리와 `BP_OnStunned`만 있었다).
+- **기본값**: `Stun` 항목을 비우면 아무 일도 안 한다.
+- **지금 값**: `DA_Unit_Mint` / `DA_Unit_Choco` 양쪽에
+  `FX` = `NS_Sparkling_Animate_2`, `FXSocket` = `head`, `FXOffset` = `(0, 0, 30)`.
+  소켓 기준 오프셋을 살려야 머리 위로 뜨므로 `EAttachLocation::KeepRelativeOffset`을 쓴다.
+
+캐릭터 메시에 **머리 전용 소켓은 없다.** `SKM_Character_Mint`의 커스텀 소켓은 `Board`, `InkBottle`,
+`Gun`뿐이라 `head` **본**에 직접 붙였다. 높이는 `FXOffset`으로 맞춘다.
+
+---
+
 ## 오디오
 
 ### 새 사운드 7개 연결
@@ -194,6 +221,11 @@ DA_Brush_Feet_T            ← DA_Brush_HeroLanding 복제. 두 무기의 FeetDe
 
 반면 **중첩 구조체는 부분 쓰기가 된다.** `Deposit.brushProfile` 하나만 바꿔도
 `splatVolume`·`hitPower` 등은 보존된다.
+
+맵의 키 표기는 키 타입에 따라 다르다. 게임플레이 태그 키는 `(TagName="Audio.Weapon.Fire")`
+꼴이고(`DA_SoundBank.Events`), 열거형 키는 **첫 글자가 소문자인 열거자 이름**이다
+(`DA_Unit_*.ActionFeedback`의 `fire`, `dash`, `charge`, `stun`). 쓰기 전에 한 번 읽어
+그 에셋이 쓰는 표기를 확인할 것.
 
 ### 발사 원점은 조준선이고, 보정을 받는 쪽과 못 받는 쪽이 있다
 

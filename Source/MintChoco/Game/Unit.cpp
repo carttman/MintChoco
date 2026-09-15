@@ -485,7 +485,52 @@ void AUnit::HandleStunTagChanged(const FGameplayTag Tag, int32 NewCount)
 	UGameAudioSubsystem::PlayAttached(
 		bStunned ? AudioTags::Audio_Unit_Stun_Begin : AudioTags::Audio_Unit_Stun_End,
 		GetRootComponent(), NAME_None, UnitData ? UnitData->Sounds.Get() : nullptr);
+	UpdateStunFX(bStunned);
 	BP_OnStunned(bStunned);
+}
+
+void AUnit::UpdateStunFX(bool bStunned)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	if (!bStunned)
+	{
+		if (StunFXComponent)
+		{
+			// 대시 트레일과 같다: 이미 태어난 파티클은 수명대로 사라지도록 새 스폰만 멈춘다.
+			StunFXComponent->Deactivate();
+			StunFXComponent = nullptr;
+		}
+		return;
+	}
+
+	// 스턴은 겹쳐 걸리지 않지만(TryApplyStun이 이미 스턴 중이면 거절한다) 태그 이벤트가 두 번
+	// 오더라도 FX가 둘로 늘어나지 않도록 막아 둔다.
+	if (StunFXComponent)
+	{
+		return;
+	}
+
+	const FUnitActionFeedback* const Feedback = UnitData ? UnitData->FindFeedback(EUnitAction::Stun) : nullptr;
+	if (!Feedback || !Feedback->FX)
+	{
+		return;
+	}
+
+	// 소켓 기준 오프셋을 그대로 살려야 머리 위로 띄울 수 있으므로 KeepRelativeOffset이다.
+	StunFXComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		Feedback->FX,
+		GetMesh(),
+		Feedback->FXSocket,
+		Feedback->FXOffset,
+		FRotator::ZeroRotator,
+		EAttachLocation::KeepRelativeOffset,
+		// Deactivate 뒤 남은 파티클이 사라지면 스스로 정리된다. false면 스턴마다 꺼진
+		// 컴포넌트가 메시에 하나씩 쌓인다.
+		true);
 }
 
 void AUnit::HandleSuperArmorTagChanged(const FGameplayTag Tag, int32 NewCount)
