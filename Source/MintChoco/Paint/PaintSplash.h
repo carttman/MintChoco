@@ -7,13 +7,22 @@ class UPaintSplashProfile;
 /**
  * The splash as arithmetic: how a contact turns into droplets and where they come down. Nothing in
  * here touches a world, so the score side, the effect and the tests all share one description.
- * C++ throws the droplets (GenerateDroplets) and hands them to NS_PaintSplash one slot each, so the
- * picture, the marks and the phantom landings the score counts are the same four droplets.
+ * C++ throws the droplets (GenerateDroplets) and hands them to NS_PaintSplash and the blob material
+ * one slot each, so the picture, the marks and the phantom landings the score counts are the same
+ * droplets: the largest MaxMarkDroplets leave marks, the largest MaxScoreDroplets score.
  */
 namespace PaintSplash
 {
-	/** Droplets one contact can throw: the jet plus up to three satellites. NS_PaintSplash has a User slot per droplet. */
-	inline constexpr int32 MaxDroplets = 4;
+	/** Droplets one contact can throw. NS_PaintSplash and M_PaintSplashBlob have a slot per droplet. */
+	inline constexpr int32 MaxDroplets = 16;
+
+	/** Where a droplet heads relative to the ball's travel: on across it, off to the side, or back the way the ball came. */
+	enum class EDropletGroup : uint8
+	{
+		Forward,
+		Side,
+		Back,
+	};
 
 	struct FSpawnInput
 	{
@@ -31,7 +40,7 @@ namespace PaintSplash
 		FVector Position = FVector::ZeroVector;
 		FVector Velocity = FVector::ZeroVector;
 		float Radius = 0.0f;
-		bool bJet = false;
+		EDropletGroup Group = EDropletGroup::Forward;
 	};
 
 	/** Where a droplet would come back down on the contact's own plane, and how fast. */
@@ -47,9 +56,21 @@ namespace PaintSplash
 	/** Approach speed (positive when moving into the surface) and the velocity left in the surface plane. */
 	MINTCHOCO_API void SplitVelocity(const FVector& Velocity, const FVector& Normal, float& OutNormalSpeed, FVector& OutTangential);
 
+	/** Share of the approach that lies in the surface plane: 0 head-on, 1 grazing. */
+	MINTCHOCO_API float TangentialShare(float NormalSpeed, float TangentialSpeed);
+
+	/** How Count droplets split between the groups for a contact with this TangentialShare; the sum is Count and the forward share grows with it. */
+	MINTCHOCO_API void SplitGroups(const UPaintSplashProfile& Profile, int32 Count, float TangentialShare, int32& OutForward, int32& OutSide, int32& OutBack);
+
 	/**
-	 * Throws the droplets of one contact: index 0 is the jet, the rest satellites. Empty when the
-	 * approach is slower than MinNormalSpeed. Deterministic in the input.
+	 * Where a droplet starts relative to the contact: half a ball radius along its velocity's
+	 * in-plane direction, its radius plus a centimetre off the surface. M_PaintSplashBlob mirrors it.
+	 */
+	MINTCHOCO_API FVector LaunchOffset(const FVector& Normal, const FVector& Velocity, float Radius, float BallRadius);
+
+	/**
+	 * Throws the droplets of one contact, largest first. Empty when the approach is slower than
+	 * MinNormalSpeed. Deterministic in the input.
 	 */
 	MINTCHOCO_API void GenerateDroplets(const UPaintSplashProfile& Profile, const FSpawnInput& Input, TArray<FDroplet>& OutDroplets);
 
@@ -60,22 +81,20 @@ namespace PaintSplash
 	MINTCHOCO_API float CapVolume(TArrayView<float> Radii, float BallRadius, float VolumeFraction);
 
 	/**
-	 * Where each droplet meets the contact's plane again under gravity, drag ignored: the score's
-	 * picture of the splash. A droplet that never returns (a wall, a ceiling), lands after
-	 * MaxLifetime or farther than MaxTravel is left out. GravityZ is the world's, cm/s^2, negative down.
+	 * Where the largest MaxScoreDroplets droplets meet the contact's plane again under gravity, drag
+	 * ignored: the score's picture of the splash. A droplet that never returns (a wall, a ceiling),
+	 * lands after MaxLifetime or farther than MaxTravel is left out. GravityZ is the world's, cm/s^2,
+	 * negative down.
 	 */
 	MINTCHOCO_API void PhantomLandings(const UPaintSplashProfile& Profile, const FSpawnInput& Input, float GravityZ, TArray<FPhantomLanding>& OutLandings);
 
 	/** Smooth-min radius at Age: CohesionRadius at birth, gone after CohesionDecay. */
 	MINTCHOCO_API float Cohesion(const UPaintSplashProfile& Profile, float Age);
 
-	/** The crown ring at Age: its radius grows from half the ball to CrownRadiusScale while the tube thins and fades to 0 at CrownLifetime. */
-	MINTCHOCO_API void CrownAt(const UPaintSplashProfile& Profile, float BallRadius, float Age, float& OutRadius, float& OutTube, float& OutFade);
-
 	/**
 	 * Scale of the unit cube the blob material marches in: centred on the contact, standing on its
-	 * plane, wide enough for every droplet's drag-free flight and the finished crown, high enough for
-	 * the jet's apex. In the cube's own 100 cm units, so it goes straight into Particles.Scale.
+	 * plane, wide and high enough for every droplet's drag-free flight. In the cube's own 100 cm
+	 * units, so it goes straight into Particles.Scale.
 	 */
 	MINTCHOCO_API FVector BlobScale(const UPaintSplashProfile& Profile, const FSpawnInput& Input, TArrayView<const FDroplet> Droplets, float GravityZ);
 }
@@ -84,13 +103,13 @@ namespace PaintSplash
 namespace PaintSplashBlob
 {
 	inline const FName TeamId(TEXT("TeamId"));
-	/** xyz: launch offset from the contact, cm; w: radius, cm. 0 radius means the slot is empty. */
-	inline const FName Drop[PaintSplash::MaxDroplets] = {FName(TEXT("Drop0")), FName(TEXT("Drop1")), FName(TEXT("Drop2")), FName(TEXT("Drop3"))};
-	inline const FName Velocity[PaintSplash::MaxDroplets] = {FName(TEXT("Vel0")), FName(TEXT("Vel1")), FName(TEXT("Vel2")), FName(TEXT("Vel3"))};
+	/** "Drop0".."Drop15": xyz launch velocity cm/s, w radius cm. 0 radius means the slot is empty. */
+	MINTCHOCO_API FName Drop(int32 Index);
 	/** (gravity cm/s^2 downward, drag 1/s, cohesion radius cm, cohesion decay s). */
 	inline const FName Physics(TEXT("Phys"));
-	/** (radius at birth, final radius, tube at birth, lifetime), cm and s. */
-	inline const FName Crown(TEXT("Crown"));
+	inline const FName BallRadius(TEXT("BallRadius"));
+	/** Fraction of a droplet's in-plane speed the puddle rim its strand roots on spreads at. */
+	inline const FName PuddleSpread(TEXT("PuddleSpread"));
 	/** How far a ray marches past the cube's surface before giving up, cm. */
 	inline const FName MarchMax(TEXT("MarchMax"));
 }
@@ -102,7 +121,7 @@ namespace PaintSplashBlob
  */
 namespace PaintSplashFX
 {
-	/** Droplets to spawn, 0 to MaxDroplets; 0 when this contact does not splash. */
+	/** Droplets to fly, 0 to MaxDroplets: the largest MaxMarkDroplets, 0 when this contact does not splash. */
 	inline const FName DropletCount(TEXT("User.DropletCount"));
 
 	/** Object implementing INiagaraParticleCallbackHandler that receives every landing; null leaves the droplets markless. */
@@ -111,13 +130,8 @@ namespace PaintSplashFX
 	inline const FName BallRadius(TEXT("User.BallRadius"));
 	inline const FName Seed(TEXT("User.Seed"));
 
-	/** Per droplet slot, 0 the jet: launch position relative to the contact (cm), launch velocity (cm/s), radius (cm). */
-	inline const FName DropOffset[PaintSplash::MaxDroplets] = {
-		FName(TEXT("User.Drop0Offset")), FName(TEXT("User.Drop1Offset")), FName(TEXT("User.Drop2Offset")), FName(TEXT("User.Drop3Offset"))};
-	inline const FName DropVelocity[PaintSplash::MaxDroplets] = {
-		FName(TEXT("User.Drop0Velocity")), FName(TEXT("User.Drop1Velocity")), FName(TEXT("User.Drop2Velocity")), FName(TEXT("User.Drop3Velocity"))};
-	inline const FName DropRadius[PaintSplash::MaxDroplets] = {
-		FName(TEXT("User.Drop0Radius")), FName(TEXT("User.Drop1Radius")), FName(TEXT("User.Drop2Radius")), FName(TEXT("User.Drop3Radius"))};
+	/** "User.Drop0".."User.Drop15", Vector4: launch velocity cm/s in xyz, radius cm in w. Droplets spawn at the system origin. */
+	MINTCHOCO_API FName Drop(int32 Index);
 
 	inline const FName GravityScale(TEXT("User.GravityScale"));
 	inline const FName Drag(TEXT("User.Drag"));
@@ -125,9 +139,6 @@ namespace PaintSplashFX
 	inline const FName MaxTravel(TEXT("User.MaxTravel"));
 	inline const FName CohesionRadius(TEXT("User.CohesionRadius"));
 	inline const FName CohesionDecay(TEXT("User.CohesionDecay"));
-	inline const FName CrownRadiusScale(TEXT("User.CrownRadiusScale"));
-	inline const FName CrownThicknessScale(TEXT("User.CrownThicknessScale"));
-	inline const FName CrownLifetime(TEXT("User.CrownLifetime"));
 	/** The blob's dynamic material instance and the scale of the cube it marches in. */
 	inline const FName BlobMaterial(TEXT("User.BlobMaterial"));
 	inline const FName BlobScale(TEXT("User.BlobScale"));

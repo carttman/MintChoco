@@ -93,7 +93,7 @@ bool FPaintSplashDeterminismTest::RunTest(const FString& Parameters)
 	TArray<PaintSplash::FDroplet> B;
 	PaintSplash::GenerateDroplets(*Profile, FloorHit(7), A);
 	PaintSplash::GenerateDroplets(*Profile, FloorHit(7), B);
-	TestEqual(TEXT("one jet plus the satellites"), A.Num(), 1 + Profile->SatelliteCount);
+	TestEqual(TEXT("every droplet of the count is thrown"), A.Num(), Profile->DropletCount);
 	if (A.Num() != B.Num())
 	{
 		return false;
@@ -101,43 +101,82 @@ bool FPaintSplashDeterminismTest::RunTest(const FString& Parameters)
 	bool bSame = true;
 	bool bLeaving = true;
 	bool bWithinSpeed = true;
+	bool bSorted = true;
+	bool bAtLaunchOffset = true;
 	for (int32 Index = 0; Index < A.Num(); ++Index)
 	{
 		bSame &= A[Index].Position.Equals(B[Index].Position) && A[Index].Velocity.Equals(B[Index].Velocity)
 			&& FMath::IsNearlyEqual(A[Index].Radius, B[Index].Radius);
 		bLeaving &= FVector::DotProduct(A[Index].Velocity, FVector::UpVector) > 0.0;
 		bWithinSpeed &= A[Index].Velocity.Size() <= Profile->MaxDropletSpeed + 1e-3;
+		bSorted &= Index == 0 || A[Index - 1].Radius >= A[Index].Radius;
+		bAtLaunchOffset &= A[Index].Position.Equals(PaintSplash::LaunchOffset(FVector::UpVector, A[Index].Velocity, A[Index].Radius, 6.0f), 1e-3);
 	}
 	TestTrue(TEXT("same seed, same droplets"), bSame);
-	TestTrue(TEXT("droplet 0 is the jet"), A[0].bJet);
 	TestTrue(TEXT("every droplet leaves the surface"), bLeaving);
 	TestTrue(TEXT("no droplet exceeds MaxDropletSpeed"), bWithinSpeed);
+	TestTrue(TEXT("droplets come largest first"), bSorted);
+	TestTrue(TEXT("every droplet starts at the launch offset of its final velocity"), bAtLaunchOffset);
 
 	TArray<PaintSplash::FDroplet> C;
 	PaintSplash::GenerateDroplets(*Profile, FloorHit(8), C);
 	TestFalse(TEXT("another seed throws differently"), C.Num() > 1 && C[1].Velocity.Equals(A[1].Velocity));
 
-	// A wall hit at a slant: the frame follows the surface, not the world.
-	PaintSplash::FSpawnInput Wall = FloorHit(3);
-	Wall.ImpactNormal = FVector::ForwardVector;
-	Wall.IncidentVelocity = FVector(-2000.0, 300.0, -400.0);
-	Profile->SatelliteTangentBias = 1.0f;
-	TArray<PaintSplash::FDroplet> W;
-	PaintSplash::GenerateDroplets(*Profile, Wall, W);
+	// A wall hit at a slant: the frame follows the surface, not the world, and the groups keep
+	// their headings: forward droplets go on across the travel, back droplets against it.
 	const FVector Forward = FVector(0.0, 300.0, -400.0).GetSafeNormal();
 	bool bOffWall = true;
-	bool bAhead = true;
-	for (int32 Index = 0; Index < W.Num(); ++Index)
+	bool bHeadings = true;
+	bool bCounts = true;
+	for (int32 Seed = 1; Seed <= 16; ++Seed)
 	{
-		bOffWall &= FVector::DotProduct(W[Index].Velocity, Wall.ImpactNormal) > 0.0;
-		if (Index > 0)
+		PaintSplash::FSpawnInput Wall = FloorHit(Seed);
+		Wall.ImpactNormal = FVector::ForwardVector;
+		Wall.IncidentVelocity = FVector(-2000.0, 300.0, -400.0);
+		TArray<PaintSplash::FDroplet> W;
+		PaintSplash::GenerateDroplets(*Profile, Wall, W);
+		int32 ExpectedForward = 0;
+		int32 ExpectedSide = 0;
+		int32 ExpectedBack = 0;
+		PaintSplash::SplitGroups(*Profile, Profile->DropletCount, PaintSplash::TangentialShare(2000.0f, 500.0f), ExpectedForward, ExpectedSide, ExpectedBack);
+		int32 NumForward = 0;
+		int32 NumBack = 0;
+		for (const PaintSplash::FDroplet& Droplet : W)
 		{
-			bAhead &= FVector::DotProduct(W[Index].Velocity, Forward) >= -1e-3;
+			bOffWall &= FVector::DotProduct(Droplet.Velocity, Wall.ImpactNormal) > 0.0;
+			const double Along = FVector::DotProduct(Droplet.Velocity, Forward);
+			if (Droplet.Group == PaintSplash::EDropletGroup::Forward)
+			{
+				++NumForward;
+				bHeadings &= Along > 0.0;
+			}
+			else if (Droplet.Group == PaintSplash::EDropletGroup::Back)
+			{
+				++NumBack;
+				bHeadings &= Along < 0.0;
+			}
 		}
+		bCounts &= W.Num() == Profile->DropletCount && NumForward == ExpectedForward && NumBack == ExpectedBack && ExpectedBack > 0;
 	}
-	TestEqual(TEXT("the wall hit splashes too"), W.Num(), 1 + Profile->SatelliteCount);
 	TestTrue(TEXT("every droplet leaves the wall"), bOffWall);
-	TestTrue(TEXT("with full bias every satellite goes forward"), bAhead);
+	TestTrue(TEXT("forward droplets go on across the travel, back droplets against it"), bHeadings);
+	TestTrue(TEXT("the groups are as SplitGroups says, and some fly back"), bCounts);
+
+	// The flatter the approach, the more of the splash goes on across.
+	auto CountForward = [&](const FVector& Velocity)
+	{
+		PaintSplash::FSpawnInput Hit = FloorHit(4);
+		Hit.IncidentVelocity = Velocity;
+		TArray<PaintSplash::FDroplet> Droplets;
+		PaintSplash::GenerateDroplets(*Profile, Hit, Droplets);
+		int32 Num = 0;
+		for (const PaintSplash::FDroplet& Droplet : Droplets)
+		{
+			Num += Droplet.Group == PaintSplash::EDropletGroup::Forward ? 1 : 0;
+		}
+		return Num;
+	};
+	TestTrue(TEXT("a grazing hit throws more forward than a head-on one"), CountForward(FVector(2500.0, 0.0, -600.0)) > CountForward(FVector(0.0, 0.0, -2500.0)));
 
 	// A dying lob only splats.
 	PaintSplash::FSpawnInput Slow = FloorHit(1);
@@ -155,15 +194,14 @@ bool FPaintSplashVolumeCapTest::RunTest(const FString& Parameters)
 {
 	float Radii[] = {6.0f, 6.0f, 6.0f, 6.0f};
 	const float Scale = PaintSplash::CapVolume(Radii, 6.0f, 0.5f);
-	TestEqual(TEXT("four full-size droplets shrink to half the volume together"), Scale, 0.5f, 1e-4f);
+	TestEqual(TEXT("four ball-size droplets shrink to half the volume together"), Scale, 0.5f, 1e-4f);
 	TestEqual(TEXT("each radius follows the scale"), Radii[2], 3.0f, 1e-4f);
 
 	float Small[] = {1.0f, 1.0f};
 	TestEqual(TEXT("nothing to cap returns 1"), PaintSplash::CapVolume(Small, 6.0f, 0.5f), 1.0f);
 
 	UPaintSplashProfile* const Profile = MakeProfile();
-	Profile->JetRadiusScale = 2.0f;
-	Profile->SatelliteRadiusScale = 2.0f;
+	Profile->DropletRadiusScale = FFloatInterval(2.0f, 2.0f);
 	Profile->VolumeFraction = 0.5f;
 	TArray<PaintSplash::FDroplet> Droplets;
 	PaintSplash::GenerateDroplets(*Profile, FloorHit(5), Droplets);
@@ -173,6 +211,7 @@ bool FPaintSplashVolumeCapTest::RunTest(const FString& Parameters)
 		Total += FMath::Cube(static_cast<double>(Droplet.Radius));
 	}
 	TestTrue(TEXT("generated droplets respect VolumeFraction"), Total <= FMath::Cube(6.0) * 0.5 * (1.0 + 1e-3));
+	TestTrue(TEXT("never more droplets than slots"), Droplets.Num() <= PaintSplash::MaxDroplets);
 	return true;
 }
 
@@ -186,7 +225,22 @@ bool FPaintSplashPhantomLandingsTest::RunTest(const FString& Parameters)
 
 	TArray<PaintSplash::FPhantomLanding> Landings;
 	PaintSplash::PhantomLandings(*Profile, FloorHit(7), GravityZ, Landings);
-	TestEqual(TEXT("every droplet of a floor hit comes back down"), Landings.Num(), 1 + Profile->SatelliteCount);
+	TestTrue(TEXT("only the largest MaxScoreDroplets droplets score"), Landings.Num() > 0 && Landings.Num() <= Profile->MaxScoreDroplets);
+	{
+		// The first phantom is the largest droplet's own parabola.
+		TArray<PaintSplash::FDroplet> Droplets;
+		PaintSplash::GenerateDroplets(*Profile, FloorHit(7), Droplets);
+		const PaintSplash::FDroplet& Largest = Droplets[0];
+		const double Rise = Largest.Velocity.Z;
+		const double Time = (-Rise - FMath::Sqrt(Rise * Rise - 2.0 * GravityZ * Largest.Position.Z)) / GravityZ;
+		const FVector Expected = Largest.Position + Largest.Velocity * Time + FVector(0.0, 0.0, 0.5 * GravityZ * Time * Time);
+		TestTrue(TEXT("the first phantom is the largest droplet's landing"), Landings.Num() > 0 && Landings[0].Point.Equals(Expected, 1e-2));
+	}
+	Profile->MaxScoreDroplets = 0;
+	TArray<PaintSplash::FPhantomLanding> NoScore;
+	PaintSplash::PhantomLandings(*Profile, FloorHit(7), GravityZ, NoScore);
+	TestEqual(TEXT("MaxScoreDroplets 0 scores nothing"), NoScore.Num(), 0);
+	Profile->MaxScoreDroplets = 4;
 	bool bOnPlane = true;
 	bool bInReach = true;
 	bool bMoving = true;
@@ -199,12 +253,6 @@ bool FPaintSplashPhantomLandingsTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("landings lie on the contact plane"), bOnPlane);
 	TestTrue(TEXT("landings stay within MaxTravel"), bInReach);
 	TestTrue(TEXT("landings arrive with speed"), bMoving);
-	if (Landings.Num() > 0)
-	{
-		// The jet goes up the most, so it lands last and, leaning forward, ahead of the contact.
-		TestTrue(TEXT("the jet lands ahead of the contact"), Landings[0].Point.X > 0.0);
-	}
-
 	// Same seed, same landings: this is what keeps every machine's score grid identical.
 	TArray<PaintSplash::FPhantomLanding> Again;
 	PaintSplash::PhantomLandings(*Profile, FloorHit(7), GravityZ, Again);
@@ -223,19 +271,38 @@ bool FPaintSplashPhantomLandingsTest::RunTest(const FString& Parameters)
 	PaintSplash::PhantomLandings(*Profile, Ceiling, GravityZ, Landings);
 	TestEqual(TEXT("a ceiling hit lands nothing on the ceiling"), Landings.Num(), 0);
 
-	// The look helpers the blob shader mirrors.
+	// The look helper the blob shader mirrors.
 	TestEqual(TEXT("cohesion starts at CohesionRadius"), PaintSplash::Cohesion(*Profile, 0.0f), Profile->CohesionRadius);
 	TestEqual(TEXT("cohesion is gone after CohesionDecay"), PaintSplash::Cohesion(*Profile, Profile->CohesionDecay * 2.0f), 0.0f);
-	float Radius = 0.0f;
-	float Tube = 0.0f;
-	float Fade = 0.0f;
-	PaintSplash::CrownAt(*Profile, 6.0f, 0.0f, Radius, Tube, Fade);
-	TestEqual(TEXT("the crown starts at half the ball"), Radius, 3.0f, 1e-4f);
-	TestEqual(TEXT("the crown starts opaque"), Fade, 1.0f);
-	PaintSplash::CrownAt(*Profile, 6.0f, Profile->CrownLifetime, Radius, Tube, Fade);
-	TestEqual(TEXT("the crown ends at CrownRadiusScale"), Radius, Profile->CrownRadiusScale * 6.0f, 1e-3f);
-	TestEqual(TEXT("the crown ends thin"), Tube, 0.0f);
-	TestEqual(TEXT("the crown ends faded"), Fade, 0.0f);
+	return true;
+}
+
+/** The three headings always add up to the count, and the forward share only grows as the approach flattens. */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPaintSplashGroupsTest, "MintChoco.Paint.Splash.Groups", SPLASH_TEST_FLAGS)
+
+bool FPaintSplashGroupsTest::RunTest(const FString& Parameters)
+{
+	const UPaintSplashProfile* const Profile = MakeProfile();
+	bool bSums = true;
+	bool bMonotone = true;
+	for (int32 Count = 1; Count <= PaintSplash::MaxDroplets; ++Count)
+	{
+		int32 PreviousForward = -1;
+		for (float Share = 0.0f; Share <= 1.0f + 1e-4f; Share += 0.25f)
+		{
+			int32 Forward = 0;
+			int32 Side = 0;
+			int32 Back = 0;
+			PaintSplash::SplitGroups(*Profile, Count, Share, Forward, Side, Back);
+			bSums &= Forward + Side + Back == Count && Forward >= 0 && Side >= 0 && Back >= 0;
+			bMonotone &= Forward >= PreviousForward;
+			PreviousForward = Forward;
+		}
+	}
+	TestTrue(TEXT("the groups sum to the count"), bSums);
+	TestTrue(TEXT("the forward group never shrinks as the tangential share grows"), bMonotone);
+	TestEqual(TEXT("head-on has no tangential share"), PaintSplash::TangentialShare(2500.0f, 0.0f), 0.0f);
+	TestEqual(TEXT("equal parts is half"), PaintSplash::TangentialShare(1000.0f, 1000.0f), 0.5f, 1e-4f);
 	return true;
 }
 
@@ -310,7 +377,7 @@ bool FPaintSplashScoreTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-/** The blob's cube holds every droplet's drag-free flight and the crown, so nothing is clipped mid-air. */
+/** The blob's cube holds every droplet's drag-free flight, so nothing is clipped mid-air. */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FPaintSplashBlobBoundsTest, "MintChoco.Paint.Splash.BlobBounds", SPLASH_TEST_FLAGS)
 
 bool FPaintSplashBlobBoundsTest::RunTest(const FString& Parameters)
@@ -327,8 +394,6 @@ bool FPaintSplashBlobBoundsTest::RunTest(const FString& Parameters)
 		TestTrue(TEXT("the cube has volume"), Scale.X > 0.0 && Scale.Y > 0.0 && Scale.Z > 0.0);
 		const double HalfWidth = 50.0 * Scale.X;
 		const double Height = 100.0 * Scale.Z;
-		const double CrownReach = (Profile->CrownRadiusScale + Profile->CrownThicknessScale) * Input.BallRadius;
-		TestTrue(TEXT("the finished crown fits"), CrownReach <= HalfWidth + 1e-3);
 		for (const PaintSplash::FDroplet& Droplet : Droplets)
 		{
 			const FVector Offset = Droplet.Position - Input.ImpactPoint;
@@ -350,10 +415,10 @@ bool FPaintSplashBlobBoundsTest::RunTest(const FString& Parameters)
 		}
 	}
 
-	// No droplets: the crown alone sizes the cube.
+	// No droplets: a ball's worth of cube, never a zero scale that would stop the whole system.
 	TArray<PaintSplash::FDroplet> None;
 	const FVector Bare = PaintSplash::BlobScale(*Profile, FloorHit(1), None, GravityZ);
-	TestTrue(TEXT("a crown-only cube is still a cube"), Bare.X > 0.0 && Bare.Z > 0.0);
+	TestTrue(TEXT("an empty splash is still a cube"), Bare.X > 0.0 && Bare.Z > 0.0);
 	return true;
 }
 
@@ -416,6 +481,24 @@ bool FPaintSplashHandlerPoolTest::RunTest(const FString& Parameters)
 	if (Floor)
 	{
 		TestEqual(TEXT("a droplet's mark claims no cell"), Floor->GetCoverage().AreaByPaintId[0], 0.0f);
+	}
+
+	// More landings than MaxMarkDroplets are ignored.
+	const_cast<UPaintSplashProfile*>(Request.Profile)->MaxMarkDroplets = 2;
+	const FBasicParticleData Extra = Landing;
+	Data.Add(Extra);
+	Data.Add(Extra);
+	First->ReceiveParticleData_Implementation(Data, nullptr, FVector::ZeroVector);
+	TestEqual(TEXT("landings past MaxMarkDroplets leave no mark"), First->GetLandingCount(), 2);
+
+	// A landing inside the ball's own splat leaves no mark either.
+	Request.bLeavesMarks = true;
+	Request.SplatRadius = 100.0f;
+	UPaintSplashLandingHandler* const Covered = Splash->BeginSplash(Request);
+	if (TestNotNull(TEXT("a contact with a splat radius books a handler"), Covered))
+	{
+		Covered->ReceiveParticleData_Implementation(Data, nullptr, FVector::ZeroVector);
+		TestEqual(TEXT("a landing 50 cm from the contact is under a 100 cm splat"), Covered->GetLandingCount(), 0);
 	}
 	return true;
 }

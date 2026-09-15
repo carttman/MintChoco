@@ -42,6 +42,7 @@ void UPaintballProfile::PlayImpactEffect(UWorld& World, const FHitResult& Hit, c
 	Splash.ImpactNormal = Hit.ImpactNormal;
 	Splash.IncidentVelocity = IncidentVelocity;
 	Splash.BallRadius = Radius;
+	Splash.SplatRadius = Deposit.BrushProfile ? Deposit.BrushProfile->ComputeRadius(Deposit.SplatVolume, static_cast<float>(IncidentVelocity.Size())) : 0.0f;
 	Splash.PaintId = PaintId;
 	Splash.Seed = Seed;
 	Splash.bLeavesMarks = FPaintDeposit::ReceivesSplat(Hit);

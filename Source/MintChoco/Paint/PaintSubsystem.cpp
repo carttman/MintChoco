@@ -9,6 +9,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
+#include "HAL/IConsoleManager.h"
 #include "Tasks/Task.h"
 
 #include "Audio/AudioGameplayTags.h"
@@ -22,6 +23,12 @@
 #include "Paint/PaintSplatEffect.h"
 #include "Paint/PaintableComponent.h"
 #include "Screen/ScreenFadeSubsystem.h"
+
+static TAutoConsoleVariable<int32> CVarPaintRipple(
+	TEXT("mc.PaintRipple"),
+	1,
+	TEXT("1이면 페인트볼 착탄점 주변의 페인트 높이가 잠깐 파문처럼 흔들린다. 0이면 파문 없이 자국만 남는다."),
+	ECVF_Default);
 
 void UPaintSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
@@ -147,6 +154,19 @@ void UPaintSubsystem::StampSurfaces(const FPaintSplat& Splat)
 		Overlaps, Splat.Location, FQuat::Identity, ECC_Visibility,
 		FCollisionShape::MakeSphere(Splat.GetWorldExtent()));
 
+	// The ball's own splat ripples the paint it lands in; a phantom, a droplet's mark or a lob too
+	// slow to splash does not.
+	const UPaintSplashProfile* const Splash = Splat.Splash;
+	bool bRipple = Splash && Splash->bRipple && !Splat.bScoreOnly && !Splat.bDrawOnly && CVarPaintRipple.GetValueOnGameThread() != 0;
+	if (bRipple)
+	{
+		float NormalSpeed = 0.0f;
+		FVector Tangential;
+		PaintSplash::SplitVelocity(FVector(Splat.IncidentDir) * Splat.IncidentSpeed, FVector(Splat.Normal), NormalSpeed, Tangential);
+		bRipple = NormalSpeed >= Splash->MinNormalSpeed;
+	}
+	const float Now = GetWorld()->GetTimeSeconds();
+
 	// Overlap results repeat an actor once per overlapping component, so dedupe on the
 	// paintable itself before drawing.
 	TSet<UPaintableComponent*> Painted;
@@ -165,6 +185,10 @@ void UPaintSubsystem::StampSurfaces(const FPaintSplat& Splat)
 		if (!bAlreadyPainted)
 		{
 			Paintable->ApplySplat(Splat);
+			if (bRipple)
+			{
+				Paintable->PushRipple(Splat.Location, Splash->GetRippleShape(), Now);
+			}
 		}
 	}
 }

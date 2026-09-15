@@ -136,6 +136,19 @@ Every item here cost real debugging time once. Read before any MCP write.
   Apply**: save right after a UI drag stores the original without the wire. Drag → Apply →
   save. `MP_FrontMaterial` connects fine. Deleting or reordering a function's outputs shifts
   the call node's output indices; have the developer re-check hand-wired pins afterwards.
+- `MaterialParameterCollection`: appending `VectorParameters` through `ObjectTools` (read the
+  array, append `{parameterName, id: <fresh GUID string>, defaultValue}`, write, one per call)
+  works, and a `CollectionParameter` node given `Collection` then `ParameterName` in two calls
+  resolves the new entry (`MF_TeamLook` outputs 6..9 read `MintSurface2` / `ChocoSurface2`).
+  `ExpressionGUID` on the node cannot be read back. `FunctionOutput` nodes are addressed by
+  `SortPriority`: append with 6, 7, ... and never renumber the existing ones.
+- A `FunctionInput` added through `add_expression` takes `InputName`, `InputType`
+  (`FunctionInput_Vector3`), `SortPriority`, `bUsePreviewValueAsDefault` and `PreviewValue`
+  in one `set_properties`; call nodes elsewhere see the pin after their `MaterialFunction` is
+  re-set (`MF_PaintOverlay` → `MF_PaintNormal.RippleGrad`). `DisplacementScaling` is a plain
+  struct write: `{"DisplacementScaling": {"Magnitude": 5.0, "Center": 0.0}}` + recompile. A
+  material function's own compile can warn "Missing Preview connection for function input
+  'PaintIdMap'" on save - that is the function's preview material, not the masters.
 - `MaterialInstanceTools.set_scalar_parameter` / `set_vector_parameter` only write
   **GlobalParameter** entries, so a Material Layer parameter (same name in several slots) never
   lands. Write layer overrides through `ObjectTools.set_properties` on
@@ -261,6 +274,16 @@ Building a system from scratch (verified 2026-09-15 on `NS_PaintSplash`):
 - `AddUserVariables` replaces a variable's default when the name already exists - handy for a
   quick preview, but restore the value afterwards. A Custom-node code change did reach the
   PIE-created MID of `M_PaintSplashBlob` without an editor restart.
+- A `Vector4f` user variable (`/Script/CoreUObject.Vector4f`, default `{x,y,z,w}`) swizzles in
+  a Set Parameters HLSL expression: `User.Drop3.xyz` / `User.Drop3.w` compile, so one variable
+  per droplet slot carries velocity + radius (`NS_PaintSplash`, 16 slots, a 16-way ternary on
+  `Particles.UniqueID`). `SetEmitterData` writes such as `CalculateBoundsMode` land in memory but
+  were once missing from the saved asset after the editor was killed; re-check with
+  `GetEmitterData` after a restart and grep the `.uasset` for `::Fixed`.
+- A ProgrammaticToolset script too long to paste into a tool call goes through the MCP HTTP
+  endpoint directly: `scratchpad/tools/mcprun.ps1 <payload.json> <out.json>` (payload =
+  `{"script": ...}`) initializes a session and calls `execute_tool_script`; the raw result is
+  saved to the out file. A script that raises outside a guarded step returns only the error text.
 - `NiagaraToolset_Component.SetSystem` refuses the system already assigned; swap to another
   system and back to restart an editor-world instance. `LogsToolset.SetVerbosity` raises a
   category (`LogNiagara` Verbose) at runtime, and `EditorAppToolset.CaptureEditorImage` grabs the

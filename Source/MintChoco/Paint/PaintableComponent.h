@@ -4,6 +4,7 @@
 #include "Components/ActorComponent.h"
 #include "Paint/PaintCellGrid.h"
 #include "Paint/PaintIslandLayout.h"
+#include "Paint/PaintRipple.h"
 #include "Paint/PaintSplat.h"
 
 #include "PaintableComponent.generated.h"
@@ -90,6 +91,13 @@ public:
 
 	/** Hands the surface material the speed-star state it shades from. The paint subsystem calls this on every push. */
 	void ApplyStarPaint(const FPaintStarShaderState& State);
+
+	/**
+	 * Starts a ring wave through the paint around a contact, WorldCenter on this surface, in the
+	 * world clock the material Time node counts. Ignored while splats are still queued: a replayed
+	 * backlog is history, not contacts happening now.
+	 */
+	void PushRipple(const FVector& WorldCenter, const FPaintRippleShape& Shape, float Now);
 
 	/** This surface's paint buffer. Null on a dedicated server or a surface that keeps no direction. */
 	UFUNCTION(BlueprintPure, Category = "Paint")
@@ -227,6 +235,8 @@ private:
 	/** Draws the primed brush over the rectangles into the scratch buffer and copies them into this surface's buffer. */
 	void DrawStampRects(UMaterialInstanceDynamic& BrushMID, const FStampRects& Rects);
 	void UpdateTickEnabled();
+	/** Writes every ripple slot dead, so a fresh material never shades a wave it never got. */
+	void ResetRipples();
 	UMaterialInstanceDynamic* GetBrushMID(UMaterialInterface* BrushMaterial);
 	void PrimeBrushMID(UMaterialInstanceDynamic& BrushMID) const;
 	FPaintLocalStamp ComputeLocalStamp(const FPaintSplat& Splat) const;
@@ -253,6 +263,7 @@ private:
 
 	FPaintCellGrid CellGrid;
 	FPaintIslandLayout Layout;
+	FPaintRippleSlots Ripples;
 
 	/** Splats waiting for the atlas, or behind others that are; drained in order by the tick. */
 	TArray<FPaintSplat> PendingSplats;

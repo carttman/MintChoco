@@ -48,6 +48,11 @@ namespace
 	const FName PaintStarGenParam(TEXT("PaintStarGen"));
 	const FName PaintStarFadeStartParam(TEXT("PaintStarFadeStart"));
 	const FName PaintStarFadeDurationParam(TEXT("PaintStarFadeDuration"));
+	/** Per ripple slot: the wave's centre in scaled-local cm and the local world time it started; its amplitude, speed, wavelength and decay. */
+	const FName PaintRippleParams[PaintRipple::SlotCount] = {
+		FName(TEXT("PaintRipple0")), FName(TEXT("PaintRipple1")), FName(TEXT("PaintRipple2")), FName(TEXT("PaintRipple3"))};
+	const FName PaintRippleShapeParams[PaintRipple::SlotCount] = {
+		FName(TEXT("PaintRippleShape0")), FName(TEXT("PaintRippleShape1")), FName(TEXT("PaintRippleShape2")), FName(TEXT("PaintRippleShape3"))};
 	/** One rectangle per direction, enum order: uv offset in xy, uv scale in zw, all zero when the direction is off. */
 	const FName PaintIslandParams[PaintFaceDirectionCount] = {
 		FName(TEXT("PaintIsland_Front")), FName(TEXT("PaintIsland_Back")),
@@ -221,6 +226,7 @@ void UPaintableComponent::BeginPlay()
 		SurfaceMID->SetVectorParameterValue(PaintIslandParams[Direction], FLinearColor(Param.X, Param.Y, Param.Z, Param.W));
 	}
 	TargetMesh->SetMaterial(SurfaceMaterialSlot, SurfaceMID);
+	ResetRipples();
 
 	if (Paint)
 	{
@@ -486,6 +492,36 @@ void UPaintableComponent::ClearPaint()
 		UKismetRenderingLibrary::ClearRenderTarget2D(this, PaintRenderTarget, PaintIdNoneColor);
 	}
 	CellGrid.ClearPaint();
+	ResetRipples();
+}
+
+void UPaintableComponent::PushRipple(const FVector& WorldCenter, const FPaintRippleShape& Shape, float Now)
+{
+	if (!SurfaceMID || !TargetMesh || !PendingSplats.IsEmpty())
+	{
+		return;
+	}
+	// The same scaled-local frame the stamps use: rotation and translation undone, scale kept.
+	FPaintRippleWave Wave;
+	Wave.Center = TargetMesh->GetComponentTransform().InverseTransformPositionNoScale(WorldCenter);
+	Wave.StartTime = Now;
+	Wave.Shape = Shape;
+	const int32 Slot = Ripples.Push(Wave, Now);
+	SurfaceMID->SetVectorParameterValue(PaintRippleParams[Slot], FLinearColor(Wave.Center.X, Wave.Center.Y, Wave.Center.Z, Now));
+	SurfaceMID->SetVectorParameterValue(PaintRippleShapeParams[Slot], FLinearColor(Shape.Amplitude, Shape.Speed, Shape.Wavelength, Shape.Decay));
+}
+
+void UPaintableComponent::ResetRipples()
+{
+	for (int32 Slot = 0; Slot < PaintRipple::SlotCount; ++Slot)
+	{
+		Ripples.Waves[Slot] = FPaintRippleWave();
+		if (SurfaceMID)
+		{
+			SurfaceMID->SetVectorParameterValue(PaintRippleParams[Slot], FLinearColor(0.0f, 0.0f, 0.0f, Ripples.Waves[Slot].StartTime));
+			SurfaceMID->SetVectorParameterValue(PaintRippleShapeParams[Slot], FLinearColor(0.0f, 1.0f, 1.0f, 1.0f));
+		}
+	}
 }
 
 void UPaintableComponent::ApplyStarPaint(const FPaintStarShaderState& State)

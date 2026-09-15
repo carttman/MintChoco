@@ -22,6 +22,16 @@ struct FTeamLook
 	float Metallic = 0.0f;
 
 	float WetCoat = 0.0f;
+
+	/** 슬랩의 두 번째 러프니스 로브와 그 가중치. */
+	float SecondRoughness = 0.8f;
+
+	float SecondRoughnessWeight = 0.5f;
+
+	/** Substrate Fuzz: 스치는 각에서 보이는 보풀 광택의 양과 거칠기. */
+	float FuzzAmount = 0.3f;
+
+	float FuzzRoughness = 0.7f;
 };
 
 /**
@@ -45,10 +55,12 @@ namespace TeamLook
 	/** 컬렉션을 직접 지정해 읽는다. nullptr 이면 내장 기본값. 테스트와 툴용. */
 	MINTCHOCO_API FTeamLook GetFrom(const UMaterialParameterCollection* Collection, int32 TeamId, const UWorld* World = nullptr);
 
-	/** MPC 항목 이름: "MintColor", "ChocoSubsurface", "MintSurface" ... 팀이 아니면 NAME_None. */
+	/** MPC 항목 이름: "MintColor", "ChocoSubsurface", "MintSurface", "MintSurface2" ... 팀이 아니면 NAME_None. */
 	MINTCHOCO_API FName ColorParameterName(int32 TeamId);
 	MINTCHOCO_API FName SubsurfaceParameterName(int32 TeamId);
 	MINTCHOCO_API FName SurfaceParameterName(int32 TeamId);
+	/** (SecondRoughness, SecondRoughnessWeight, FuzzAmount, FuzzRoughness). */
+	MINTCHOCO_API FName Surface2ParameterName(int32 TeamId);
 
 	/** 팀 색을 쓰는 모든 마스터 머티리얼이 선언하는 스칼라 파라미터. MI 와 MID 가 팀 id 를 넣는다. */
 	inline const FName TeamIdParameter(TEXT("TeamId"));

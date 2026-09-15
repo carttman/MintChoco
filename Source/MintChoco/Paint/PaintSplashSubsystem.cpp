@@ -39,6 +39,7 @@ void UPaintSplashLandingHandler::Arm(const FPaintSplashRequest& Request, UPaintS
 	Profile = Request.Profile;
 	Paint = InPaint;
 	ImpactPoint = Request.ImpactPoint;
+	MarkClearance = Request.SplatRadius * (Profile ? Profile->MarkClearanceScale : 1.0f);
 	PaintId = Request.PaintId;
 	LockGens = InLockGens;
 	Seed = PaintSplash::SplashSeed(Request.Seed);
@@ -72,6 +73,16 @@ void UPaintSplashLandingHandler::ReceiveParticleData_Implementation(const TArray
 		Hit.ImpactNormal = Normal;
 		Hit.Normal = Normal;
 
+		// Inside the ball's own splat a mark only redraws an edge through solid paint.
+		if (FVector::DistSquared(Hit.ImpactPoint, ImpactPoint) < FMath::Square(MarkClearance))
+		{
+			continue;
+		}
+		// Only the largest droplets fly, so this is a safety net for a system that flew more.
+		if (Landings >= Profile->MaxMarkDroplets)
+		{
+			break;
+		}
 		// Head-on at the launch speed: a round mark sized like the phantom the score claimed for it.
 		++Landings;
 		const FVector Incident = -Normal * FMath::Max(Landing.Size, 0.0f);
@@ -171,14 +182,12 @@ UMaterialInstanceDynamic* UPaintSplashSubsystem::BuildBlobMaterial(UNiagaraCompo
 	for (int32 Index = 0; Index < PaintSplash::MaxDroplets; ++Index)
 	{
 		const bool bUsed = Index < Droplets.Num();
-		const FVector Offset = bUsed ? Droplets[Index].Position - Request.ImpactPoint : FVector::ZeroVector;
 		const FVector Velocity = bUsed ? Droplets[Index].Velocity : FVector::ZeroVector;
-		Blob->SetVectorParameterValue(PaintSplashBlob::Drop[Index], FLinearColor(Offset.X, Offset.Y, Offset.Z, bUsed ? Droplets[Index].Radius : 0.0f));
-		Blob->SetVectorParameterValue(PaintSplashBlob::Velocity[Index], FLinearColor(Velocity.X, Velocity.Y, Velocity.Z, 0.0f));
+		Blob->SetVectorParameterValue(PaintSplashBlob::Drop(Index), FLinearColor(Velocity.X, Velocity.Y, Velocity.Z, bUsed ? Droplets[Index].Radius : 0.0f));
 	}
 	Blob->SetVectorParameterValue(PaintSplashBlob::Physics, FLinearColor(-GravityZ * Profile.GravityScale, Profile.Drag, Profile.CohesionRadius, Profile.CohesionDecay));
-	Blob->SetVectorParameterValue(PaintSplashBlob::Crown,
-		FLinearColor(0.5f * Request.BallRadius, Profile.CrownRadiusScale * Request.BallRadius, Profile.CrownThicknessScale * Request.BallRadius, Profile.CrownLifetime));
+	Blob->SetScalarParameterValue(PaintSplashBlob::BallRadius, Request.BallRadius);
+	Blob->SetScalarParameterValue(PaintSplashBlob::PuddleSpread, Profile.PuddleSpread);
 	Blob->SetScalarParameterValue(PaintSplashBlob::MarchMax, static_cast<float>(BlobScale.Size() * 100.0));
 	return Blob;
 }
@@ -198,7 +207,9 @@ void UPaintSplashSubsystem::ConfigureEffect(UNiagaraComponent& Effect, const FPa
 		PaintSplash::GenerateDroplets(*Profile, Input, Droplets);
 	}
 
-	Effect.SetVariableInt(PaintSplashFX::DropletCount, Droplets.Num());
+	// Niagara flies only the droplets that may leave a mark, the largest ones; the blob draws them all.
+	const int32 Flown = Profile ? FMath::Min(Droplets.Num(), FMath::Max(Profile->MaxMarkDroplets, 0)) : 0;
+	Effect.SetVariableInt(PaintSplashFX::DropletCount, Flown);
 	if (Droplets.IsEmpty())
 	{
 		Effect.SetVariableObject(PaintSplashFX::LandingHandler, nullptr);
@@ -208,9 +219,8 @@ void UPaintSplashSubsystem::ConfigureEffect(UNiagaraComponent& Effect, const FPa
 	for (int32 Index = 0; Index < PaintSplash::MaxDroplets; ++Index)
 	{
 		const bool bUsed = Index < Droplets.Num();
-		Effect.SetVariableVec3(PaintSplashFX::DropOffset[Index], bUsed ? Droplets[Index].Position - Request.ImpactPoint : FVector::ZeroVector);
-		Effect.SetVariableVec3(PaintSplashFX::DropVelocity[Index], bUsed ? Droplets[Index].Velocity : FVector::ZeroVector);
-		Effect.SetVariableFloat(PaintSplashFX::DropRadius[Index], bUsed ? Droplets[Index].Radius : 0.0f);
+		const FVector Velocity = bUsed ? Droplets[Index].Velocity : FVector::ZeroVector;
+		Effect.SetVariableVec4(PaintSplashFX::Drop(Index), FVector4(Velocity, bUsed ? Droplets[Index].Radius : 0.0f));
 	}
 	Effect.SetVariableFloat(PaintSplashFX::BallRadius, Request.BallRadius);
 	Effect.SetVariableInt(PaintSplashFX::Seed, PaintSplash::SplashSeed(Request.Seed));
@@ -226,9 +236,6 @@ void UPaintSplashSubsystem::ConfigureEffect(UNiagaraComponent& Effect, const FPa
 		{PaintSplashFX::MaxTravel, Profile->MaxTravel},
 		{PaintSplashFX::CohesionRadius, Profile->CohesionRadius},
 		{PaintSplashFX::CohesionDecay, Profile->CohesionDecay},
-		{PaintSplashFX::CrownRadiusScale, Profile->CrownRadiusScale},
-		{PaintSplashFX::CrownThicknessScale, Profile->CrownThicknessScale},
-		{PaintSplashFX::CrownLifetime, Profile->CrownLifetime},
 	};
 	for (const auto& Entry : Floats)
 	{

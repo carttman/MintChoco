@@ -30,19 +30,23 @@ Reference docs, read on demand rather than up front:
 ## Team look (colors and gloss)
 
 The single source is `Content/Assets/Paint/Materials/Team/MPC_TeamLook`: `MintColor`,
-`MintSubsurface`, `MintSurface` and the same three for `Choco`. `Surface` packs
-`(Roughness, Specular [UE 0..1], Metallic, WetCoat)`. Editing the MPC updates every material
+`MintSubsurface`, `MintSurface`, `MintSurface2` and the same four for `Choco`. `Surface` packs
+`(Roughness, Specular [UE 0..1], Metallic, WetCoat)`, `Surface2` packs `(SecondRoughness,
+SecondRoughnessWeight, FuzzAmount, FuzzRoughness)`. Editing the MPC updates every material
 live; no recompile, no restart.
 
 - Shaders read it through `MF_TeamLook(TeamId)` → `Color, Subsurface, Roughness, Specular,
-  Metallic, WetCoat`. Never reorder or delete those outputs: call nodes address them by index.
+  Metallic, WetCoat, SecondRoughness, SecondRoughnessWeight, FuzzAmount, FuzzRoughness`. Never
+  reorder or delete those outputs: call nodes address them by index; append only.
 - C++ reads it through `TeamLook::Get / GetColor / GetDisplayColor` (`Game/TeamLook.h`), which
   resolve `UPaintSettings::TeamLookCollection`; the fallback table in `TeamLook.cpp` must match
   the MPC seed. `Teams::` holds ids and names only.
 - Every team-tinted master declares a scalar `TeamId` (0 Mint, 1 Choco); per-team MIs differ
   only by `TeamId`. A non-team look (`MI_InkLiquid_Red`, `MI_InkSurface_Red`) sets
   `UseTeamLook = 0`. `ML_Look_Mint/Choco` call the function with a constant 0/1, so the old
-  `Albedo/Roughness/Specular/SSSMFP/WetCoat` layer parameters no longer exist. MIDs set
+  `Albedo/Roughness/Specular/SSSMFP/WetCoat/SecondRoughness/Fuzz*` layer parameters no longer
+  exist (`M_PaintSplashBlob` reads the same outputs, so the blob and the floor paint share one
+  slab recipe). MIDs set
   `TeamId` from `Splat.PaintId`; the HUD bar and Niagara `User.TintColor` (splat, burst,
   muzzle flash, charge hold) take `TeamLook::GetColor(PaintId)`.
 - Test: `MintChoco.Game.TeamLook.*`.
@@ -83,8 +87,10 @@ The paint buffer is a procedural planar atlas: one island per enabled local dire
 `PaintAtlasBaker` from LOD 0 (Allow CPU Access required). `MF_PaintOverlay` picks the island
 from the pixel's local normal, so paint only shows on kept directions; anything else, and any
 non-paintable static mesh, gets a transient side-splat decal. Stamps and the cell grid are in
-the scaled-local frame (world cm). Paint thickness is `DisplacementScaling.Magnitude` in world
-cm and must equal `PaintMaxHeight`. Nanite tessellation is on by default in 5.8; displacement
+the scaled-local frame (world cm). Paint thickness is `PaintMaxHeight` in world cm;
+`DisplacementScaling.Magnitude` on every paintable master must equal `PaintMaxHeight +
+PaintRippleHeadroom` (the contact ripple's room above a full stack). Nanite tessellation is on
+by default in 5.8; displacement
 follows the vertex normal and never recomputes shading normals. Per-pixel data through the
 layer stack rides pixel attributes only (Anisotropy, Refraction.rg, PixelDepthOffset, Opacity,
 Tangent); `CustomizedUVs` and WPO are vertex-frequency. Everything else: `docs/Traps.md`.

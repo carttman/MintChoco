@@ -17,6 +17,20 @@ namespace
 		const double Speed = Velocity.Size();
 		return Speed > MaxSpeed && Speed > UE_DOUBLE_KINDA_SMALL_NUMBER ? Velocity * (MaxSpeed / Speed) : Velocity;
 	}
+
+	FName SlotName(const TCHAR* Prefix, int32 Index)
+	{
+		static TMap<FString, TArray<FName>> Cache;
+		TArray<FName>& Names = Cache.FindOrAdd(Prefix);
+		if (Names.IsEmpty())
+		{
+			for (int32 Slot = 0; Slot < PaintSplash::MaxDroplets; ++Slot)
+			{
+				Names.Add(FName(*FString::Printf(TEXT("%s%d"), Prefix, Slot)));
+			}
+		}
+		return Names.IsValidIndex(Index) ? Names[Index] : NAME_None;
+	}
 }
 
 int32 PaintSplash::SplashSeed(int32 BallSeed)
@@ -29,6 +43,29 @@ void PaintSplash::SplitVelocity(const FVector& Velocity, const FVector& Normal, 
 	const double Along = FVector::DotProduct(Velocity, Normal);
 	OutNormalSpeed = static_cast<float>(-Along);
 	OutTangential = Velocity - Normal * Along;
+}
+
+float PaintSplash::TangentialShare(float NormalSpeed, float TangentialSpeed)
+{
+	const float Tangential = FMath::Max(TangentialSpeed, 0.0f);
+	return Tangential / FMath::Max(Tangential + FMath::Max(NormalSpeed, 0.0f), UE_KINDA_SMALL_NUMBER);
+}
+
+void PaintSplash::SplitGroups(const UPaintSplashProfile& Profile, int32 Count, float TangentialShare, int32& OutForward, int32& OutSide, int32& OutBack)
+{
+	Count = FMath::Max(Count, 0);
+	const float ForwardShare = FMath::Lerp(Profile.ForwardShareHeadOn, Profile.ForwardShareGrazing, FMath::Clamp(TangentialShare, 0.0f, 1.0f));
+	OutForward = FMath::Clamp(FMath::RoundToInt(Count * FMath::Clamp(ForwardShare, 0.0f, 1.0f)), 0, Count);
+	const int32 Rest = Count - OutForward;
+	OutBack = FMath::Clamp(FMath::RoundToInt(Rest * FMath::Clamp(Profile.BackShareOfRest, 0.0f, 1.0f)), 0, Rest);
+	OutSide = Rest - OutBack;
+}
+
+FVector PaintSplash::LaunchOffset(const FVector& Normal, const FVector& Velocity, float Radius, float BallRadius)
+{
+	const FVector Flat = Velocity - Normal * FVector::DotProduct(Velocity, Normal);
+	const FVector Direction = Flat.Size() > 1e-3 ? Flat.GetSafeNormal() : FVector::ZeroVector;
+	return Direction * (0.5 * BallRadius) + Normal * (Radius + 1.0);
 }
 
 void PaintSplash::GenerateDroplets(const UPaintSplashProfile& Profile, const FSpawnInput& Input, TArray<FDroplet>& OutDroplets)
@@ -48,36 +85,50 @@ void PaintSplash::GenerateDroplets(const UPaintSplashProfile& Profile, const FSp
 	const float TangentialSpeed = static_cast<float>(Tangential.Size());
 	const FVector Forward = TangentialSpeed > 1.0f ? Tangential / TangentialSpeed : SeededTangent(Normal, Stream);
 	const FVector Side = FVector::CrossProduct(Normal, Forward).GetSafeNormal();
-	const FVector Slide = Forward * (Profile.SlideScale * TangentialSpeed);
 	const float BallRadius = FMath::Max(Input.BallRadius, 0.1f);
 
-	// The jet leans toward the direction of travel by the share the tangential speed has in the whole.
-	{
-		const float Tilt = Profile.JetTiltDeg * TangentialSpeed / FMath::Max(TangentialSpeed + NormalSpeed, UE_KINDA_SMALL_NUMBER);
-		const FVector Direction = Normal.RotateAngleAxis(Tilt, Side);
-		FDroplet& Jet = OutDroplets.AddDefaulted_GetRef();
-		Jet.bJet = true;
-		Jet.Radius = Profile.JetRadiusScale * BallRadius;
-		Jet.Velocity = ClampSpeed(Direction * (Profile.JetSpeedScale * NormalSpeed) + Slide, Profile.MaxDropletSpeed);
-		Jet.Position = Input.ImpactPoint + Normal * (Jet.Radius + 1.0f);
-	}
+	const int32 Count = FMath::Clamp(Profile.DropletCount, 1, MaxDroplets);
+	int32 NumForward = 0;
+	int32 NumSide = 0;
+	int32 NumBack = 0;
+	SplitGroups(Profile, Count, TangentialShare(NormalSpeed, TangentialSpeed), NumForward, NumSide, NumBack);
 
-	const int32 Count = FMath::Clamp(Profile.SatelliteCount, 0, MaxDroplets - 1);
-	for (int32 Index = 0; Index < Count; ++Index)
+	const struct
 	{
-		// Stratified around the circle, then pulled toward the forward half by the bias.
-		const float Around = (static_cast<float>(Index) + Stream.FRand()) * (360.0f / FMath::Max(Count, 1));
-		const float Ahead = Stream.FRandRange(-90.0f, 90.0f);
-		const float Azimuth = FMath::Lerp(Around, Ahead, FMath::Clamp(Profile.SatelliteTangentBias, 0.0f, 1.0f));
-		const float Elevation = Stream.FRandRange(0.35f, 1.0f) * Profile.SatelliteConeDeg;
-		const FVector InPlane = Forward * FMath::Cos(FMath::DegreesToRadians(Azimuth)) + Side * FMath::Sin(FMath::DegreesToRadians(Azimuth));
-		const FVector Direction = Normal * FMath::Cos(FMath::DegreesToRadians(Elevation)) + InPlane * FMath::Sin(FMath::DegreesToRadians(Elevation));
-		const float Speed = NormalSpeed * Stream.FRandRange(Profile.SatelliteSpeedMinScale, Profile.SatelliteSpeedMaxScale);
+		EDropletGroup Group;
+		const FPaintSplashDropletGroup& Settings;
+		int32 Num;
+		float HeadingDeg;
+	} Plans[] = {
+		{EDropletGroup::Forward, Profile.Forward, NumForward, 0.0f},
+		{EDropletGroup::Side, Profile.Side, NumSide, 90.0f},
+		{EDropletGroup::Back, Profile.Back, NumBack, 180.0f},
+	};
+	const float RadiusMin = FMath::Max(Profile.DropletRadiusScale.Min, 0.01f);
+	const float RadiusMax = FMath::Max(Profile.DropletRadiusScale.Max, RadiusMin);
+	const float RadiusBias = FMath::Max(Profile.DropletRadiusBias, 0.01f);
+	for (const auto& Plan : Plans)
+	{
+		for (int32 Index = 0; Index < Plan.Num; ++Index)
+		{
+			// Stratified across the group's fan; the side group alternates between the two sides.
+			// The draws come in a fixed order per droplet so a knob change moves nothing else.
+			const float Fan = Plan.Settings.SpreadDeg * ((static_cast<float>(Index) + Stream.FRand()) / Plan.Num * 2.0f - 1.0f);
+			const float Heading = Plan.Group == EDropletGroup::Side && (Index % 2) == 1 ? -Plan.HeadingDeg : Plan.HeadingDeg;
+			const float Azimuth = Heading + Fan;
+			const float Elevation = FMath::Clamp(Stream.FRandRange(Plan.Settings.ElevationDeg.Min, Plan.Settings.ElevationDeg.Max), 0.0f, 89.0f);
+			const float Speed = NormalSpeed * Stream.FRandRange(Plan.Settings.SpeedScale.Min, Plan.Settings.SpeedScale.Max);
+			const float RadiusScale = RadiusMin + (RadiusMax - RadiusMin) * FMath::Pow(Stream.FRand(), RadiusBias);
 
-		FDroplet& Satellite = OutDroplets.AddDefaulted_GetRef();
-		Satellite.Radius = Profile.SatelliteRadiusScale * BallRadius * Stream.FRandRange(0.8f, 1.2f);
-		Satellite.Velocity = ClampSpeed(Direction * Speed + Slide, Profile.MaxDropletSpeed);
-		Satellite.Position = Input.ImpactPoint + Normal * (Satellite.Radius + 1.0f) + InPlane * (0.5f * BallRadius);
+			const FVector InPlane = Forward * FMath::Cos(FMath::DegreesToRadians(Azimuth)) + Side * FMath::Sin(FMath::DegreesToRadians(Azimuth));
+			const FVector Direction = Normal * FMath::Cos(FMath::DegreesToRadians(Elevation)) + InPlane * FMath::Sin(FMath::DegreesToRadians(Elevation));
+			const FVector Slide = Forward * (Plan.Settings.SlideScale * TangentialSpeed);
+
+			FDroplet& Droplet = OutDroplets.AddDefaulted_GetRef();
+			Droplet.Group = Plan.Group;
+			Droplet.Radius = RadiusScale * BallRadius;
+			Droplet.Velocity = ClampSpeed(Direction * Speed + Slide, Profile.MaxDropletSpeed);
+		}
 	}
 
 	TArray<float, TInlineAllocator<MaxDroplets>> Radii;
@@ -86,13 +137,17 @@ void PaintSplash::GenerateDroplets(const UPaintSplashProfile& Profile, const FSp
 		Radii.Add(Droplet.Radius);
 	}
 	const float Scale = CapVolume(Radii, BallRadius, Profile.VolumeFraction);
-	if (Scale < 1.0f)
+	for (FDroplet& Droplet : OutDroplets)
 	{
-		for (FDroplet& Droplet : OutDroplets)
+		if (Scale < 1.0f)
 		{
 			Droplet.Radius *= Scale;
 		}
+		Droplet.Position = Input.ImpactPoint + LaunchOffset(Normal, Droplet.Velocity, Droplet.Radius, BallRadius);
 	}
+
+	// Largest first, so the mark and score caps take prefixes.
+	OutDroplets.StableSort([](const FDroplet& A, const FDroplet& B) { return A.Radius > B.Radius; });
 }
 
 float PaintSplash::CapVolume(TArrayView<float> Radii, float BallRadius, float VolumeFraction)
@@ -137,8 +192,10 @@ void PaintSplash::PhantomLandings(const UPaintSplashProfile& Profile, const FSpa
 		return;
 	}
 
-	for (const FDroplet& Droplet : Droplets)
+	const int32 Count = FMath::Min(Droplets.Num(), FMath::Max(Profile.MaxScoreDroplets, 0));
+	for (int32 Index = 0; Index < Count; ++Index)
 	{
+		const FDroplet& Droplet = Droplets[Index];
 		// Height above the plane: h(t) = h0 + v t + a t^2 / 2 with a < 0. The later root is the landing.
 		const double Height = FVector::DotProduct(Droplet.Position - Input.ImpactPoint, Normal);
 		const double Rise = FVector::DotProduct(Droplet.Velocity, Normal);
@@ -169,24 +226,17 @@ float PaintSplash::Cohesion(const UPaintSplashProfile& Profile, float Age)
 	return Profile.CohesionRadius * FMath::Max(0.0f, 1.0f - Age / FMath::Max(Profile.CohesionDecay, UE_KINDA_SMALL_NUMBER));
 }
 
-void PaintSplash::CrownAt(const UPaintSplashProfile& Profile, float BallRadius, float Age, float& OutRadius, float& OutTube, float& OutFade)
-{
-	const float Alpha = FMath::Clamp(Age / FMath::Max(Profile.CrownLifetime, UE_KINDA_SMALL_NUMBER), 0.0f, 1.0f);
-	OutRadius = FMath::Lerp(0.5f * BallRadius, Profile.CrownRadiusScale * BallRadius, FMath::SmoothStep(0.0f, 1.0f, Alpha));
-	OutTube = Profile.CrownThicknessScale * BallRadius * (1.0f - Alpha);
-	OutFade = 1.0f - Alpha;
-}
-
 FVector PaintSplash::BlobScale(const UPaintSplashProfile& Profile, const FSpawnInput& Input, TArrayView<const FDroplet> Droplets, float GravityZ)
 {
 	const FVector Normal = Input.ImpactNormal.GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
 	const FVector Gravity(0.0, 0.0, GravityZ * Profile.GravityScale);
 	const double GravityAlong = FVector::DotProduct(Gravity, Normal);
 
-	// The crown alone needs its full ring; the droplets add their flights, sampled along the parabola
-	// until they return to the plane or run out of lifetime, whichever comes first.
-	double Reach = (Profile.CrownRadiusScale + Profile.CrownThicknessScale) * Input.BallRadius;
-	double Height = 2.0 * Profile.CrownThicknessScale * Input.BallRadius;
+	// A ball's worth of cube at least, so a splash with nothing in the air still has a body; the
+	// droplets add their flights, sampled along the parabola until they return to the plane or
+	// run out of lifetime, whichever comes first.
+	double Reach = Input.BallRadius;
+	double Height = Input.BallRadius;
 	constexpr int32 Samples = 8;
 	for (const FDroplet& Droplet : Droplets)
 	{
@@ -215,4 +265,14 @@ FVector PaintSplash::BlobScale(const UPaintSplashProfile& Profile, const FSpawnI
 	Reach = FMath::Min(Reach, static_cast<double>(Profile.MaxTravel)) + Profile.BlobPadding;
 	Height += Profile.BlobPadding;
 	return FVector(2.0 * Reach, 2.0 * Reach, Height) / 100.0;
+}
+
+FName PaintSplashBlob::Drop(int32 Index)
+{
+	return SlotName(TEXT("Drop"), Index);
+}
+
+FName PaintSplashFX::Drop(int32 Index)
+{
+	return SlotName(TEXT("User.Drop"), Index);
 }

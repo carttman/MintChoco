@@ -2,22 +2,57 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Math/Interval.h"
+
+#include "Paint/PaintRipple.h"
 
 #include "PaintSplashProfile.generated.h"
 
 class UMaterialInterface;
 class UPaintBrushProfile;
 
+/** One heading's share of the splash: how wide its fan is, how steeply and how fast it leaves, how much of the ball's slide it keeps. */
+USTRUCT(BlueprintType)
+struct MINTCHOCO_API FPaintSplashDropletGroup
+{
+	GENERATED_BODY()
+
+	FPaintSplashDropletGroup() = default;
+	FPaintSplashDropletGroup(float InSpreadDeg, const FFloatInterval& InElevationDeg, const FFloatInterval& InSpeedScale, float InSlideScale)
+		: SpreadDeg(InSpreadDeg), ElevationDeg(InElevationDeg), SpeedScale(InSpeedScale), SlideScale(InSlideScale)
+	{
+	}
+
+	/** Half-width of the fan around the group's heading (forward 0, side 90 either way, back 180), degrees. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0", ClampMax = "90", ForceUnits = "deg"))
+	float SpreadDeg = 45.0f;
+
+	/** Angle off the surface normal; 0 leaves straight up, 90 skims the surface. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FFloatInterval ElevationDeg = FFloatInterval(30.0f, 65.0f);
+
+	/** Launch speed as a fraction of the approach speed. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FFloatInterval SpeedScale = FFloatInterval(0.08f, 0.16f);
+
+	/** Fraction of the ball's tangential speed the droplet keeps. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (ClampMin = "0", ForceUnits = "x"))
+	float SlideScale = 0.1f;
+};
+
 /**
- * What a paintball's landing scatters: the crown ring, the jet that jumps back out of the contact
- * and the satellite droplets that fly off it, and the small marks they leave where they come down.
+ * What a paintball's landing scatters: droplets thrown mostly on across the ball's travel, some
+ * to the sides and a few back the way it came, the small marks they leave where they come down,
+ * and the ripple the contact sends through the paint around it.
  *
  * One asset feeds both halves of the splash. The picture is each machine's own: C++ throws the
- * droplets (PaintSplash::GenerateDroplets), NS_PaintSplash flies them, and where one lands the
- * droplet brush stamps a mark straight into the paint buffer - no score, no replication. The score
- * is CPU only and deterministic: PaintSplash::PhantomLandings derives approximate landing points
- * from the replicated splat with the same numbers, and those mark the coverage grid without
- * drawing. Same profile, same droplets, so what players see and what they are credited for stay close.
+ * droplets (PaintSplash::GenerateDroplets), the blob material draws every one of them as strands
+ * pulling off the puddle, NS_PaintSplash flies the largest MaxMarkDroplets, and where one lands
+ * the droplet brush stamps a mark straight into the paint buffer - no score, no replication. The
+ * score is CPU only and deterministic: PaintSplash::PhantomLandings derives approximate landing
+ * points of the largest MaxScoreDroplets from the replicated splat with the same numbers, and
+ * those mark the coverage grid without drawing. Same profile, same droplets, so what players see
+ * and what they are credited for stay close; the two caps are where they differ on purpose.
  */
 UCLASS(BlueprintType)
 class MINTCHOCO_API UPaintSplashProfile : public UDataAsset
@@ -31,17 +66,18 @@ public:
 	/** Seconds after the contact by which every droplet has landed or died, with a little slack. */
 	float GetHoldSeconds() const { return MaxLifetime + 0.5f; }
 
-	/** Satellite droplets besides the jet; PaintSplash::MaxDroplets caps the whole splash at four. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shape", meta = (ClampMin = "0", ClampMax = "3"))
-	int32 SatelliteCount = 3;
+	FPaintRippleShape GetRippleShape() const;
 
-	/** Radius of the jet droplet, as a multiple of the ball's radius. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shape", meta = (ClampMin = "0.05", ForceUnits = "x"))
-	float JetRadiusScale = 0.6f;
+	/** Droplets one contact throws; PaintSplash::MaxDroplets caps it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shape", meta = (ClampMin = "1", ClampMax = "16"))
+	int32 DropletCount = 16;
 
-	/** Radius of a satellite droplet, as a multiple of the ball's radius, varied a little per droplet. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shape", meta = (ClampMin = "0.05", ForceUnits = "x"))
-	float SatelliteRadiusScale = 0.4f;
+	/** Droplet radius as a multiple of the ball's radius; DropletRadiusBias above 1 favours the small end. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shape")
+	FFloatInterval DropletRadiusScale = FFloatInterval(0.12f, 0.45f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shape", meta = (ClampMin = "0.25", ClampMax = "8"))
+	float DropletRadiusBias = 2.0f;
 
 	/** The droplets together never hold more than this fraction of the ball's volume; radii shrink to fit. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Shape", meta = (ClampMin = "0.05", ClampMax = "1", ForceUnits = "x"))
@@ -51,34 +87,29 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch", meta = (ClampMin = "0", ForceUnits = "cm/s"))
 	float MinNormalSpeed = 400.0f;
 
-	/** Jet speed as a fraction of the approach speed. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch", meta = (ClampMin = "0", ForceUnits = "x"))
-	float JetSpeedScale = 0.12f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch", meta = (ClampMin = "0", ForceUnits = "x"))
-	float SatelliteSpeedMinScale = 0.06f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch", meta = (ClampMin = "0", ForceUnits = "x"))
-	float SatelliteSpeedMaxScale = 0.14f;
-
-	/** Fraction of the ball's tangential speed every droplet keeps, so a grazing hit splashes forward. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch", meta = (ClampMin = "0", ForceUnits = "x"))
-	float SlideScale = 0.15f;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch", meta = (ClampMin = "1", ForceUnits = "cm/s"))
-	float MaxDropletSpeed = 450.0f;
+	float MaxDropletSpeed = 600.0f;
 
-	/** How far the jet leans off the normal toward the direction of travel on a fully grazing hit. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch", meta = (ClampMin = "0", ClampMax = "80", ForceUnits = "deg"))
-	float JetTiltDeg = 15.0f;
-
-	/** Half-angle of the cone around the normal the satellites leave through. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch", meta = (ClampMin = "0", ClampMax = "85", ForceUnits = "deg"))
-	float SatelliteConeDeg = 40.0f;
-
-	/** 0 spreads the satellites evenly around the contact, 1 sends them all into the forward half. */
+	/** Share of the droplets that fly on across the ball's travel on a head-on hit ... */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch", meta = (ClampMin = "0", ClampMax = "1"))
-	float SatelliteTangentBias = 0.6f;
+	float ForwardShareHeadOn = 0.4f;
+
+	/** ... and on a fully grazing one; the tangential share of the approach blends between them. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch", meta = (ClampMin = "0", ClampMax = "1"))
+	float ForwardShareGrazing = 0.75f;
+
+	/** Of the droplets that do not fly forward, the share thrown back the way the ball came; the rest go to the sides. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch", meta = (ClampMin = "0", ClampMax = "1"))
+	float BackShareOfRest = 0.3f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch")
+	FPaintSplashDropletGroup Forward = FPaintSplashDropletGroup(50.0f, FFloatInterval(35.0f, 70.0f), FFloatInterval(0.10f, 0.20f), 0.15f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch")
+	FPaintSplashDropletGroup Side = FPaintSplashDropletGroup(35.0f, FFloatInterval(25.0f, 60.0f), FFloatInterval(0.06f, 0.14f), 0.05f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch")
+	FPaintSplashDropletGroup Back = FPaintSplashDropletGroup(40.0f, FFloatInterval(15.0f, 45.0f), FFloatInterval(0.04f, 0.10f), 0.0f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Flight", meta = (ClampMin = "0", ForceUnits = "x"))
 	float GravityScale = 1.0f;
@@ -108,35 +139,40 @@ public:
 
 	/** Fraction of the max paint height one mark adds. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Marks", meta = (ClampMin = "0", ClampMax = "1"))
-	float DropletHeightAdd = 0.35f;
+	float DropletHeightAdd = 0.2f;
+
+	/** The largest droplets that fly in NS_PaintSplash and leave marks; the blob still draws them all. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Marks", meta = (ClampMin = "1", ClampMax = "16"))
+	int32 MaxMarkDroplets = 8;
+
+	/** A droplet landing within this multiple of the ball's own splat radius leaves no mark; the splat already covers it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Marks", meta = (ClampMin = "0", ForceUnits = "x"))
+	float MarkClearanceScale = 1.1f;
 
 	/** Scales the radius a phantom landing claims in the score grid relative to the mark a droplet draws. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Score", meta = (ClampMin = "0", ForceUnits = "x"))
 	float PhantomCellRadiusScale = 1.0f;
 
-	/** Smooth-min radius holding the droplets and the crown together at birth, in cm; the yogurt knob. */
+	/** The largest droplets whose phantom landings claim cells. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Score", meta = (ClampMin = "0", ClampMax = "16"))
+	int32 MaxScoreDroplets = 4;
+
+	/** Smooth-min radius holding the strands together at birth, in cm; the yogurt knob. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Look", meta = (ClampMin = "0", ForceUnits = "cm"))
-	float CohesionRadius = 6.0f;
+	float CohesionRadius = 10.0f;
 
-	/** Seconds until the cohesion has decayed to nothing and the droplets have pinched apart. */
+	/** Seconds until the cohesion has decayed to nothing and the strands have pinched off the puddle. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Look", meta = (ClampMin = "0.01", ForceUnits = "s"))
-	float CohesionDecay = 0.25f;
+	float CohesionDecay = 0.35f;
 
-	/** Final radius of the crown ring, as a multiple of the ball's radius. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Look", meta = (ClampMin = "0", ForceUnits = "x"))
-	float CrownRadiusScale = 2.5f;
-
-	/** Tube radius of the crown ring at birth, as a multiple of the ball's radius; it thins to nothing. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Look", meta = (ClampMin = "0", ForceUnits = "x"))
-	float CrownThicknessScale = 0.35f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Look", meta = (ClampMin = "0.01", ForceUnits = "s"))
-	float CrownLifetime = 0.35f;
+	/** Fraction of a droplet's in-plane speed the puddle rim its strand roots on spreads at while the cohesion holds. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Look", meta = (ClampMin = "0", ClampMax = "1", ForceUnits = "x"))
+	float PuddleSpread = 0.35f;
 
 	/**
-	 * Draws the droplets and the crown as one ray-marched fluid on a cube around the contact
-	 * (M_PaintSplashBlob). ConfigureEffect builds a dynamic instance per splash and hands it the
-	 * droplets, the flight numbers and the TeamId (PaintSplashBlob names). Unset, only the marks show.
+	 * Draws the droplets as one ray-marched fluid on a cube around the contact (M_PaintSplashBlob).
+	 * ConfigureEffect builds a dynamic instance per splash and hands it the droplets, the flight
+	 * numbers and the TeamId (PaintSplashBlob names). Unset, only the marks show.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Look")
 	TObjectPtr<UMaterialInterface> BlobMaterial;
@@ -144,4 +180,21 @@ public:
 	/** Slack the blob's cube keeps around the droplets' flight, cm. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Look", meta = (ClampMin = "0", ForceUnits = "cm"))
 	float BlobPadding = 4.0f;
+
+	/** Whether the contact sends a ring wave through the paint height around it (UPaintableComponent::PushRipple). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ripple")
+	bool bRipple = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ripple", meta = (ClampMin = "0", ForceUnits = "cm"))
+	float RippleAmplitude = 2.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ripple", meta = (ClampMin = "1", ForceUnits = "cm/s"))
+	float RippleSpeed = 80.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ripple", meta = (ClampMin = "1", ForceUnits = "cm"))
+	float RippleWavelength = 14.0f;
+
+	/** How fast the wave dies, per second; it is gone once it has fallen to 2% of its amplitude. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ripple", meta = (ClampMin = "0.1"))
+	float RippleDecay = 2.0f;
 };
