@@ -8,6 +8,8 @@
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
 #include "TimerManager.h"
 
 #include "Audio/AudioGameplayTags.h"
@@ -65,6 +67,16 @@ AItemPickup::AItemPickup()
 	Laser->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Laser->SetGenerateOverlapEvents(false);
 	Laser->SetCastShadow(false);
+
+	// 기둥은 활성이 되는 순간 StartPillar가 직접 켠다. 자동 활성이면 템플릿이 비어 있어도
+	// 켜지려 들고, 예고 상태와 데디케이티드 서버에서까지 돈다(돔의 거품과 같은 규칙).
+	Pillar = CreateDefaultSubobject<UNiagaraComponent>(TEXT("Pillar"));
+	Pillar->SetupAttachment(RootComponent);
+	Pillar->bAutoActivate = false;
+	// 액터가 사라질 때 같이 사라져야 한다. 스스로 정리하면 두 번 죽는다.
+	Pillar->SetAutoDestroy(false);
+	Pillar->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Pillar->SetGenerateOverlapEvents(false);
 
 	// 스크린 공간이라 카메라를 따로 보지 않아도 늘 정면이고 글자 크기가 거리와 무관하다.
 	Label = CreateDefaultSubobject<UWidgetComponent>(TEXT("Label"));
@@ -198,6 +210,8 @@ void AItemPickup::OnRep_Collected()
 	UpdateMotionEnabled();
 	if (bCollected)
 	{
+		// 숨기면 자식도 같이 안 보이지만, 예약된 타이머까지 걷으려면 여기서 직접 끈다.
+		StopPillar();
 		SetActorHiddenInGame(true);
 		// 서버는 OnTriggerBeginOverlap이 직접 부르고 클라이언트는 복제로 온다: 머신마다 한 번.
 		UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_Item_Pickup, GetActorLocation(), Profile ? Profile->Sounds.Get() : nullptr);
@@ -263,7 +277,43 @@ void AItemPickup::ApplyState()
 	}
 	UpdateMotionEnabled();
 
+	if (bActive)
+	{
+		StartPillar();
+	}
+
 	BP_OnStateChanged(State);
+}
+
+void AItemPickup::StartPillar()
+{
+	UWorld* const World = GetWorld();
+	if (bPillarStarted || !Pillar || !PillarTemplate || !World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	bPillarStarted = true;
+
+	Pillar->SetAsset(PillarTemplate);
+	Pillar->Activate(true);
+
+	if (PillarSeconds > 0.0f)
+	{
+		World->GetTimerManager().SetTimer(PillarTimer, this, &AItemPickup::StopPillar, PillarSeconds, /*bLoop=*/false);
+	}
+}
+
+void AItemPickup::StopPillar()
+{
+	if (UWorld* const World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(PillarTimer);
+	}
+	if (Pillar)
+	{
+		// DeactivateImmediate가 아니다. 스폰만 멈추고 떠 있는 입자는 제 수명대로 옅어진다.
+		Pillar->Deactivate();
+	}
 }
 
 void AItemPickup::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,

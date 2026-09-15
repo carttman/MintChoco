@@ -64,6 +64,22 @@ float UUnitMovementComponent::GetMaxSpeed() const
 	return bWantsToDash ? BaseSpeed * DashSpeedMultiplier : BaseSpeed;
 }
 
+bool UUnitMovementComponent::DoJump(bool bReplayingMoves, float DeltaTime)
+{
+	// 엔진의 점프 판정을 그대로 태우고 쓰는 값만 잠깐 바꾼다. 직접 Velocity.Z를 쓰면
+	// CanAttemptJump·평면 구속·플랫폼 기준 속도 같은 것들을 하나씩 다시 구현하게 된다.
+	if (DashJumpZVelocity <= 0.0f || !bWantsToDash)
+	{
+		return Super::DoJump(bReplayingMoves, DeltaTime);
+	}
+
+	const float SavedJumpZ = JumpZVelocity;
+	JumpZVelocity = DashJumpZVelocity;
+	const bool bJumped = Super::DoJump(bReplayingMoves, DeltaTime);
+	JumpZVelocity = SavedJumpZ;
+	return bJumped;
+}
+
 FVector UUnitMovementComponent::ConstrainInputAcceleration(const FVector& InputAcceleration) const
 {
 	// 서버는 클라이언트가 보낸 가속을 그대로 쓰므로, 입력 핸들러가 아니라 여기서 막아야 권위가 선다.

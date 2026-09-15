@@ -10,6 +10,7 @@
 #include "Audio/GameAudioSubsystem.h"
 #include "Components/AudioComponent.h"
 #include "Camera/CameraComponent.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/SphereComponent.h"
@@ -669,9 +670,23 @@ UUnitMovementComponent* AUnit::GetUnitMovement() const
 	return Cast<UUnitMovementComponent>(GetCharacterMovement());
 }
 
+void AUnit::ApplyViewPitchLimits()
+{
+	const APlayerController* const PlayerController = Cast<APlayerController>(GetController());
+	if (APlayerCameraManager* const CameraManager =
+			PlayerController ? PlayerController->PlayerCameraManager.Get() : nullptr)
+	{
+		CameraManager->ViewPitchMin = ViewPitchMin;
+		CameraManager->ViewPitchMax = ViewPitchMax;
+	}
+}
+
 void AUnit::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+	// InputConfig가 비어 조작을 못 묶더라도 시야 제한은 걸어 둔다. 아래 이른 반환보다 앞에 둔 이유다.
+	ApplyViewPitchLimits();
 
 	if (!InputConfig)
 	{

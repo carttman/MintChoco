@@ -195,6 +195,162 @@ Lvl_Stage 의 TestStunZone_Center   액터 인스턴스
 
 ---
 
+## 유닛 — 시야와 이동
+
+### 시야 피치 제한 복구 (`AUnit::ApplyViewPitchLimits`)
+
+머지가 떨어뜨렸던 코드를 그대로 되살렸다. 원래는 `f360cba`(09-10)가 넣었고, `b69ecd3f`
+("game-effect 병합", 09-13)에서 사라져 `Source/` 어디에도 `ViewPitch`라는 글자가 없었다.
+
+| | |
+|---|---|
+| 어디에 | `AUnit::ViewPitchMin` −45도 / `ViewPitchMax` +60도, `SetupPlayerInputComponent` 시작에서 호출 |
+| 무엇을 | 소유 클라이언트의 `APlayerCameraManager`에 두 값을 옮긴다 |
+| 대체한 것 | 없음(복구). 그전에는 위아래로 89도까지 꺾였다 |
+
+`SetupPlayerInputComponent`에서 부르는 이유는 그곳이 로컬 조종 폰이 확정되는 유일한 지점이고,
+리스폰하면 다시 불려 새 카메라 매니저에도 자동으로 걸리기 때문이다. 서버는 이미 클램프된
+회전을 `ServerMove`로 받으므로 따로 걸지 않는다.
+
+`InputConfig`가 비어 이른 반환을 타더라도 시야 제한은 걸리도록 **호출을 그 반환보다 앞에** 뒀다.
+
+### 점프 밸런스 — 중력으로 체공을 깎고 높이로 역할을 나눈다
+
+높이 = v² / 2g, 체공 = 2v / g. 중력만 올리면 둘 다 줄고, 속도를 같이 올리면 높이는 살리면서
+체공만 준다.
+
+| | v | 최고 높이 | 체공 | 수평 도달 | 역할 |
+|---|---|---|---|---|---|
+| 그냥 점프 | 660 | 111cm | 0.67초 | 6.7m | 턱 넘기 |
+| 대쉬 점프 | 660 | 111cm | 0.67초 | 11.4m | 같은 높이로 더 멀리 |
+| 점프대 | 1750 | 781cm | 1.79초 | — | 높은 곳 오르기 |
+
+대쉬 점프의 높이는 **일부러 그냥 점프와 같게 뒀다**(둘 다 660). 차이는 수평 거리뿐이다.
+`DashJumpZVelocity`는 나중에 따로 낮출 수 있도록 열어 둔 자리다.
+
+바뀐 값 (`GravityScale` 2.0 = 1960 cm/s² 기준):
+
+| 어디 | 값 | 전 |
+|---|---|---|
+| `BP_Unit` → `CharMoveComp.GravityScale` | 2.0 | 1.0 |
+| `BP_Unit` → `CharMoveComp.JumpZVelocity` | 660 | 420 |
+| `BP_Unit` → `CharMoveComp.AirControl` | 0.15 | 0.05 |
+| `UUnitMovementComponent::DashJumpZVelocity` | 660 | 없음(새 값) |
+| `BP_JumpPad.velocity.Z` — CDO와 **레벨 인스턴스 8개 전부** | 1750 | 1100 |
+
+전에는 그냥 점프와 대쉬 점프의 높이·체공이 **완전히 같았다**(둘 다 `JumpZVelocity` 하나를 썼다).
+차이가 수평 속도뿐이라 역할이 안 나뉘었다.
+
+### 대쉬 점프 분리 (`DashJumpZVelocity`)
+
+| | |
+|---|---|
+| 어디에 | `UUnitMovementComponent::DoJump(bool, float)` 오버라이드 |
+| 무엇을 | 대시 중이면 `JumpZVelocity` 대신 `DashJumpZVelocity`로 뛴다. 0 이하면 분리하지 않는다 |
+| 대체한 것 | 대시 여부와 무관하게 `JumpZVelocity` 하나를 쓰던 엔진 기본 동작 |
+
+`Velocity.Z`를 직접 쓰지 않고 **값만 잠깐 바꿔 `Super::DoJump`를 태운다.** 직접 쓰면
+`CanAttemptJump`·평면 구속·플랫폼 기준 속도를 하나씩 다시 구현하게 된다.
+
+압축 플래그를 새로 만들지 않았다: 대시 의도(`bWantsToDash`)가 이미 무브에 실려 오고 보정 후
+리플레이에서도 되살아나므로, 그 값을 보고 고르면 서버와 클라이언트가 같은 답을 낸다.
+
+---
+
+## 아이템 — 초콜릿 분수
+
+### 넘치는 발밑 도포 (`BurstCount` / `BurstInterval` / `BurstGrowth`)
+
+설치 순간 한 번만 뿌리던 것을 1초마다 점점 넓게 네 번 뿌리도록 바꿨다.
+
+```
+t=0s   1.0배      설치와 동시에
+t=1s   1.4배
+t=2s   1.96배
+t=3s   2.74배     여기서 끝, 돔도 같이 사라진다
+```
+
+| | |
+|---|---|
+| 어디에 | `UChocolateFountainProfile`에 값 셋, `AChocolateFountain::StartGroundBursts` / `FireGroundBurst` |
+| 무엇을 | 돔이 타이머를 들고 `APaintBurst`를 `BurstCount`번 뿌린다. 한 번마다 반경 배율에 `BurstGrowth`를 곱한다 |
+| 대체한 것 | `UGA_ChocolateFountain::OnItemActivated`의 `APaintBurst::Spawn` 한 줄 |
+| 값 | `BurstCount` 4, `BurstInterval` 1.0초, `BurstGrowth` 1.4, `DA_Item_ChocolateFountain.Lifetime` 5 → **3초** |
+
+**일정을 능력이 아니라 돔이 들고 있다.** 초콜릿 분수는 즉발(`Duration` 0)이라 능력 인스턴스가
+곧 끝나 타이머를 얹을 자리가 없다. 돔은 정확히 `Lifetime` 동안 살고 `EndPlay`에서 타이머를
+걷으므로 마지막 도포와 돔의 끝이 저절로 맞는다.
+
+**돔 크기는 안 커진다.** 커지는 것은 바닥 도포뿐이다. 돔은 탄을 막는 벽이라 크기가 변하면
+전투 판정이 흔들린다.
+
+#### 배율이 속도에 닿는 두 가지 경로
+
+`DA_Item_ChocolateFountain`은 `bBurstMatchesRadius`가 **거짓**이다(`Radius` 900, `Burst.Speed` 900,
+`MinPitch` = `MaxPitch` = 0). 그래서 `MakeBurst`가 두 갈래다.
+
+| `bBurstMatchesRadius` | 배율이 곱해지는 곳 | 왜 |
+|---|---|---|
+| 참 | `Radius`. `SpeedForRange`가 v² 관계로 환산 | 45도 포물선의 사거리는 v²에 비례 |
+| 거짓 (지금) | `Speed`에 그대로 선형 | 수평으로 쏘면 떨어지는 시간이 속도와 무관 → 거리가 v에 비례 |
+
+#### 마지막 한 번을 수명 안으로 당긴다
+
+`(BurstCount − 1) × BurstInterval`이 `Lifetime`과 같으므로 마지막 도포와 `SetLifeSpan`이
+같은 프레임에 온다. **두 타이머의 순서는 정해져 있지 않다.** 그래서 남은 시간이 간격보다
+짧으면 0.05초 여유를 두고 앞당겨 예약한다. 가장 넓게 칠하는 마지막 한 번이 안 나가면 안 된다.
+
+---
+
+## 아이템 — 스폰
+
+### 경기 시작에 9곳 전부, 먹은 자리만 개별 리스폰
+
+| | |
+|---|---|
+| 어디에 | `Lvl_Stage`의 `BP_ItemSpawnPoint` 인스턴스 9개 |
+| 무엇을 | `SpawnMode` `Shared` → **`Standalone`**, `RespawnDelay` 3 → **10초** |
+| 대체한 것 | 게임모드가 15초마다 빈 지점 하나를 골라 놓던 주기 스폰 |
+
+**게임모드 코드는 한 줄도 안 고쳤다.** `AGameGameMode::StartItemSpawning`은 `Shared` 지점만
+목록에 담으므로, 전부 `Standalone`이 되면 목록이 비고 주기 타이머가 스스로 안 돈다.
+`Standalone` 지점은 `BeginPlay`에서 자기 픽업을 놓고, 픽업이 사라지면 `RespawnDelay` 뒤
+다시 놓는다.
+
+지점은 **9개다.** 10개가 아니다.
+
+### 빛 기둥 (`AItemPickup::Pillar`)
+
+| | |
+|---|---|
+| 어디에 | `AItemPickup`에 `UNiagaraComponent Pillar` + `PillarTemplate` + `PillarSeconds` |
+| 무엇을 | 픽업이 **활성이 되는 순간** 켜고 `PillarSeconds` 뒤에 끈다. 누가 가져가면 즉시 끈다 |
+| 대체한 것 | 없음(새 기능) |
+| 값 | `PillarSeconds` 5초, `BP_ItemPickup.PillarTemplate` = `NS_ItemPillar` |
+
+기존 `Laser`와 **다른 것이다**: `Laser`는 나타나기 *전* 예고(`Announced` 상태),
+기둥은 나타난 *뒤* 표시(`Active` 상태)다.
+
+기둥을 지점이 아니라 **픽업이 들고 있다.** 빛 기둥은 "여기 아이템이 새로 생겼다"는 신호라
+픽업의 수명과 정확히 묶여 있어야 하고, 픽업이 사라지면 같이 사라져야 한다.
+
+`bAutoActivate`는 꺼 두고 `StartPillar`가 직접 켠다. 자동 활성이면 템플릿이 비어 있어도
+켜지려 들고, 예고 상태와 데디케이티드 서버에서까지 돈다(돔의 거품과 같은 규칙).
+`ApplyState`는 여러 번 불리므로(`BeginPlay`, `OnRep_State`) `bPillarStarted`로 한 번만 켠다.
+
+#### `NS_ItemPillar` — `NS_JumpPad`의 복제본
+
+새로 그리지 않고 점프대 이펙트를 복제했다. 위로 솟는 띠(`Bands`) + 글로우(`Glow_Base`) +
+포자(`Spores`) 구조가 빛 기둥에 그대로 맞고, `User.Color` 하나로 색이 정해진다.
+
+`User.Color`를 점프대의 주황(0.71, 0.21, 0.04)에서 **밝은 금색(1.0, 0.92, 0.45)** 으로 바꿨다.
+그대로 두면 점프대와 구분이 안 된다.
+
+**색은 아이템마다 나누지 않는다.** 놓이는 것은 무작위 상자이고 무엇이 들었는지는 먹은 뒤에야
+정해져 보이므로, 기둥 색이 내용물을 알려주면 룰렛 연출이 무의미해진다.
+
+---
+
 ## 오디오
 
 ### 새 사운드 7개 연결

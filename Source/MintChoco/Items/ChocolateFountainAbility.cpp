@@ -32,6 +32,7 @@ void UGA_ChocolateFountain::OnItemActivated(AUnit& Unit, const UItemProfile& Pro
 	Dome->Init(Unit.GetTeam(), GetPaintId(), Fountain->Radius, Fountain->Lifetime);
 	Dome->FinishSpawning(SpawnTransform);
 
-	// 돔이 덮는 만큼 발밑을 칠한다. 사용자 팀 색이라 돔 벽에 삼켜지지 않고 그대로 통과한다.
-	APaintBurst::Spawn(*World, SpawnTransform.GetLocation(), Fountain->MakeBurst(GetPaintId(), FMath::Rand()));
+	// 발밑 도포는 돔이 맡는다. 첫 번째가 이 안에서 바로 나가고, 나머지는 돔의 타이머가 이어
+	// 뿌리며 점점 넓어진다. 이 능력은 즉발이라 타이머를 얹을 자리가 없다.
+	Dome->StartGroundBursts(*Fountain);
 }
