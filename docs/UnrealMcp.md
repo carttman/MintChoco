@@ -205,6 +205,38 @@ it. Every `emitterRef` / `stackInputRef` needs all six fields (`system`, `emitte
 `GetStackIssues`, then `save_assets`. `LiveCodingToolset.CompileLiveCoding` reports Live Coding
 disabled in this project, so C++ changes reach PIE only after an editor-target rebuild.
 
+Building a system from scratch (verified 2026-09-15 on `NS_PaintSplash`):
+
+- `CreateNiagaraSystem` needs a template; `/Niagara/DefaultAssets/DefaultSystem` arrives with a
+  `Fountain` emitter - remove it (`RemoveEmitter` takes `emitterToRemove`) and `AddEmitter` from
+  `/Niagara/DefaultAssets/Templates/Emitters/Minimal` (EmitterState, InitializeParticle,
+  ParticleState, one sprite renderer). `AddModule` / `AddSetParametersModule` return the new
+  module's `moduleName`; read module input names first with `GetModuleSchemaFromAsset`.
+- **Never put `Particles.Position` (or any Position-typed input) in a Set Parameters module with an
+  HLSL expression or a dynamic-input chain** (`AddVectorToPosition` fed by an expression crashed too):
+  the translator asserts `IsLWCType(Type) == false` (NiagaraHlslTranslator.cpp:5134) and the editor
+  dies on the next full compile, sometimes only on a different asset than the one that passed.
+  Spawn at the system origin and move the component from C++; `RemoveSetParameterEntry`
+  (`moduleRef`, `parameterName`) drops an existing entry.
+- An input hidden behind a static switch (`EmitterState` `Loop Behavior`, `InitializeParticle`
+  `Color`) or a false `VisibleCondition` (`Loop Duration`) is refused with a `LogScript` warning,
+  not an error - set the parent switch first and re-read.
+- Inside a `ProgrammaticToolset` script the tool results are dict-like objects whose `.get(key,
+  default)` raises on a missing key; `json.loads(json.dumps(result))` first.
+- The toolset cannot create scratch-pad modules or custom HLSL modules. Anything that needs a
+  data-interface call in particle code (writing a render target, reading a grid) is out of reach;
+  stock modules, links and rvalue expressions are the whole vocabulary.
+- `GetSystemCompileState` / `GetStackIssues` block the game thread and time out after 120 s whenever
+  the system has a pending compile and no asset editor is driving it (right after a load or a
+  duplicate). `EditorAppToolset.OpenEditorForAsset` on the system runs the compile within seconds
+  (`LogNiagara: Compiling System ... took`, `System successfully compiled.` in the log); after that
+  both queries return at once. `AssetTools.duplicate` of a compiled system needs the same treatment.
+- The `DefaultSystem` template ships `SystemState` with `Loop Behavior` Infinite, and the Minimal
+  emitter's `Life Cycle Mode` is System, so a burst effect never finishes and a pooled component
+  (`ENCPoolMethod::AutoRelease`) never returns nor fires `OnSystemFinished`. Set the system's
+  `Loop Behavior` to `ENiagara_EmitterStateOptions::NewEnumerator1` ("Once") and link
+  `Loop Duration` to the lifetime user parameter; `Inactive Response` Complete lets particles finish.
+
 ## Blueprints, data assets, textures
 
 - `BlueprintTools.create` (`folder_path`, `asset_name`, `asset_type` = parent class ref) makes a

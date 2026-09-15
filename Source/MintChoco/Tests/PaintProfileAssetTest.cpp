@@ -6,6 +6,8 @@
 #include "Modules/ModuleManager.h"
 
 #include "Game/TeamTypes.h"
+#include "Paint/PaintBrushProfile.h"
+#include "Paint/PaintSplashProfile.h"
 #include "Weapons/PaintDeposit.h"
 #include "Weapons/PaintGunProfile.h"
 #include "Weapons/PaintProjectile.h"
@@ -93,6 +95,16 @@ bool FPaintProfileAssetTest::RunTest(const FString& Parameters)
 		}
 		TestTrue(*FString::Printf(TEXT("%s: Radius is positive"), *Name), Paintball->Radius > 0.0f);
 		CheckDeposit(Name, Paintball->Deposit);
+		// A splash that cannot mark or score is a landing that quietly does less than its profile says.
+		if (const UPaintSplashProfile* const Splash = Paintball->Deposit.Splash)
+		{
+			const UPaintBrushProfile* const Brush = Splash->DropletBrush;
+			TestNotNull(*FString::Printf(TEXT("%s: Splash.DropletBrush"), *Name), Brush);
+			TestNotNull(*FString::Printf(TEXT("%s: Splash.DropletBrush has a BrushMaterial"), *Name), Brush ? Brush->BrushMaterial.Get() : nullptr);
+			TestNotNull(*FString::Printf(TEXT("%s: a splashing ball has an ImpactFX to fly its droplets"), *Name), Paintball->ImpactFX.Get());
+			TestTrue(*FString::Printf(TEXT("%s: Splash.MaxDropletSpeed is positive"), *Name), Splash->MaxDropletSpeed > 0.0f);
+			TestTrue(*FString::Printf(TEXT("%s: Splash.MaxLifetime is positive"), *Name), Splash->MaxLifetime > 0.0f);
+		}
 	}
 
 	for (const FAssetData& Data : Scatters)

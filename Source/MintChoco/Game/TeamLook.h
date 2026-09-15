@@ -55,4 +55,7 @@ namespace TeamLook
 
 	/** 팀 색을 받는 나이아가라 시스템의 유저 파라미터: 착탄, 파열, 총구 화염, 차징 홀드. */
 	inline const FName NiagaraTintParameter(TEXT("User.TintColor"));
+
+	/** 팀 id 그대로. 머티리얼의 TeamId 에 바인딩해 색뿐 아니라 광택·SSS 까지 팀 룩을 쓰는 시스템(착탄 스플래시)이 읽는다. */
+	inline const FName NiagaraTeamIdParameter(TEXT("User.TeamId"));
 }

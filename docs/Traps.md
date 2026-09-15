@@ -41,6 +41,37 @@ before anything else.
   through Break inside a pixel chain. Parameters inside a Material Layer/Blend are namespaced
   per slot, so C++ cannot set them by name — feed runtime data through the stack `Input`.
 
+### Impact splash (droplets, secondary marks, phantom score)
+
+- A paintball contact is two things. The replicated `FPaintSplat` carries `Splash`
+  (`UPaintSplashProfile`), `IncidentDir/IncidentSpeed/BallRadius`, and every machine's
+  `UPaintSubsystem::ApplySplat` turns that into `PaintSplash::PhantomLandings` (analytic parabolas,
+  no traces) stamped as `bScoreOnly` splats: cells only, no picture, no sound. The visible droplets
+  are per machine: `UPaintballProfile::PlayImpactEffect` books a `UPaintSplashLandingHandler`,
+  spawns `ImpactFX` 1 cm off the surface, and `UPaintSplashSubsystem::ConfigureEffect` hands the
+  Niagara system `User.Drop{0..3}Offset/Velocity/Radius`, `User.DropletCount` and
+  `User.LandingHandler`. `NS_PaintSplash` (CPU emitter, stock modules only) reports each
+  collision through `ExportParticleDataToBlueprint` (Position = landing, Velocity = collision
+  normal, Size = launch speed) and the handler stamps a `bDrawOnly` splat with the profile's
+  `DropletBrush`: picture only, never a cell. Score and picture therefore differ by design; the
+  phantom radius is `DropletBrush->ComputeRadius(DropletSplatVolume, speed) *
+  PhantomCellRadiusScale`, and a cell is claimed only when its centre falls inside that stamp.
+- No secondary marks: check `mc.PaintSplash.Marks` (0 disables them), that the paintball's
+  `ImpactFX` is `NS_PaintSplash` and its `Deposit.Splash` profile has a `DropletBrush` with a
+  material (`MintChoco.Paint.Weapons.ProfileAssets` covers both), that the surface passes
+  `FPaintDeposit::ReceivesSplat` (a decal-only surface leaves no marks), and that the handler pool
+  is not exhausted (256 concurrent splashes; `mc.PaintSplash.Debug 1` logs every landing and draws
+  the reach). A dedicated server never spawns the effect.
+- Droplets fly but nothing lands: the Niagara `Collision` module traces `ECC_Visibility` on the
+  CPU; `KillParticles` ends a droplet at `HasCollided` or past `MaxTravel * 1.5`; the system state
+  must loop Once (Loop Duration = `User.MaxLifetime`) or the pooled component never finishes and
+  `OnSystemFinished` never releases the handler (it still expires after `MaxLifetime + 0.5 s`).
+- Never give `Particles.Position` an expression or a dynamic input through the MCP Niagara
+  toolset (editor assert, see `docs/UnrealMcp.md`); droplets spawn at the system origin, which is
+  why the component is placed 1 cm along the normal.
+- `APaintSplashTestActor` (Blueprintable) fires a fixed contact on a timer without a weapon:
+  drop one in a scratch level with `Paintball` set, Simulate, and watch the marks.
+
 ### Nanite tessellation displacement (UE 5.8)
 
 - Substrate: a slab stacked on top through `SubstrateVerticalLayering` may only use the

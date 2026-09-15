@@ -11,6 +11,7 @@
 class APaintProjectile;
 class APawn;
 class UNiagaraSystem;
+struct FHitResult;
 
 /**
  * What a paintball is: the actor that flies, its size and weight, and what it leaves where it
@@ -35,6 +36,13 @@ public:
 	APaintProjectile* Launch(UWorld& World, const FTransform& SpawnTransform, APawn* Instigator,
 		const FVector& Velocity, uint8 PaintId, int32 Seed, bool bCosmetic, float DropAfterOverride = -1.0f,
 		const FVector& VisualOffset = FVector::ZeroVector) const;
+
+	/**
+	 * Plays a landing on this machine: ImpactFX at the contact, carrying the splash when the
+	 * deposit has one. Every machine calls it for its own ball, cosmetic or real, so one landing
+	 * shows once per screen; a dedicated server shows nothing.
+	 */
+	void PlayImpactEffect(UWorld& World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed) const;
 
 	/** The actor that flies. Its Blueprint sets the mesh; radius and gravity come from here. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball")
