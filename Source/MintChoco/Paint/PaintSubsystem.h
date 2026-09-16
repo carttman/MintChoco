@@ -92,6 +92,24 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Paint")
 	FPaintCoverage GetWorldCoverage() const;
 
+	/**
+	 * 이 접촉면이 누구 색인지. 맞은 액터의 페인트 표면에게 묻는다. 표면이 없거나 칠해지지
+	 * 않았으면 `PaintIdNone`.
+	 *
+	 * 광선을 쏘지 않는다: 이미 있는 히트를 그대로 읽는다. 무브먼트가 매 무브 들고 있는
+	 * `CurrentFloor.HitResult` 를 넘기면 발밑 색이 공짜로 나오고, 서버와 클라이언트가 같은
+	 * 히트에서 같은 답을 얻는다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Paint")
+	uint8 GetPaintIdAtHit(const FHitResult& Hit) const;
+
+	/**
+	 * 한 점 아래의 바닥이 누구 색인지. 히트가 없는 곳에서 쓰라고 광선을 한 번 내린다.
+	 * 매 프레임 부를 자리에는 `GetPaintIdAtHit` 쪽이 맞다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Paint")
+	uint8 GetPaintIdUnder(const FVector& WorldPosition, float TraceDown = 300.0f) const;
+
 	TArray<UPaintableComponent*> GetPaintables() const;
 
 	/**

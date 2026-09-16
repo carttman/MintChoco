@@ -14,6 +14,7 @@
 #include "Items/ItemGameplayTags.h"
 #include "Items/ItemProfile.h"
 #include "Items/ItemSlotComponent.h"
+#include "Paint/PaintSubsystem.h"
 
 UUnitMovementComponent::UUnitMovementComponent()
 {
@@ -130,16 +131,68 @@ float UUnitMovementComponent::GetMaxSpeed() const
 
 	// 부스트와 대시는 둘 다 기본 속도에 곱해진다. 부스트 중에 대시하면 둘을 모두 곱하므로 부스트가
 	// 대시보다 느려지는 일이 없다. 두 플래그는 압축 플래그로 서버에 가므로 양쪽이 같은 값을 낸다.
-	float Speed = Super::GetMaxSpeed();
+	// 발밑 색이 먼저다. 내 색이면 빨라지고 상대 색이면 느려진다. 부스트 중에는 이 함수가
+	// 바닥을 무시하므로, 상대 진영에 발이 묶이지 않는다.
+	float Speed = Super::GetMaxSpeed() * GetFloorMultiplier();
 	if (bWantsSpeedBoost)
 	{
 		Speed *= SpeedBoostMultiplier;
 	}
 	if (bWantsToDash)
 	{
-		Speed *= DashSpeedMultiplier;
+		Speed *= GetFloorDashMultiplier();
 	}
 	return Speed;
+}
+
+void UUnitMovementComponent::UpdateFloorPaintId()
+{
+	const UWorld* const World = GetWorld();
+	const UPaintSubsystem* const Paint = World ? World->GetSubsystem<UPaintSubsystem>() : nullptr;
+
+	// 공중이면 바닥이 없다. 딛을 것이 없으니 배율도 없다(미도색과 같은 1).
+	FloorPaintId = (Paint && CurrentFloor.IsWalkableFloor())
+		? Paint->GetPaintIdAtHit(CurrentFloor.HitResult)
+		: PaintIdNone;
+}
+
+float UUnitMovementComponent::GetFloorMultiplier() const
+{
+	// 스피드 스타는 바닥을 무시한다. 상대 진영 한복판에서도 최소 속도가 보장되어야
+	// 아이템이 제 구실을 한다.
+	if (bWantsSpeedBoost)
+	{
+		return OwnFloorMultiplier;
+	}
+	if (FloorPaintId == PaintIdNone)
+	{
+		return 1.0f;
+	}
+
+	const AUnit* const Unit = Cast<AUnit>(GetOwner());
+	if (!Unit)
+	{
+		return 1.0f;
+	}
+	return FloorPaintId == Unit->GetPaintId() ? OwnFloorMultiplier : EnemyFloorMultiplier;
+}
+
+float UUnitMovementComponent::GetFloorDashMultiplier() const
+{
+	if (bWantsSpeedBoost)
+	{
+		return DashSpeedMultiplier;
+	}
+
+	const AUnit* const Unit = Cast<AUnit>(GetOwner());
+	const bool bEnemyFloor = Unit && FloorPaintId != PaintIdNone && FloorPaintId != Unit->GetPaintId();
+	return bEnemyFloor ? EnemyFloorDashMultiplier : DashSpeedMultiplier;
+}
+
+float UUnitMovementComponent::GetInkRefillMultiplier() const
+{
+	// 속도와 같은 두 배율을 쓰되 부스트는 빼고 곱한다. 보드를 타지 않으면 바닥 배율만 남는다.
+	return GetFloorMultiplier() * (bWantsToDash ? GetFloorDashMultiplier() : 1.0f);
 }
 
 bool UUnitMovementComponent::DoJump(bool bReplayingMoves, float DeltaTime)
@@ -275,6 +328,10 @@ void UUnitMovementComponent::UpdateFromCompressedFlags(uint8 Flags)
 void UUnitMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSeconds)
 {
 	Super::UpdateCharacterStateBeforeMovement(DeltaSeconds);
+
+	// 발밑 색은 프록시도 알아야 한다. 프록시는 위치를 복제로 받지만 속도는 스스로 시뮬레이션
+	// 하므로, 이것이 없으면 남의 캐릭터만 상대 색 위에서 제 속도로 달린다.
+	UpdateFloorPaintId();
 
 	// 프록시에도 이 함수는 불린다(SimulateMovement 안에서). 그쪽에는 의도 플래그가 없어 항상
 	// 0이므로, 그대로 두면 복제로 받은 단계를 스스로 취소해 낙하로 되돌린다.

@@ -129,6 +129,16 @@ public:
 	/** Edge of one coverage cell, in world cm. */
 	float GetScoreCellSize() const { return CellGrid.GetCellSize(); }
 
+	/**
+	 * 이 표면의 한 지점이 누구 색인지. 월드 좌표와 그 자리의 월드 법선을 받는다. 칠해지지
+	 * 않았거나 그 방향에 면이 없으면 `PaintIdNone`.
+	 *
+	 * 점수판이 읽는 것과 같은 격자를 읽으므로, "화면에 보이는 색"과 "이 함수가 답하는 색"이
+	 * 어긋나지 않는다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Paint|Coverage")
+	uint8 GetPaintIdAt(const FVector& WorldPosition, const FVector& WorldNormal) const;
+
 	UFUNCTION(BlueprintCallable, Category = "Paint|Debug")
 	void SetDebugDraw(bool bText, bool bCells);
 

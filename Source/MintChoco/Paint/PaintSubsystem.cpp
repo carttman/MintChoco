@@ -22,6 +22,7 @@
 #include "Paint/PaintSplatEffect.h"
 #include "Paint/PaintableComponent.h"
 #include "Screen/ScreenFadeSubsystem.h"
+#include "Weapons/PaintProjectile.h"
 
 void UPaintSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
@@ -249,6 +250,33 @@ FPaintCoverage UPaintSubsystem::GetWorldCoverage() const
 		}
 	}
 	return Coverage;
+}
+
+uint8 UPaintSubsystem::GetPaintIdAtHit(const FHitResult& Hit) const
+{
+	const AActor* const Actor = Hit.GetActor();
+	const UPaintableComponent* const Paintable =
+		Actor ? Actor->FindComponentByClass<UPaintableComponent>() : nullptr;
+	return Paintable ? Paintable->GetPaintIdAt(Hit.ImpactPoint, Hit.ImpactNormal) : PaintIdNone;
+}
+
+uint8 UPaintSubsystem::GetPaintIdUnder(const FVector& WorldPosition, float TraceDown) const
+{
+	const UWorld* const World = GetWorld();
+	if (!World || TraceDown <= 0.0f)
+	{
+		return PaintIdNone;
+	}
+
+	// 탄이 부딪히는 채널로 본다. 칠할 수 있는 표면이 막는 채널이 그것이다.
+	FHitResult Hit;
+	const FCollisionQueryParams Params(SCENE_QUERY_STAT(PaintIdUnder), /*bTraceComplex=*/false);
+	if (!World->LineTraceSingleByChannel(
+			Hit, WorldPosition, WorldPosition - FVector::UpVector * TraceDown, PaintballChannel, Params))
+	{
+		return PaintIdNone;
+	}
+	return GetPaintIdAtHit(Hit);
 }
 
 TArray<UPaintableComponent*> UPaintSubsystem::GetPaintables() const

@@ -46,6 +46,16 @@ public:
 	/** Regains ink for Seconds of not shooting. The tick calls this; tests call it directly. */
 	void Refill(float Seconds);
 
+	/**
+	 * 지금 잉크가 차는 속도에 곱해지는 배율. 주인의 무브먼트가 발밑 색과 보드 상태로 정한다
+	 * (`UUnitMovementComponent::GetInkRefillMultiplier`). 무브먼트가 없으면 1이다.
+	 *
+	 * 잉크는 서버만 채우므로 예측할 것이 없다. 그래서 이 값이 클라이언트와 갈라져도
+	 * 고무줄이 나지 않는다 - 복제된 잔량이 곧 답이다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Ink")
+	float GetRefillMultiplier() const;
+
 	/** Raised whenever the reserve changes, on every machine. UI and the bottle hang here. */
 	UPROPERTY(BlueprintAssignable, Category = "Ink")
 	FInkTankChangedSignature OnInkChanged;

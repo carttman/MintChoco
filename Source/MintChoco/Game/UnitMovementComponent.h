@@ -4,6 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/CharacterMovementComponent.h"
+
+#include "Paint/PaintSplat.h"
+
 #include "UnitMovementComponent.generated.h"
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnDashStateChanged, bool /*bDashing*/);
@@ -354,6 +357,51 @@ public:
 	/** 지금 보드 제어기의 각속도(도/초, 오른쪽이 +). 보드로 돌고 있지 않으면 0. */
 	float GetBoardYawRate() const { return BoardYawRate; }
 
+	//~ 발밑 색
+
+	/**
+	 * 지금 딛고 있는 바닥이 누구 색인지. 공중이거나 칠할 수 없는 바닥이면 `PaintIdNone`.
+	 *
+	 * 무브마다 `UpdateCharacterStateBeforeMovement` 에서 한 번만 구해 둔 값이다. 광선을 쏘지
+	 * 않고 엔진이 이미 들고 있는 `CurrentFloor` 를 읽으므로, 서버와 클라이언트가 같은 바닥에서
+	 * 같은 답을 낸다 - 이동 속도를 여기에 걸어도 고무줄이 나지 않는 이유다.
+	 */
+	uint8 GetFloorPaintId() const { return FloorPaintId; }
+
+	/**
+	 * 발밑 색이 정하는 배율. 내 색 `OwnFloorMultiplier`, 미도색 1, 상대 색
+	 * `EnemyFloorMultiplier`. 속도 부스트 중에는 바닥을 무시하고 늘 내 색으로 친다.
+	 *
+	 * 속도와 잉크 회복이 **같은 것**을 쓴다. 두 곳에서 따로 계산하면 표가 어긋난다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Paint")
+	float GetFloorMultiplier() const;
+
+	/** 보드 배율. 상대 색 위에서는 1이라 가속이 무의미하다. 속도 부스트 중에는 바닥을 무시한다. */
+	UFUNCTION(BlueprintPure, Category = "Paint")
+	float GetFloorDashMultiplier() const;
+
+	/**
+	 * 잉크가 차는 속도에 곱해지는 배율. 잉크 탱크가 이것을 읽는다.
+	 *
+	 * 속도와 같은 두 배율의 곱이되, 부스트 배율(`SpeedBoostMultiplier`)은 빠진다. 그쪽은
+	 * 이동 속도만의 것이다 - 별을 먹었다고 잉크가 1.5배로 차지는 않는다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Paint")
+	float GetInkRefillMultiplier() const;
+
+	/** 내 색 위에서의 배율. 걷기도 잉크도 이만큼 빨라진다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint", meta = (ClampMin = "0"))
+	float OwnFloorMultiplier = 1.5f;
+
+	/** 상대 색 위에서의 배율. 미도색은 언제나 1이다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint", meta = (ClampMin = "0"))
+	float EnemyFloorMultiplier = 0.5f;
+
+	/** 상대 색 위에서 보드에 곱해지는 배율. 1이면 보드를 타도 걷는 속도 그대로다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint", meta = (ClampMin = "0"))
+	float EnemyFloorDashMultiplier = 1.0f;
+
 private:
 	friend class FSavedMove_Unit;
 
@@ -437,6 +485,15 @@ private:
 
 	/** 캡슐 반높이(cm). 캡슐이 없으면 0. */
 	float GetHeroCapsuleHalfHeight() const;
+
+	/** `CurrentFloor` 를 페인트 격자에 물어 `FloorPaintId` 를 갱신한다. 무브마다 한 번. */
+	void UpdateFloorPaintId();
+
+	/**
+	 * 이번 무브에서 딛고 있는 바닥의 색. 무브마다 `CurrentFloor` 에서 다시 구하므로 저장
+	 * 무브에 실을 것이 없다 - 리플레이가 같은 바닥을 재현하면 이 값도 같이 재현된다.
+	 */
+	uint8 FloorPaintId = PaintIdNone;
 };
 
 /**

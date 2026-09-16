@@ -420,7 +420,85 @@ Lvl_Stage 의 TestStunZone_0     액터 인스턴스
 | 대체한 것 | 1.7 |
 
 `MaxWalkSpeed` 1000이 미도색 걷기다. 그래서 미도색 보드가 정확히 2000이 된다.
-바닥 색에 따른 배율은 아직 안 들어갔다 — 아래 [아직 안 한 것](#아직-안-한-것) 참고.
+
+### 발밑 색이 속도와 잉크를 정한다
+
+| | |
+|---|---|
+| 어디에 | `FPaintCellGrid`, `UPaintableComponent`, `UPaintSubsystem`, `UUnitMovementComponent`, `UInkTankComponent` |
+| 무엇을 | 딛고 있는 바닥의 색으로 이동 속도와 잉크 회복에 배율을 건다 |
+| 대체한 것 | 바닥과 무관하게 `MaxWalkSpeed` 하나, `RefillPerSecond` 하나 |
+
+**먼저 없는 것을 만들었다.** "이 지점의 바닥이 누구 색인가"를 묻는 API가 프로젝트에 없었다.
+`FPaintCellGrid`에는 쓰기(`Mark`)와 전체 집계(`GetFraction`)만 있었다.
+
+```
+FPaintCellGrid::PaintIdAt(로컬 위치, 로컬 방향)     격자 밖이거나 면이 없으면 PaintIdNone
+UPaintableComponent::GetPaintIdAt(월드 위치, 월드 법선)
+UPaintSubsystem::GetPaintIdAtHit(히트)              광선을 안 쏜다. 이미 있는 히트를 읽는다
+UPaintSubsystem::GetPaintIdUnder(위치, 깊이)        히트가 없는 곳에서 쓰라고 한 번 내린다
+```
+
+`VoxelOf`를 재사용하지 않았다. 그쪽은 격자 안으로 **잘라 넣어서** 바깥 점이 가장자리 색을
+물려받는다. 조회는 바깥이면 바깥이라고 답해야 한다.
+
+표면 위의 점이 복셀 경계에 걸리면 면이 없는 칸이 나오므로, `GetPaintIdAt`이 실패하면
+법선 반대로 셀의 1/4만큼 밀어 한 번 더 본다.
+
+**광선을 쏘지 않는다.** 무브먼트는 엔진이 이미 들고 있는 `CurrentFloor.HitResult`를 넘긴다.
+`UpdateCharacterStateBeforeMovement`에서 무브마다 한 번 구해 `FloorPaintId`에 담으므로
+`GetMaxSpeed`가 몇 번 불려도 값은 한 번만 계산된다. 저장 무브에 실을 것도 없다 — 리플레이가
+같은 바닥을 재현하면 이 값도 같이 재현된다.
+
+프록시도 갱신한다. 프록시는 위치를 복제로 받지만 **속도는 스스로 시뮬레이션**하므로,
+빼먹으면 남의 캐릭터만 상대 색 위에서 제 속도로 달린다.
+
+**배율은 한 곳에서 나온다.** 속도와 잉크가 같은 것을 쓴다. 두 곳에서 따로 계산하면 표가 어긋난다.
+
+| `UUnitMovementComponent` | 값 | |
+|---|---|---|
+| `OwnFloorMultiplier` | **1.5** | 내 색 |
+| (미도색) | 1.0 | 고정 |
+| `EnemyFloorMultiplier` | **0.5** | 상대 색 |
+| `EnemyFloorDashMultiplier` | **1.0** | 상대 색 위 보드 — 가속이 무의미하다 |
+| `DashSpeedMultiplier` | 2.0 | 그 밖의 바닥에서 보드 |
+
+**스피드 스타는 바닥을 무시한다.** 부스트 플래그가 서 있으면 바닥 배율이 내 색(1.5)으로 굳고
+보드 배율도 2.0으로 굳는다. 상대 진영 한복판에서도 같은 속도가 나오는 것이 이 아이템이
+보장하는 최소 속도다.
+
+이동 속도 (`MaxWalkSpeed` 1000 = 미도색 걷기):
+
+| | 걷기 | 보드 |
+|---|---|---|
+| 내 색 | 1500 | 3000 |
+| 미도색 | 1000 | 2000 |
+| 상대 색 | 500 | 500 |
+| 스타 | 2250 | 4500 |
+
+잉크 회복 (`BP_Unit.InkTank.RefillPerSecond` **0.10**. C++ 기본값은 0.15지만 `BP_Unit`이
+이미 0.10으로 덮어 두고 있었다 — 바꿀 것이 없었다):
+
+| | 걷기 | 보드 |
+|---|---|---|
+| 내 색 | 15%/s | 30%/s |
+| 미도색 | 10%/s | 20%/s |
+| 상대 색 | 5%/s | 5%/s |
+
+미도색 보드 20%와 상대색 보드 5%는 기획표에 없어 같은 규칙으로 채운 값이다.
+
+`GetInkRefillMultiplier`는 두 배율의 곱이되 **부스트 배율은 뺀다.** 별을 먹었다고 잉크가
+1.5배로 차지는 않는다. 다만 바닥은 내 색으로 굳으므로 상대 진영에서 별을 먹으면 잉크도 15%/s가 된다.
+
+잉크는 **서버만 채운다**(`Refill`이 `ROLE_Authority`에서만 불린다). 그래서 예측할 것이 없고,
+배율이 클라이언트와 갈라져도 고무줄이 나지 않는다.
+
+**예측이 안전한 이유:** `ApplySplat`이 스플랫 로그를 타고 모든 머신에서 돌아 `CellGrid.Mark`가
+서버와 클라이언트에서 같이 일어난다. 조회가 읽는 칸이 `Mark`가 쓰는 칸과 **같은 칸**이므로
+양쪽이 같은 답을 낸다. 이것이 이동 속도를 여기에 걸 수 있는 근거다.
+
+테스트: `MintChoco.Items.Movement.SpeedBoost`(값이 새 규칙으로 바뀜),
+`MintChoco.Items.Movement.InkRefillMultiplier`(새로 추가).
 
 ---
 
@@ -776,7 +854,8 @@ git diff --name-status <머지전_내커밋> HEAD -- Content/Maps Content/LevelP
 | `Lvl_Stage`의 `BP_ItemSpawnPoint` **11개** | `SpawnMode` **Standalone**, `RespawnDelay` **10초** (되돌아가면 Shared / 3초) |
 | `Lvl_Stage`의 `TestStunZone` | **버렸다.** 59215e2 머지에서 사라진 것을 그대로 두기로 했다 |
 | `BP_Unit` → `CharMoveComp` | `GravityScale` 2.0, `JumpZVelocity` 660, `DashJumpZVelocity` 660, `AirControl` 0.15, `MaxWalkSpeed` 1000, `DashSpeedMultiplier` **2.0**, `SpeedBoostMultiplier` 1.5 |
-| `BP_Unit` → `InkTank` | `RefillPerSecond` 0.15, `RefillDelayAfterSpend` 0.5 |
+| `BP_Unit` → `InkTank` | `RefillPerSecond` **0.10**, `RefillDelayAfterSpend` 0.5 |
+| `BP_Unit` → `CharMoveComp` 바닥 배율 | `OwnFloorMultiplier` 1.5, `EnemyFloorMultiplier` 0.5, `EnemyFloorDashMultiplier` 1.0 |
 | `BP_GameMode` | `MatchDuration` **180**, `CountdownDuration` 0, `ItemSpawnInterval` 3 |
 | `Lvl_Stage`의 `BP_Balloon` **9개 전부** | `BurstPaintball` **`DA_Paintball_BalloonBurst`**, `BurstCount` **8**, `BurstSpeed` 200, `MaxHealth` 20 |
 | `DA_Item_ChocolateFountain` | `Lifetime` 3, `BurstCount` 4, `BurstInterval` 1.0, `BurstGrowth` 1.4 |
@@ -938,17 +1017,6 @@ QA에 합치면서 세 파일을 4일 전 상태로 되돌렸다. 되돌아간 �
   직접 만들어야 한다.
 - `_Test` 사본을 원본으로 되돌릴지 결정. 되돌린다면 `_T`의 값을 원본에 옮기고 `BP_Unit`의
   두 줄을 원래대로 돌리면 된다.
-- **바닥 색이 속도와 잉크 회복을 정하는 것** (밸런스 3단계, 아직 안 들어감). 이동 예측을
-  건드리는 유일한 작업이라 1·2단계를 PIE로 거른 뒤에 얹는다.
-  - 없는 것부터 만들어야 한다: **"이 지점의 바닥이 누구 색인가"를 묻는 API가 프로젝트에 없다.**
-    `FPaintCellGrid`에 쓰기(`Mark`)와 전체 집계(`GetFraction`)만 있고 점 조회가 없다.
-    격자가 복셀 배열(`Ids`)이고 `VoxelIndex()`가 이미 있어서 어렵지는 않다.
-  - 배율은 속도와 잉크가 **같은 것**을 쓴다: `FloorMul` = 내 색 1.5 / 미도색 1.0 / 상대 색 0.5,
-    `DashMul` = 상대 색이면 1.0 아니면 2.0, 스피드스타는 바닥을 무시하고 내 색으로 친 뒤 ×1.5
-  - 발밑 색은 0.1초마다 캐시한다. **틱이 아니라 무브 시각 기준**이어야 서버·클라이언트가
-    안 어긋난다
-  - `RefillPerSecond`를 0.15 → 0.10으로 내리면 기획표의 네 칸이 전부 맞는다
-    (내 색 걷기 15%/s, 미도색 걷기 10%/s, 상대색 5%/s, 가속은 각각 두 배)
-  - 예측 안전성은 확인했다: `ApplySplat`이 스플랫 로그를 타고 모든 머신에서 돌아
-    `CellGrid.Mark`가 서버·클라이언트에서 같이 일어난다. 격자가 같으므로 고무줄이 안 생긴다
-  - **보드를 탈 때 잉크가 빨리 차는 코드도 없다.** `Refill`은 상수 하나를 곱할 뿐이다
+- **PIE 검증.** 밸런스 세 단계가 전부 들어갔지만 아직 눈으로 본 것은 없다. 특히 볼 것:
+  차지샷 충전 중 잉크가 0.5초마다 10%씩 빠지는지, 덜 충전한 샷이 짧게 나가는지,
+  샷건 궤적이 위를 보고 쏴도 이어지는지, 상대 색 위에서 보드가 느려지는지
