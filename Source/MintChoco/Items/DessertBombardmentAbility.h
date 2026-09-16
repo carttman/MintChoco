@@ -6,9 +6,26 @@
 
 #include "DessertBombardmentAbility.generated.h"
 
-class AActor;
 class UDessertBombardmentProfile;
+class UNiagaraComponent;
 class UWorld;
+
+/**
+ * 미리보기가 그릴 띠. 실제로 떨어질 행 수를 그대로 쓰므로 보이는 자리와 떨어지는 자리가 같다.
+ *
+ * Transform은 띠의 중심(발밑 높이, 수평 시선 방향)이고, 크기는 스케일이 아니라 따로 나간다 —
+ * 이펙트는 유저 파라미터로 받아 스스로 그 길이에 맞춘다.
+ */
+struct FBombardmentPreviewShape
+{
+	FTransform Transform = FTransform::Identity;
+
+	/** 발밑에서 앞으로 뻗는 길이(cm). */
+	float Length = 0.0f;
+
+	/** 열 폭(cm). */
+	float Width = 0.0f;
+};
 
 /**
  * 디저트 폭격. 아이템 키는 쏘지 않고 조준을 시작한다: 바라보는 수평 방향으로 발사 경로가
@@ -37,16 +54,18 @@ private:
 	UFUNCTION()
 	void HandleTick(float DeltaTime);
 
-	/**
-	 * 미리보기 박스의 트랜스폼. 실제로 떨어질 행 수를 그대로 써서 1×1×1 큐브를
-	 * 폭격 가능 길이 × 열 폭으로 늘인다. 보이는 것과 떨어지는 것이 같아진다.
-	 */
-	FTransform ComputePreviewTransform(const AUnit& Unit, const UDessertBombardmentProfile& Profile) const;
+	FBombardmentPreviewShape ComputePreviewShape(const AUnit& Unit, const UDessertBombardmentProfile& Profile) const;
+
+	/** 띠를 이펙트에 옮긴다: 위치와 방향은 컴포넌트가, 길이와 폭은 유저 파라미터가 받는다. */
+	void ApplyPreviewShape(const FBombardmentPreviewShape& Shape);
+
+	/** mc.Bombardment.PreviewDebug 가 1이면 코드가 잡은 띠를 선으로 그린다. 이펙트와 비교하는 용도. */
+	void DrawPreviewDebug(const FBombardmentPreviewShape& Shape) const;
 
 	void DestroyPreview();
 
 	UPROPERTY(Transient)
-	TObjectPtr<AActor> Preview;
+	TObjectPtr<UNiagaraComponent> Preview;
 
 	UPROPERTY(Transient)
 	TObjectPtr<const UDessertBombardmentProfile> Bombardment;

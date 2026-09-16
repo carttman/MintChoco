@@ -7,7 +7,10 @@
 #include "Engine/World.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 
+#include "Game/TeamLook.h"
 #include "Game/Unit.h"
 #include "Weapons/PaintProjectile.h"
 
@@ -101,6 +104,31 @@ void AItemProjectile::BeginPlay()
 			}
 		}
 	}
+
+	SpawnAttachedFX(TrailFX, TrailFXScale);
+	SpawnAttachedFX(BodyFX, BodyFXScale);
+}
+
+void AItemProjectile::SpawnAttachedFX(UNiagaraSystem* FX, float Scale)
+{
+	UWorld* const World = GetWorld();
+	if (!ShouldShowFX(World ? World->GetNetMode() : NM_DedicatedServer, FX))
+	{
+		return;
+	}
+
+	// 콜리전 구가 아니라 메시에 붙인다. 클라이언트 복사본은 넷 업데이트마다 메시를 보간해
+	// 따라가므로(PostNetReceiveLocationAndRotation), 이펙트가 실제로 보이는 공과 같이 움직인다.
+	//
+	// 터질 때 따로 끄지 않는다. 컴포넌트의 Owner가 이 액터라서 Destroy와 함께 사라지고,
+	// 떼어 놓아도 소유권은 그대로라 살릴 수 없다(대시 트레일은 유닛이 살아남아서 되는 것이다).
+	// 끊기는 자리에 버스트 FX가 터지므로 화면에서는 그게 이어받는다.
+	if (UNiagaraComponent* const Spawned = UNiagaraFunctionLibrary::SpawnSystemAttached(
+			FX, Mesh, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, FVector(Scale),
+			EAttachLocation::KeepRelativeOffset, /*bAutoDestroy=*/true, ENCPoolMethod::None))
+	{
+		Spawned->SetVariableLinearColor(TeamLook::NiagaraTintParameter, TeamLook::GetColor(GetPaintId(), World));
+	}
 }
 
 void AItemProjectile::EndPlay(const EEndPlayReason::Type Reason)
@@ -147,6 +175,11 @@ void AItemProjectile::PostNetReceiveLocationAndRotation()
 AUnit* AItemProjectile::GetInstigatorUnit() const
 {
 	return Cast<AUnit>(GetInstigator());
+}
+
+bool AItemProjectile::ShouldShowFX(ENetMode NetMode, const UNiagaraSystem* FX)
+{
+	return FX != nullptr && NetMode != NM_DedicatedServer;
 }
 
 float AItemProjectile::GetCollisionRadius() const

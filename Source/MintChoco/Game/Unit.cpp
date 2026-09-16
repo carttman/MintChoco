@@ -485,6 +485,9 @@ void AUnit::HandleStunTagChanged(const FGameplayTag Tag, int32 NewCount)
 	UGameAudioSubsystem::PlayAttached(
 		bStunned ? AudioTags::Audio_Unit_Stun_Begin : AudioTags::Audio_Unit_Stun_End,
 		GetRootComponent(), NAME_None, UnitData ? UnitData->Sounds.Get() : nullptr);
+	// 이펙트도 같은 이유로 각자 켠다. 태그가 곧 상태이므로 늦게 들어온 관전자도 태그 이벤트를
+	// 받는 시점부터 보게 된다.
+	UpdateStunEffects(bStunned);
 	BP_OnStunned(bStunned);
 }
 
@@ -1014,6 +1017,65 @@ void AUnit::UpdateDashEffects(bool bDashing)
 			// 대시할 때마다 꺼진 컴포넌트가 메시에 하나씩 쌓인다.
 			true);
 	}
+}
+
+void AUnit::UpdateStunEffects(bool bStunned)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	if (!bStunned)
+	{
+		if (StunFXComponent)
+		{
+			// 트레일과 같다. 새 스폰만 멈추고, 떠 있던 별은 제 수명대로 사라진다.
+			StunFXComponent->Deactivate();
+			StunFXComponent = nullptr;
+		}
+		return;
+	}
+
+	// 스턴은 이미 걸려 있는 동안 다시 걸리지 않지만(TryApplyStun), 태그가 겹쳐 서는 경로가
+	// 생기더라도 이펙트는 하나만 둔다.
+	if (StunFXComponent)
+	{
+		return;
+	}
+
+	const FUnitActionFeedback* Feedback = UnitData ? UnitData->FindFeedback(EUnitAction::Stun) : nullptr;
+	if (!Feedback || !Feedback->FX)
+	{
+		return;
+	}
+
+	// 머리 소켓에 붙이면 기절 자세로 고개가 숙여져도 이펙트가 머리를 따라간다. FXOffset은
+	// 그 본의 축을 타므로(머리 본은 +Z가 위가 아니다) 높이는 스켈레톤에서 소켓 위치로 잡는
+	// 편이 정확하다. 소켓이 없으면 캡슐 꼭대기에 붙는다 — 그쪽은 액터 축이라 +Z가 곧 위다.
+	USkeletalMeshComponent* const MeshComponent = GetMesh();
+	const bool bHasSocket = !Feedback->FXSocket.IsNone() && MeshComponent && MeshComponent->DoesSocketExist(Feedback->FXSocket);
+	USceneComponent* const AttachTo = bHasSocket ? static_cast<USceneComponent*>(MeshComponent) : GetRootComponent();
+	if (!AttachTo)
+	{
+		return;
+	}
+
+	FVector Offset = Feedback->FXOffset;
+	if (!bHasSocket)
+	{
+		Offset.Z += GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	}
+
+	StunFXComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		Feedback->FX,
+		AttachTo,
+		bHasSocket ? Feedback->FXSocket : NAME_None,
+		Offset,
+		FRotator::ZeroRotator,
+		EAttachLocation::KeepRelativeOffset,
+		// 트레일과 같은 이유로 자동 파괴. 스턴이 풀릴 때마다 꺼진 컴포넌트가 쌓이면 안 된다.
+		true);
 }
 
 void AUnit::PlayFeedbackMontage(const FUnitActionFeedback& Feedback)

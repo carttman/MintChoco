@@ -190,10 +190,10 @@ public:
 
 	/**
 	 * 메시를 캐릭터의 앞 축을 중심으로 굴린다(도). 양수면 오른쪽으로 기운다. 0이면 블루프린트가 놓은
-	 * 원래 자세로 돌아간다. 애님 인스턴스가 보드 동작 중 좌우 입력만큼 매 프레임 넣는다
+	 * 원래 자세로 돌아간다. 애님 인스턴스가 보드 동작 중 몸이 도는 속도와 이동 속도만큼 매 프레임 넣는다
 	 * (UUnitAnimInstance::BoardLean).
 	 *
-	 * 연출이라 복제하지 않는다. 머신마다 자기 무브먼트의 가속에서 같은 값을 낸다. 캡슐과 카메라는
+	 * 연출이라 복제하지 않는다. 머신마다 자기가 보는 몸의 요 회전과 속도에서 같은 값을 낸다. 캡슐과 카메라는
 	 * 그대로이고, 메시에 붙은 것(보드, 총, 잉크병, 외곽선)만 함께 기운다.
 	 */
 	void SetMeshLean(float RollDegrees);
@@ -397,6 +397,12 @@ private:
 	void PlayFeedbackMontage(const struct FUnitActionFeedback& Feedback);
 
 	/**
+	 * 기절 이펙트(EUnitAction::Stun)를 머리 위에 켜고 끈다. 스턴 태그가 서고 내릴 때
+	 * 모든 머신에서 불린다. 지속되는 이펙트라 대시 트레일처럼 컴포넌트를 직접 들고 있는다.
+	 */
+	void UpdateStunEffects(bool bStunned);
+
+	/**
 	 * 차지샷 충전이 시작·종료될 때. 무기가 알려 준다(UPaintWeaponComponent::OnChargingChanged).
 	 *
 	 * 충전 중에는 총이 계속 들려 있어야 한다. 총은 캐릭터 메시의 Gun 소켓에 붙어 있어서,
@@ -514,6 +520,10 @@ private:
 	/** 지속되는 트레일이라 시작할 때 만들고 끝날 때 직접 꺼야 한다. */
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> DashTrailComponent;
+
+	/** 기절 중 머리 위에 떠 있는 이펙트. 트레일과 같은 이유로 들고 있다가 스턴이 풀릴 때 끈다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> StunFXComponent;
 
 	/** 보드 주행 루프. 트레일과 같은 이유로 들고 있다가 보드가 사라질 때 직접 멈춘다. */
 	UPROPERTY(Transient)

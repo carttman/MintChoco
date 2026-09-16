@@ -10,38 +10,48 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 /**
- * 보드 기울기 입력: 가속 방향을 몸의 오른쪽 축에 투영한다. 크기는 보지 않으므로 소유자의 입력 가속과
- * 다른 클라이언트의 속도 방향 단위 벡터가 같은 값을 낸다.
+ * 회전 기울기: 한 프레임의 요 변화를 속도로 바꾸고(경계를 넘어도 짧은 쪽), 도는 자전거처럼
+ * atan(속도 × 각속도 / 중력)만큼 회전 안쪽으로 기운다. 빨리 달리며 급하게 돌수록 크게 기운다.
  */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
-	FBoardLeanInputTest,
-	"MintChoco.Anim.BoardLean.Input",
+	FBoardLeanTurnTest,
+	"MintChoco.Anim.BoardLean.Turn",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
 
-bool FBoardLeanInputTest::RunTest(const FString& Parameters)
+bool FBoardLeanTurnTest::RunTest(const FString& Parameters)
 {
-	const FRotator Facing(0.0f, 0.0f, 0.0f);
+	// 회전 속도: 한 프레임의 요 차이 / 시간. 오른쪽(요 증가)이 양수.
+	TestEqual(TEXT("turning right is positive"), FUnitAnimMath::YawRateDegrees(10.0, 13.0, 0.01f), 300.0f, 0.01f);
+	TestEqual(TEXT("turning left is negative"), FUnitAnimMath::YawRateDegrees(10.0, 7.0, 0.01f), -300.0f, 0.01f);
+	TestEqual(TEXT("not turning is zero"), FUnitAnimMath::YawRateDegrees(45.0, 45.0, 0.016f), 0.0f);
+	TestEqual(TEXT("no time, no rate"), FUnitAnimMath::YawRateDegrees(0.0, 90.0, 0.0f), 0.0f);
 
-	TestEqual(TEXT("right key leans right"), FUnitAnimMath::BoardLeanInput(FVector(0.0f, 2048.0f, 0.0f), Facing), 1.0f, 1e-4f);
-	TestEqual(TEXT("left key leans left"), FUnitAnimMath::BoardLeanInput(FVector(0.0f, -2048.0f, 0.0f), Facing), -1.0f, 1e-4f);
-	TestEqual(TEXT("forward does not lean"), FUnitAnimMath::BoardLeanInput(FVector(2048.0f, 0.0f, 0.0f), Facing), 0.0f, 1e-4f);
-	TestEqual(TEXT("backward does not lean"), FUnitAnimMath::BoardLeanInput(FVector(-2048.0f, 0.0f, 0.0f), Facing), 0.0f, 1e-4f);
-	TestEqual(TEXT("forward + right leans part way"), FUnitAnimMath::BoardLeanInput(FVector(2048.0f, 2048.0f, 0.0f), Facing), UE_INV_SQRT_2, 1e-4f);
-	TestEqual(TEXT("no input, no lean"), FUnitAnimMath::BoardLeanInput(FVector::ZeroVector, Facing), 0.0f);
-	TestEqual(TEXT("vertical acceleration does not lean"), FUnitAnimMath::BoardLeanInput(FVector(0.0f, 0.0f, 900.0f), Facing), 0.0f);
+	// 경계: 179에서 -179는 오른쪽으로 2도다(왼쪽으로 358도가 아니다).
+	TestEqual(TEXT("wraps across +180"), FUnitAnimMath::YawRateDegrees(179.0, -179.0, 0.01f), 200.0f, 0.01f);
+	TestEqual(TEXT("wraps across -180"), FUnitAnimMath::YawRateDegrees(-179.0, 179.0, 0.01f), -200.0f, 0.01f);
+	TestEqual(TEXT("wraps across 0/360"), FUnitAnimMath::YawRateDegrees(359.0, 1.0, 0.01f), 200.0f, 0.01f);
+	TestEqual(TEXT("accumulated turns fold back"), FUnitAnimMath::YawRateDegrees(725.0, 1.0, 0.01f), -400.0f, 0.01f);
 
-	// 다른 클라이언트의 폰은 가속이 속도 방향의 단위 벡터다. 크기가 달라도 같은 값이어야 한다.
-	TestEqual(TEXT("a simulated proxy's unit vector matches the owner's input"),
-		FUnitAnimMath::BoardLeanInput(FVector(0.0f, 1.0f, 0.0f), Facing),
-		FUnitAnimMath::BoardLeanInput(FVector(0.0f, 2048.0f, 0.0f), Facing), 1e-4f);
+	// 기울기: 대시 속도 1700 cm/s, 중력 자리 10000 cm/s², 최대 25도.
+	const float Speed = 1700.0f;
+	const float Gravity = 10000.0f;
+	const float Max = 25.0f;
+	const float Lean90 = FUnitAnimMath::BoardLeanFromTurn(Speed, 90.0f, Gravity, Max);
+	TestEqual(TEXT("90 deg/s at dash speed leans about 15 degrees right"), Lean90, 14.951f, 0.05f);
+	TestEqual(TEXT("turning left leans left by the same amount"), FUnitAnimMath::BoardLeanFromTurn(Speed, -90.0f, Gravity, Max), -14.951f, 0.05f);
+	TestEqual(TEXT("30 deg/s leans about 5 degrees"), FUnitAnimMath::BoardLeanFromTurn(Speed, 30.0f, Gravity, Max), 5.09f, 0.05f);
 
-	// 몸이 돌아 있으면 그 기준이다. 요 90에서 앞은 +Y, 오른쪽은 -X.
-	const FRotator FacingY(0.0f, 90.0f, 0.0f);
-	TestEqual(TEXT("rotated facing: -X is right"), FUnitAnimMath::BoardLeanInput(FVector(-2048.0f, 0.0f, 0.0f), FacingY), 1.0f, 1e-4f);
-	TestEqual(TEXT("rotated facing: +Y is forward"), FUnitAnimMath::BoardLeanInput(FVector(0.0f, 2048.0f, 0.0f), FacingY), 0.0f, 1e-4f);
+	TestTrue(TEXT("a sharp turn leans more than a gentle one"),
+		FUnitAnimMath::BoardLeanFromTurn(Speed, 90.0f, Gravity, Max) > FUnitAnimMath::BoardLeanFromTurn(Speed, 30.0f, Gravity, Max));
+	TestTrue(TEXT("a fast ride leans more than a slow one at the same turn"),
+		FUnitAnimMath::BoardLeanFromTurn(Speed, 90.0f, Gravity, Max) > FUnitAnimMath::BoardLeanFromTurn(800.0f, 90.0f, Gravity, Max));
 
-	// 피치와 롤은 무시한다.
-	TestEqual(TEXT("pitch is ignored"), FUnitAnimMath::BoardLeanInput(FVector(0.0f, 2048.0f, 0.0f), FRotator(30.0f, 0.0f, 10.0f)), 1.0f, 1e-4f);
+	TestEqual(TEXT("a very sharp turn is clamped to the max"), FUnitAnimMath::BoardLeanFromTurn(Speed, 270.0f, Gravity, Max), 25.0f, 1e-4f);
+	TestEqual(TEXT("clamped on the left too"), FUnitAnimMath::BoardLeanFromTurn(Speed, -270.0f, Gravity, Max), -25.0f, 1e-4f);
+	TestEqual(TEXT("turning on the spot does not lean"), FUnitAnimMath::BoardLeanFromTurn(0.0f, 180.0f, Gravity, Max), 0.0f);
+	TestEqual(TEXT("riding straight does not lean"), FUnitAnimMath::BoardLeanFromTurn(Speed, 0.0f, Gravity, Max), 0.0f);
+	TestEqual(TEXT("a negative max flips the direction"), FUnitAnimMath::BoardLeanFromTurn(Speed, 90.0f, Gravity, -Max), -14.951f, 0.05f);
+	TestEqual(TEXT("no gravity, no lean"), FUnitAnimMath::BoardLeanFromTurn(Speed, 90.0f, 0.0f, Max), 0.0f);
 
 	return true;
 }
