@@ -199,8 +199,12 @@ protected:
 	 * 아무 신호도 가지 않는다. 자세를 보여 주려면 이것 하나가 필요하다. 소유자는 예측으로
 	 * 이미 알고 있으므로 제외한다.
 	 */
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_Aiming)
 	bool bAiming = false;
+
+	/** 조준이 복제로 도착했을 때(소유자가 아닌 머신). 손에 든 물건을 그 값에 맞춘다. */
+	UFUNCTION()
+	void OnRep_Aiming();
 
 private:
 	/**

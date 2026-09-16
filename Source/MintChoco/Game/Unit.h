@@ -23,6 +23,7 @@ class USphereComponent;
 class UAudioComponent;
 class UNiagaraComponent;
 class USpringArmComponent;
+class UStaticMesh;
 class UStaticMeshComponent;
 class UUnitInputConfig;
 class UUnitMovementComponent;
@@ -107,6 +108,23 @@ public:
 	/** 슈퍼아머 중인지(State.Status.SuperArmor). 스턴과 밀어내기가 먹지 않는다. */
 	UFUNCTION(BlueprintPure, Category = "Status")
 	bool HasSuperArmor() const;
+
+	/** 스피드 스타 효과 중인지(State.Item.SpeedStar). 오라 껍데기가 그동안 켜진다. */
+	UFUNCTION(BlueprintPure, Category = "Status")
+	bool HasSpeedStar() const;
+
+	/**
+	 * 몸에 덧씌우는 껍데기 메시(테두리, 오라)를 보여야 하는가. 상태가 서 있어도 카메라가 몸
+	 * 안에 들어와 본체가 반투명해진 동안에는 감춘다 — 껍데기는 불투명이라 그대로 두면 페이드된
+	 * 몸 위에 실루엣만 둥둥 뜬다. 판단만 하므로 유닛 없이도 부를 수 있다.
+	 */
+	static bool ShouldShowShell(bool bStateActive, bool bCameraFaded);
+
+	/**
+	 * 조준 중 손에 무언가를 보여야 하는가. 조준 중이 아니거나 아이템이 그 슬롯을 비워 두었으면
+	 * 아무것도 들지 않는다. 메시와 이펙트가 같은 규칙을 탄다. 판단만 하므로 유닛 없이도 부른다.
+	 */
+	static bool ShouldShowHeld(bool bAiming, const UObject* Asset);
 
 	/**
 	 * 입력으로 움직일 수 없는 상태인지(스턴, 히어로 랜딩). 입력 핸들러와 무브먼트 컴포넌트가
@@ -268,6 +286,51 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Status")
 	TObjectPtr<USkeletalMeshComponent> OutlineMesh;
 
+	/**
+	 * 스피드 스타 효과 동안 몸에 입히는 재질. 비어 있으면 오라가 없다.
+	 *
+	 * 껍데기 메시(AuraMesh)의 모든 슬롯에 깔린다. 무기 오라 팩의 오버레이 재질처럼 메시 위에
+	 * 덧그리는 재질이어야 한다 — 나이아가라 쪽 오라는 스태틱 메시만 받으므로 캐릭터에 못 쓴다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Status")
+	TObjectPtr<UMaterialInterface> SpeedStarAuraMaterial;
+
+	/**
+	 * 오라를 그리는 껍데기 메시. 테두리 껍데기와 같은 방식으로 캐릭터 메시를 리더 포즈로
+	 * 따라간다. 테두리와 별개라 둘이 동시에 켜질 수 있다. 평소에는 꺼 둔다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Status")
+	TObjectPtr<USkeletalMeshComponent> AuraMesh;
+
+	/**
+	 * 스피드 스타 동안 몸에서 나는 입자(연기, 불꽃, 리본). 비어 있으면 입자가 없다.
+	 *
+	 * 껍데기 재질이 못 내는 부분을 맡는다. 메시를 샘플링하지 않고 컴포넌트 원점 둘레에
+	 * 뿌리는 시스템이어야 한다 — 메시 렌더러를 쓰는 에미터는 스태틱 메시만 받으므로
+	 * 캐릭터에서 아무것도 그리지 못한다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Status")
+	TObjectPtr<UNiagaraSystem> SpeedStarAuraFX;
+
+	/**
+	 * 입자를 붙일 때 캐릭터 메시 기준으로 돌려 놓는 각도. 0이면 메시 축 그대로다.
+	 *
+	 * 무기 오라 팩은 칼 축을 기준으로 만들어져 있어서 캐릭터에 그대로 붙이면 누워 보일 수
+	 * 있다. 연출을 맞추는 값이지 게임플레이 값이 아니므로 눈으로 보고 정한다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Status")
+	FRotator SpeedStarAuraFXRotation = FRotator::ZeroRotator;
+
+	/**
+	 * 입자를 붙일 때 캐릭터 메시 기준으로 밀어 놓는 거리(cm). 0이면 메시 원점이다.
+	 *
+	 * 기준축은 액터가 아니라 메시 컴포넌트의 로컬 축이다(캐릭터 메시는 캡슐 기준으로 돌아가
+	 * 있으므로 X+가 정면이 아니다). 위 회전과 같은 축이라, 회전을 먼저 맞추고 이 값을 잡는
+	 * 편이 헷갈리지 않는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Status", meta = (ForceUnits = "cm"))
+	FVector SpeedStarAuraFXOffset = FVector::ZeroVector;
+
 	/** 조작에 쓰이는 입력 에셋. 비어 있으면 이 유닛은 플레이어 입력을 받지 못한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
 	TObjectPtr<UUnitInputConfig> InputConfig;
@@ -333,6 +396,17 @@ protected:
 	 */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
 	TObjectPtr<UStaticMeshComponent> GunMesh;
+
+	/**
+	 * 조준 중 손에 든 아이템(꿀풍선). 평소에는 숨어 있고, 무엇을 들지와 어느 소켓에 붙일지는
+	 * 든 아이템의 프로필이 정한다(HeldMesh, HeldFX, HeldSocket).
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
+	TObjectPtr<UStaticMeshComponent> HeldItemMesh;
+
+	/** 조준 중 손에 붙어 있는 이펙트. 트레일과 같은 이유로 들고 있다가 조준이 끝날 때 끈다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> HeldItemFXComponent;
 
 	/**
 	 * 대시 중 발밑의 보드. 평소에는 숨어 있고 대시 **동작**이 시작되면 보이며 끝나면 숨는다.
@@ -434,6 +508,19 @@ private:
 	/** 보임 의도와 카메라 페이드를 합쳐 실제 가시성을 정한다. */
 	void UpdateGunVisibility();
 
+public:
+	/**
+	 * 든 아이템과 조준 상태에 맞춰 손의 메시를 켜고 끈다. 슬롯 컴포넌트가 조준을 세울 때와
+	 * 복제로 받을 때 양쪽에서 부른다 — bAiming은 소유자에게 복제되지 않으므로 한쪽만으로는
+	 * 모든 머신에서 맞지 않는다(대시·자세와 같은 규칙).
+	 */
+	void UpdateHeldItem();
+
+private:
+	/** 손의 이펙트만. UpdateHeldItem이 메시보다 먼저 부른다 — 둘은 독립이다. */
+	void UpdateHeldItemFX();
+
+
 	/** 대시 동작이 돌고 있고 카메라 페이드가 아닐 때만 보드가 보인다. */
 	void UpdateBoardVisibility();
 
@@ -525,6 +612,10 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> StunFXComponent;
 
+	/** 스피드 스타 동안 몸에 붙어 있는 입자. 트레일과 같은 이유로 들고 있다가 효과가 끝날 때 끈다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> SpeedStarAuraFXComponent;
+
 	/** 보드 주행 루프. 트레일과 같은 이유로 들고 있다가 보드가 사라질 때 직접 멈춘다. */
 	UPROPERTY(Transient)
 	TObjectPtr<UAudioComponent> BoardAudioComponent;
@@ -544,4 +635,12 @@ private:
 	void UpdateSuperArmorOutline();
 
 	FDelegateHandle SuperArmorTagHandle;
+
+	/** 스피드 스타 태그가 서고 내릴 때, 모든 머신에서. 슈퍼아머와 같은 이유로 복제 태그를 본다. */
+	void HandleSpeedStarTagChanged(const FGameplayTag Tag, int32 NewCount);
+
+	/** 지금 스피드 스타인지에 맞춰 오라 메시를 켜고 끈다. */
+	void UpdateSpeedStarAura();
+
+	FDelegateHandle SpeedStarTagHandle;
 };
