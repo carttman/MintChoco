@@ -16,11 +16,52 @@ class UAbilitySystemComponent;
 class UAnimSequenceBase;
 class UAudioComponent;
 class UItemProfile;
+class UMaterialInterface;
 class UNiagaraComponent;
 class UNiagaraSystem;
 class UPaintGunProfile;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FItemSlotChangedSignature, UItemProfile*, Item);
+
+/** 오라 하나. 어느 아이템의 것인지(상태 태그)와 그동안 씌울 머티리얼. */
+USTRUCT()
+struct FItemAuraEntry
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FGameplayTag Tag;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> Material;
+};
+
+/**
+ * 효과 중인 아이템들의 오라. 오버레이 머티리얼은 메시당 한 칸뿐인데 아이템 효과는 겹칠 수
+ * 있으므로(무한 탄환이 도는 중에 스피드 스타를 써도 태그는 둘 다 산다) 켜진 순서를 들고
+ * 마지막 것을 보여 준다. EffectItem이 마지막에 켜진 아이템을 가리키는 것과 같은 규칙이다.
+ *
+ * 월드 없이 테스트한다.
+ */
+USTRUCT()
+struct MINTCHOCO_API FItemAuraStack
+{
+	GENERATED_BODY()
+
+	/** 오라를 켠다. Material이 없으면(오라를 정하지 않은 아이템) 아무 일도 하지 않는다. */
+	void Push(const FGameplayTag& Tag, UMaterialInterface* Material);
+
+	/** 그 태그의 오라를 끈다. 켜진 적 없는 태그면 아무 일도 하지 않는다. */
+	void Pop(const FGameplayTag& Tag);
+
+	/** 지금 보여야 할 오라. 켜진 것이 없으면 nullptr. */
+	UMaterialInterface* Top() const;
+
+private:
+	/** 켜진 순서. 마지막이 보이는 것이다. */
+	UPROPERTY()
+	TArray<FItemAuraEntry> Entries;
+};
 
 /**
  * 유닛의 아이템 슬롯. 한 칸이고, 새 아이템을 밟으면 들고 있던 것을 버리고 교체한다.
@@ -199,8 +240,12 @@ protected:
 	 * 아무 신호도 가지 않는다. 자세를 보여 주려면 이것 하나가 필요하다. 소유자는 예측으로
 	 * 이미 알고 있으므로 제외한다.
 	 */
-	UPROPERTY(Replicated)
+	UPROPERTY(ReplicatedUsing = OnRep_Aiming)
 	bool bAiming = false;
+
+	/** 조준이 복제로 도착했을 때(소유자가 아닌 머신). 손에 든 물건을 그 값에 맞춘다. */
+	UFUNCTION()
+	void OnRep_Aiming();
 
 private:
 	/**
@@ -243,6 +288,9 @@ private:
 	void StartEffectFeedback(const UItemProfile& Item, const FGameplayTag& Tag);
 	void StopEffectFeedback(const FGameplayTag& Tag);
 
+	/** 스택의 맨 위 오라를 캐릭터 메시의 오버레이에 맞춘다. 데디케이티드 서버는 지나간다. */
+	void UpdateAura();
+
 	/** 잉크병을 오버라이드 재질로 바꾸고 마지막 1초에 점멸을 예약한다. bOn이 거짓이면 전부 되돌린다. */
 	void SetInkLook(bool bOn, float Duration);
 	void StartInkBlink();
@@ -280,6 +328,13 @@ private:
 	/** 상태 태그별로 켜 둔 이펙트. 태그가 내려가면 끈다. */
 	UPROPERTY(Transient)
 	TMap<FGameplayTag, TObjectPtr<UNiagaraComponent>> EffectComponents;
+
+	/**
+	 * 효과가 도는 아이템들의 오라. 이펙트와 같은 이유로 복제하지 않는다: 태그가 모든 머신에
+	 * 복제되므로 각자 세우면 같은 그림이 나온다.
+	 */
+	UPROPERTY(Transient)
+	FItemAuraStack AuraStack;
 
 	/**
 	 * 애니메이션 구간 노티파이가 틀어 둔 소리. 오디오 태그별 하나. 구간이 끝나면 노티파이가 끄고,

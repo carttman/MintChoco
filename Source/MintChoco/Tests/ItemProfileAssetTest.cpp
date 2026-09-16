@@ -4,6 +4,7 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Animation/AnimSequenceBase.h"
+#include "Materials/MaterialInterface.h"
 #include "Modules/ModuleManager.h"
 
 #include "Items/BeeProfile.h"
@@ -16,6 +17,7 @@
 #include "Items/HoneyBalloonProjectile.h"
 #include "Items/ItemAbility.h"
 #include "Items/ItemProfile.h"
+#include "Items/ItemGameplayTags.h"
 #include "Items/ItemSettings.h"
 #include "Items/PaintRain.h"
 #include "Items/SpeedStarProfile.h"
@@ -76,6 +78,14 @@ bool FItemProfileAssetTest::RunTest(const FString& Parameters)
 		if (!Item->IsInstant())
 		{
 			TestTrue(*FString::Printf(TEXT("%s: state tag resolves"), *Name), Item->GetStateTag().IsValid());
+		}
+
+		// 오라를 정했으면 스켈레탈 메시에 쓸 수 있어야 한다. 용도(bUsedWithSkeletalMesh)가 없는
+		// 머티리얼은 FSkeletalMeshSceneProxy가 경고 없이 버리므로 오라만 조용히 사라진다.
+		if (Item->AuraMaterial)
+		{
+			TestTrue(*FString::Printf(TEXT("%s: AuraMaterial is usable on a skeletal mesh"), *Name),
+				Item->AuraMaterial->CheckMaterialUsage_Concurrent(MATUSAGE_SkeletalMesh));
 		}
 
 		if (const USweetSpinnerProfile* const Spinner = Cast<USweetSpinnerProfile>(Item))
@@ -151,6 +161,21 @@ bool FItemProfileAssetTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("every configured item loads"), Configured.Num(), UItemSettings::Get().Items.Num());
 	TestTrue(TEXT("at least one item configured"), Configured.Num() > 0);
 	TestNotNull(TEXT("pickup class configured"), UItemSettings::Get().LoadPickupClass());
+
+	// 오라로 "지금 이게 걸려 있다"를 보여 주기로 한 아이템들. 칸이 비면 효과 중에 아무 표시가
+	// 없으므로, 여기서만 잡을 수 있다(코드에는 아이템 이름이 없다).
+	for (const FGameplayTag& Tag : {
+		ItemTags::State_Item_SpeedStar.GetTag(),
+		ItemTags::State_Item_InfiniteAmmo.GetTag(),
+		ItemTags::State_Item_HeroLanding.GetTag()})
+	{
+		const FString Name = Tag.ToString();
+		const UItemProfile* const Item = UItemSettings::Get().FindItemByStateTag(Tag);
+		if (TestNotNull(*FString::Printf(TEXT("%s: configured"), *Name), Item))
+		{
+			TestNotNull(*FString::Printf(TEXT("%s: AuraMaterial"), *Name), Item->AuraMaterial.Get());
+		}
+	}
 
 	return true;
 }

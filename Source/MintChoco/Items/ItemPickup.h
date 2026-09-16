@@ -7,6 +7,8 @@
 
 class AItemSpawnPoint;
 class UItemProfile;
+class UNiagaraComponent;
+class UNiagaraSystem;
 class USphereComponent;
 class UStaticMeshComponent;
 class UUserWidget;
@@ -94,6 +96,20 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
 	TObjectPtr<UStaticMeshComponent> Laser;
 
+	/**
+	 * 활성 상태의 박스에 붙는 오라. 비어 있으면 오라가 없다.
+	 *
+	 * 메시에 붙으므로 박스가 떠다니고 도는 것을 그대로 따라간다. 상태는 복제되므로 모든
+	 * 머신에서 같이 켜지고 꺼진다. 아이템 종류와 무관하게 같은 오라라 프로필이 아니라
+	 * 클래스 디폴트에 둔다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
+	TObjectPtr<UNiagaraSystem> AuraFX;
+
+	/** 그 오라. 지속되는 이펙트라 상태가 풀릴 때 직접 꺼야 하므로 들고 있는다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> AuraFXComponent;
+
 	/** 아이템 위에 뜨는 디버그 이름표(스크린 공간). PIE에서 bShowLabel이 켜져 있고 활성 상태일 때만 보인다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Label")
 	TObjectPtr<UWidgetComponent> Label;
@@ -139,6 +155,9 @@ protected:
 private:
 	void ApplyProfile();
 	void ApplyState();
+
+	/** 활성 상태에 맞춰 오라를 켜고 끈다. 데디케이티드 서버는 지나간다. */
+	void UpdateAura(bool bActive);
 	void Activate();
 	void UpdateLabel();
 	bool IsLabelEnabled() const;
