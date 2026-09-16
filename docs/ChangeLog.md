@@ -456,6 +456,42 @@ t=3s   2.74배     여기서 끝, 돔도 같이 사라진다
 
 ---
 
+## 아이템 — 연출
+
+### 꿀벌에 따라붙는 해골 (`BP_Bee.SkullFX`)
+
+| | |
+|---|---|
+| 어디에 | `BP_Bee`에 `UNiagaraComponent SkullFX`, 루트(`Sphere`) 밑 |
+| 무엇을 | 꿀벌이 나는 동안 해골 반짝임이 몸 주위를 따라다닌다 |
+| 대체한 것 | 없음(새 기능) |
+| 값 | `NS_BeeSkull`, 상대 위치 0, 스케일 1, `bAutoActivate` 켬 |
+
+**C++을 건드리지 않았다.** 벌은 서버가 조종하고 위치가 복제되므로, 컴포넌트로 달아 두면
+모든 머신에서 알아서 따라간다. RPC도 태그도 필요 없다.
+
+**`Body`가 아니라 루트에 붙인 이유.** `Body`는 상대 스케일이 3이라 거기 붙이면 해골도 세 배가
+되고, 스켈레탈 메시라 날갯짓을 따라 흔들린다. 루트(`Sphere`, 반경 30cm)가 벌의 위치 그 자체다.
+
+#### `NS_BeeSkull` — `NS_Sparkling_Skull`의 복제본
+
+원본도 `NS_Sparkling`과 같은 팩 결함을 그대로 갖고 있었다: GPU 전용에 고정 바운드 없음,
+`Lifetime Min`(2) > `Max`(1) 역전.
+
+| | 원본 | 지금 | 왜 |
+|---|---|---|---|
+| `bLocalSpace` | false | **true** | 벌에 붙어 다니게. 월드 스페이스면 지나간 자리에 꼬리로 남는다 |
+| `bFixedBounds` | false | true, ±70cm | GPU 전용이라 없으면 통째로 안 보인다 |
+| `User.Sphere Radius` | 100 | 45 | 벌 몸(루트 반경 30)을 감싸게 |
+| `User. Size Min` / `Size Max` | 30.3 / 68.2 | 18 / 32 | 벌보다 커 보이지 않게 |
+| `User.Lifetime Min` / `Max` | 2 / 1 (역전) | 0.35 / 0.7 | 짧아야 벌 곁에 머문다 |
+| `User.SpawnRate` | 33 | 25 | |
+| `User.Noise Strength` | 155 | 60 | 900cm/s로 나는 벌에서 흩어지지 않게 |
+
+이미터 이름은 `HangingParticulates` 하나뿐이다(GPU 스프라이트).
+
+---
+
 ## 오디오
 
 ### 새 사운드 7개 연결
@@ -559,6 +595,10 @@ git diff --name-status <머지전_내커밋> HEAD -- Content/Maps Content/LevelP
 | `BP_Unit` → `CharMoveComp` | `GravityScale` 2.0, `JumpZVelocity` 660, `DashJumpZVelocity` 660, `AirControl` 0.15 |
 | `DA_Item_ChocolateFountain` | `Lifetime` 3, `BurstCount` 4, `BurstInterval` 1.0, `BurstGrowth` 1.4 |
 | `BP_ItemPickup` | `PillarTemplate` = `NS_ItemPillar`, `PillarSeconds` 0, `BoxSparkleTemplate` = `NS_ItemBoxSparkle`, `BoxSparkleHeight` 60 |
+| `BP_Unit` 카메라 | `ViewPitchMin` **-45**, `ViewPitchMax` **45** |
+| `BP_Unit` 무기 | `PaintWeapon.Profile` = `DA_Weapon_Fan_T`, `SecondaryWeapon.Profile` = `DA_Weapon_Sniper_T` |
+| `DA_Weapon_Fan_T` | `FireMode` **Automatic**, `ShotsPerSecond` 4 |
+| `BP_Bee` | `SkullFX` 컴포넌트가 루트(`Sphere`) 밑에, `NS_BeeSkull` |
 | `UnitMovementComponent.h` | `DoJump` 선언과 `DashJumpZVelocity`가 있어야 한다(`.cpp`가 쓴다) |
 
 ### 실제로 있었던 다섯 건
