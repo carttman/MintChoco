@@ -1,10 +1,24 @@
 #include "Items/PaintRain.h"
 
+#include "CollisionQueryParams.h"
+#include "Engine/HitResult.h"
 #include "Engine/World.h"
 #include "Net/UnrealNetwork.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 #include "TimerManager.h"
 
+#include "Game/TeamLook.h"
 #include "Weapons/PaintballProfile.h"
+
+namespace
+{
+	/**
+	 * 예고 표식이 지면을 찾아 내려가는 거리(cm). 탄이 태어나는 높이는 맵 경계 최고점 위라,
+	 * 맵 어디서든 바닥에 닿고도 남을 만큼 넉넉히 잡는다. 못 찾으면 그 행은 건너뛴다.
+	 */
+	constexpr float TelegraphTraceReach = 100000.0f;
+}
 
 // ---------------------------------------------------------------- FPaintRainPlan
 
@@ -28,6 +42,31 @@ int32 FPaintRainPlan::CountRows(const FVector2D& Origin, const FVector2D& Direct
 		}
 	}
 	return Last;
+}
+
+int32 FPaintRainPlan::TelegraphCount(int32 RowCount, int32 Stride)
+{
+	if (RowCount <= 0)
+	{
+		return 0;
+	}
+	// 첫 행에는 언제나 하나 놓이므로 나눠 올린다. 나누어떨어지지 않는 마지막 구간도 표식을 받는다.
+	const int32 Step = FMath::Max(Stride, 1);
+	return (RowCount + Step - 1) / Step;
+}
+
+float FPaintRainPlan::TelegraphInterval(float LeadInSeconds, int32 TelegraphCount)
+{
+	if (LeadInSeconds <= 0.0f || TelegraphCount <= 0)
+	{
+		return 0.0f;
+	}
+	return LeadInSeconds / static_cast<float>(TelegraphCount);
+}
+
+float FPaintRainPlan::Lifespan(const FPaintRainParams& Params)
+{
+	return FMath::Max(Params.LeadInSeconds, 0.0f) + static_cast<float>(Params.RowCount) * Params.Interval + 2.0f;
 }
 
 FVector FPaintRainPlan::RowPoint(const FPaintRainParams& Params, int32 Row, int32 Column)
@@ -77,7 +116,7 @@ void APaintRain::BeginPlay()
 {
 	Super::BeginPlay();
 	// 마지막 행이 떨어진 뒤에도 잠시 남는다. 탄은 자기 수명대로 산다.
-	SetLifeSpan(static_cast<float>(Params.RowCount) * Params.Interval + 2.0f);
+	SetLifeSpan(FPaintRainPlan::Lifespan(Params));
 	Start();
 }
 
@@ -103,11 +142,88 @@ void APaintRain::Start()
 	}
 	bStarted = true;
 	NextRow = 1;
+
+	// 예고는 리드인 동안만 돈다. 간격이 0이면(리드인이 없으면) 표식도 없다.
+	const int32 TelegraphMarks = FPaintRainPlan::TelegraphCount(Params.RowCount, Params.TelegraphRowStride);
+	const float TelegraphStep = FPaintRainPlan::TelegraphInterval(Params.LeadInSeconds, TelegraphMarks);
+	if (TelegraphStep > 0.0f && Params.TelegraphFX && GetNetMode() != NM_DedicatedServer)
+	{
+		NextTelegraphRow = 1;
+		PlaceTelegraph();
+		if (TelegraphMarks > 1)
+		{
+			GetWorldTimerManager().SetTimer(TelegraphTimer, this, &APaintRain::PlaceTelegraph, TelegraphStep, /*bLoop=*/true);
+		}
+	}
+
+	// 리드인이 있으면 그만큼 기다렸다가 첫 행을 떨어뜨린다. 파라미터가 초기 복제로 오므로
+	// 모든 머신이 같은 시점에 시작한다.
+	if (Params.LeadInSeconds > 0.0f)
+	{
+		GetWorldTimerManager().SetTimer(RowTimer, this, &APaintRain::BeginRows, Params.LeadInSeconds, /*bLoop=*/false);
+		return;
+	}
+
+	BeginRows();
+}
+
+void APaintRain::BeginRows()
+{
 	DropRow();
 	if (Params.RowCount > 1)
 	{
 		GetWorldTimerManager().SetTimer(RowTimer, this, &APaintRain::DropRow, FMath::Max(Params.Interval, 0.01f), /*bLoop=*/true);
 	}
+}
+
+void APaintRain::PlaceTelegraph()
+{
+	UWorld* const World = GetWorld();
+	if (!World || NextTelegraphRow > Params.RowCount)
+	{
+		GetWorldTimerManager().ClearTimer(TelegraphTimer);
+		return;
+	}
+
+	FVector Ground;
+	if (FindGroundAtRow(NextTelegraphRow, Ground))
+	{
+		if (UNiagaraComponent* const FX = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+				World, Params.TelegraphFX, Ground, FRotator::ZeroRotator))
+		{
+			FX->SetVariableLinearColor(TeamLook::NiagaraTintParameter, TeamLook::GetColor(Params.PaintId, World));
+		}
+	}
+
+	NextTelegraphRow += FMath::Max(Params.TelegraphRowStride, 1);
+	if (NextTelegraphRow > Params.RowCount)
+	{
+		GetWorldTimerManager().ClearTimer(TelegraphTimer);
+	}
+}
+
+bool APaintRain::FindGroundAtRow(int32 Row, FVector& OutPoint) const
+{
+	const UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	// 가운데 열이 중심선이다. 탄이 태어나는 높이에서 곧장 내려다본다.
+	const FVector From = FPaintRainPlan::RowPoint(Params, Row, Params.Columns / 2);
+	const FVector To = From - FVector(0.0f, 0.0f, TelegraphTraceReach);
+
+	// 스피드 스타 자국이 바닥을 찾는 방식과 같은 채널이다.
+	FCollisionQueryParams Query(SCENE_QUERY_STAT(BombardmentTelegraph), /*bTraceComplex=*/true);
+	FHitResult Hit;
+	if (!World->LineTraceSingleByChannel(Hit, From, To, ECC_Visibility, Query))
+	{
+		return false;
+	}
+
+	OutPoint = Hit.ImpactPoint;
+	return true;
 }
 
 void APaintRain::DropRow()

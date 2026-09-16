@@ -5,6 +5,7 @@
 
 #include "PaintRain.generated.h"
 
+class UNiagaraSystem;
 class UPaintballProfile;
 
 /** APaintRain 하나가 뿌리는 것. 서버가 정해 초기 복제로 모든 머신에 간다. */
@@ -44,6 +45,33 @@ struct MINTCHOCO_API FPaintRainParams
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rain", meta = (ClampMin = "0.01", ForceUnits = "s"))
 	float Interval = 0.05f;
 
+	/**
+	 * 스폰하고 첫 행이 떨어지기까지의 시간(초). 그동안 경로에 예고 표식이 순차로 놓인다.
+	 * 0이면 예고 없이 곧바로 떨어진다(예전 동작).
+	 *
+	 * 다른 파라미터와 같은 초기 복제를 타므로 모든 머신이 같은 시점에 시작한다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rain", meta = (ClampMin = "0", ForceUnits = "s"))
+	float LeadInSeconds = 0.0f;
+
+	/**
+	 * 리드인 동안 경로에 놓이는 예고 표식. 비어 있으면 표식 없이 기다리기만 한다.
+	 *
+	 * 행마다 하나씩 가운데 열 자리에, 아래로 트레이스해 지형에 얹는다. 상대도 보고 피해야
+	 * 하는 표시라 복제 액터인 여기서 낸다 — 조준 미리보기(본인 화면 전용)와는 다른 것이다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rain")
+	TObjectPtr<UNiagaraSystem> TelegraphFX;
+
+	/**
+	 * 표식을 몇 행마다 하나씩 놓을지. 1이면 행마다, 5면 다섯 행에 하나다.
+	 *
+	 * 표식 수만 줄이고 훑는 시간은 그대로다(간격이 그만큼 늘어난다). 행이 많은 맵에서 표식이
+	 * 너무 촘촘해 보일 때 띄운다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rain", meta = (ClampMin = "1"))
+	int32 TelegraphRowStride = 1;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rain")
 	TObjectPtr<const UPaintballProfile> Paintball;
 
@@ -65,6 +93,21 @@ struct MINTCHOCO_API FPaintRainPlan
 
 	/** Row(1부터)행 Column열 탄의 시작점. 열은 진행 방향의 오른쪽으로 펼쳐지고 가운데 열이 중심선이다. */
 	static FVector RowPoint(const FPaintRainParams& Params, int32 Row, int32 Column);
+
+	/**
+	 * 리드인 동안 놓이는 예고 표식의 수. Stride 행마다 하나씩이므로 행 수를 Stride로 나눠
+	 * 올린다(첫 행에는 언제나 하나 놓인다). Stride가 1 미만이면 1로 친다.
+	 */
+	static int32 TelegraphCount(int32 RowCount, int32 Stride);
+
+	/**
+	 * 예고 표식 사이의 시간(초). 마지막 표식이 놓이는 순간 첫 행이 떨어지도록 리드인을 표식
+	 * 수로 나눈다 — 표식을 띄엄띄엄 놓아도 훑기는 리드인 전체에 걸린다. 둘 중 하나가 없으면 0.
+	 */
+	static float TelegraphInterval(float LeadInSeconds, int32 TelegraphCount);
+
+	/** 액터가 살아 있어야 하는 시간(초). 리드인 + 모든 행 + 마지막 탄이 떨어질 여유. */
+	static float Lifespan(const FPaintRainParams& Params);
 };
 
 /**
@@ -95,9 +138,22 @@ protected:
 
 private:
 	void Start();
+
+	/** 첫 행을 떨어뜨리고 나머지 행의 반복 타이머를 건다. 리드인이 끝나는 시점에 불린다. */
+	void BeginRows();
+
 	void DropRow();
+
+	/** 리드인 동안 행을 하나씩 앞서 훑으며 예고 표식을 놓는다. 데디케이티드 서버는 지나간다. */
+	void PlaceTelegraph();
+
+	/** Row(1부터)행 가운데 열 아래의 지면. 못 찾으면 false — 그 행에는 표식을 놓지 않는다. */
+	bool FindGroundAtRow(int32 Row, FVector& OutPoint) const;
 
 	FTimerHandle RowTimer;
 	int32 NextRow = 1;
 	bool bStarted = false;
+
+	FTimerHandle TelegraphTimer;
+	int32 NextTelegraphRow = 1;
 };
