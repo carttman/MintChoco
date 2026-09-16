@@ -485,6 +485,9 @@ void AUnit::HandleStunTagChanged(const FGameplayTag Tag, int32 NewCount)
 	UGameAudioSubsystem::PlayAttached(
 		bStunned ? AudioTags::Audio_Unit_Stun_Begin : AudioTags::Audio_Unit_Stun_End,
 		GetRootComponent(), NAME_None, UnitData ? UnitData->Sounds.Get() : nullptr);
+	// 이펙트도 같은 이유로 각자 켠다. 태그가 곧 상태이므로 늦게 들어온 관전자도 태그 이벤트를
+	// 받는 시점부터 보게 된다.
+	UpdateStunEffects(bStunned);
 	BP_OnStunned(bStunned);
 }
 
@@ -1016,6 +1019,65 @@ void AUnit::UpdateDashEffects(bool bDashing)
 	}
 }
 
+void AUnit::UpdateStunEffects(bool bStunned)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	if (!bStunned)
+	{
+		if (StunFXComponent)
+		{
+			// 트레일과 같다. 새 스폰만 멈추고, 떠 있던 별은 제 수명대로 사라진다.
+			StunFXComponent->Deactivate();
+			StunFXComponent = nullptr;
+		}
+		return;
+	}
+
+	// 스턴은 이미 걸려 있는 동안 다시 걸리지 않지만(TryApplyStun), 태그가 겹쳐 서는 경로가
+	// 생기더라도 이펙트는 하나만 둔다.
+	if (StunFXComponent)
+	{
+		return;
+	}
+
+	const FUnitActionFeedback* Feedback = UnitData ? UnitData->FindFeedback(EUnitAction::Stun) : nullptr;
+	if (!Feedback || !Feedback->FX)
+	{
+		return;
+	}
+
+	// 머리 소켓에 붙이면 기절 자세로 고개가 숙여져도 이펙트가 머리를 따라간다. FXOffset은
+	// 그 본의 축을 타므로(머리 본은 +Z가 위가 아니다) 높이는 스켈레톤에서 소켓 위치로 잡는
+	// 편이 정확하다. 소켓이 없으면 캡슐 꼭대기에 붙는다 — 그쪽은 액터 축이라 +Z가 곧 위다.
+	USkeletalMeshComponent* const MeshComponent = GetMesh();
+	const bool bHasSocket = !Feedback->FXSocket.IsNone() && MeshComponent && MeshComponent->DoesSocketExist(Feedback->FXSocket);
+	USceneComponent* const AttachTo = bHasSocket ? static_cast<USceneComponent*>(MeshComponent) : GetRootComponent();
+	if (!AttachTo)
+	{
+		return;
+	}
+
+	FVector Offset = Feedback->FXOffset;
+	if (!bHasSocket)
+	{
+		Offset.Z += GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	}
+
+	StunFXComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		Feedback->FX,
+		AttachTo,
+		bHasSocket ? Feedback->FXSocket : NAME_None,
+		Offset,
+		FRotator::ZeroRotator,
+		EAttachLocation::KeepRelativeOffset,
+		// 트레일과 같은 이유로 자동 파괴. 스턴이 풀릴 때마다 꺼진 컴포넌트가 쌓이면 안 된다.
+		true);
+}
+
 void AUnit::PlayFeedbackMontage(const FUnitActionFeedback& Feedback)
 {
 	if (Feedback.Montage)
@@ -1212,6 +1274,35 @@ void AUnit::SetBoardShown(bool bShown)
 	bBoardShown = bShown;
 	UpdateBoardVisibility();
 	UpdateBoardLoopSound();
+}
+
+void AUnit::SetMeshLean(float RollDegrees)
+{
+	USkeletalMeshComponent* const MeshComponent = GetMesh();
+	if (!MeshComponent || FMath::IsNearlyEqual(RollDegrees, MeshLeanDegrees, 1e-3f))
+	{
+		return;
+	}
+
+	// 기준은 처음 기울일 때 한 번 잡는다. 기울이는 동안 캐릭터의 기준 회전도 같이 바뀌므로, 매번 다시
+	// 읽으면 기울기가 쌓인다.
+	if (!bMeshRestCaptured)
+	{
+		MeshRestRotation = GetBaseRotationOffset();
+		bMeshRestCaptured = true;
+	}
+	MeshLeanDegrees = RollDegrees;
+
+	// 캡슐의 앞 축(X)을 중심으로 굴린다. 메시의 기준 회전(보통 요 -90)보다 바깥에서 곱해야 메시 축이 아니라
+	// 캐릭터 축으로 기운다. 양의 롤은 앞을 보며 시계 방향이라 머리가 오른쪽(+Y)으로 간다.
+	const FQuat Leaned = FRotator(0.0f, 0.0f, RollDegrees).Quaternion() * MeshRestRotation;
+
+	// 네트워크 스무딩(다른 클라이언트의 폰, 리슨 서버의 원격 폰)은 매 틱 메시 상대 회전을
+	// "스무딩 오프셋 × GetBaseRotationOffset"으로 다시 쓴다. 기준도 함께 바꿔야 기울기가 덮이지 않는다.
+	// 지금 걸려 있는 스무딩 오프셋은 그대로 보존한다.
+	const FQuat SmoothingOffset = MeshComponent->GetRelativeRotation().Quaternion() * GetBaseRotationOffset().Inverse();
+	CacheInitialMeshOffset(GetBaseTranslationOffset(), Leaned.Rotator());
+	MeshComponent->SetRelativeRotation(SmoothingOffset * Leaned);
 }
 
 void AUnit::UpdateBoardLoopSound()

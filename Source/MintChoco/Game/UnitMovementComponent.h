@@ -9,6 +9,35 @@
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnDashStateChanged, bool /*bDashing*/);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnSpeedBoostStateChanged, bool /*bBoosting*/);
 
+/**
+ * 보드를 탈 때 몸통 요가 카메라 요를 따라가는 각속도 제어기. 월드 없이 테스트한다.
+ *
+ * 카메라는 마우스를 따라 곧바로 돌고 몸통은 이 제어기로 쫓아간다. 뒤처진 차이가 크면 MaxYawRate까지
+ * 빨리, 가까워질수록 차이에 비례해(ConvergeRate) 느리게 돈다. 그래도 MinYawRate 밑으로는 줄지 않아
+ * 유한 시간에 정확히 맞춘다. 각속도 자체도 AccelInterpSpeed로 목표 각속도에 다가가므로 차이가 생긴
+ * 순간 튀지 않고, 멈춘 목표를 지나치지 않는다.
+ */
+struct MINTCHOCO_API FBoardTurn
+{
+	/** 최대 각속도(도/초). */
+	float MaxYawRate = 360.0f;
+
+	/** 최소 각속도(도/초). 목표 근처에서도 이 속도로는 돌아 끝없이 어긋나 있지 않는다. */
+	float MinYawRate = 30.0f;
+
+	/** 뒤처진 차이 1도당 목표 각속도(1/초). 4면 90도 뒤처졌을 때 360도/초. */
+	float ConvergeRate = 4.0f;
+
+	/** 각속도가 목표 각속도로 다가가는 속도(FInterpTo). 0이면 곧바로 목표 각속도. */
+	float AccelInterpSpeed = 10.0f;
+
+	/**
+	 * 한 스텝. 새 요(도, -180..180)를 돌려주고 InOutYawRate(도/초, 오른쪽이 +)를 갱신한다.
+	 * 목표에 닿으면 정확히 그 요를 돌려주고, 차이가 없는 다음 스텝에서 각속도는 0이 된다.
+	 */
+	double Step(double CurrentYaw, double TargetYaw, float& InOutYawRate, float DeltaTime) const;
+};
+
 /** 히어로 랜딩의 단계. None이 아니면 입력이 막히고 무브먼트가 캐릭터를 끌고 간다. */
 UENUM(BlueprintType)
 enum class EHeroLandingPhase : uint8
@@ -151,7 +180,12 @@ public:
 	 */
 	virtual void Launch(const FVector& LaunchVelocity) override;
 
-	/** ShouldFaceControlRotation이 참일 때만 엔진의 컨트롤 회전 추종을 돌린다. 거짓이면 몸통을 건드리지 않는다. */
+	/**
+	 * ShouldFaceControlRotation이 참일 때만 몸통을 컨트롤 요로 돌린다. 거짓이면 몸통을 건드리지 않는다.
+	 *
+	 * 평소에는 엔진의 등각속도 추종(RotationRate)이다. 대시(보드) 중에는 FBoardTurn 제어기로 돌고,
+	 * 대시가 끝난 뒤에도 몸이 아직 따라가는 중이면 제어기가 끝까지 데려간다.
+	 */
 	virtual void PhysicsRotation(float DeltaTime) override;
 
 	/**
@@ -281,6 +315,28 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash", meta = (ClampMin = "1.0"))
 	float DashSpeedMultiplier = 1.7f;
 
+	/**
+	 * 보드(대시) 중 몸통이 카메라를 따라 도는 최대 각속도(도/초). 뒤처진 차이가 클 때 이 속도까지
+	 * 올라간다. 카메라 자체는 마우스를 따라 곧바로 돈다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash|Board Turn", meta = (ClampMin = "1"))
+	float BoardMaxYawRate = 360.0f;
+
+	/** 보드 중 최소 각속도(도/초). 목표 근처에서도 이 속도로 돌아 끝없이 어긋나 있지 않는다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash|Board Turn", meta = (ClampMin = "0"))
+	float BoardMinYawRate = 30.0f;
+
+	/** 뒤처진 차이 1도당 목표 각속도(1/초). 4면 90도 뒤처졌을 때 최대이고, 가까워질수록 느려진다. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash|Board Turn", meta = (ClampMin = "0"))
+	float BoardConvergeRate = 4.0f;
+
+	/** 각속도가 목표 각속도로 다가가는 속도(FInterpTo). 작을수록 출발과 멈춤이 무르다. 0이면 곧바로. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash|Board Turn", meta = (ClampMin = "0"))
+	float BoardYawAccelInterpSpeed = 10.0f;
+
+	/** 지금 보드 제어기의 각속도(도/초, 오른쪽이 +). 보드로 돌고 있지 않으면 0. */
+	float GetBoardYawRate() const { return BoardYawRate; }
+
 private:
 	friend class FSavedMove_Unit;
 
@@ -317,6 +373,15 @@ private:
 	FVector HeroApproachPoint = FVector::ZeroVector;
 
 	FHeroLandingParams HeroParams;
+
+	/**
+	 * 보드 제어기의 각속도(도/초). 소유자와 서버가 각자 PhysicsRotation에서 굴린다. 회전은 서버가 보정하지
+	 * 않는 값이라 무브에 싣지 않는다.
+	 */
+	float BoardYawRate = 0.0f;
+
+	/** 설정값으로 보드 제어기를 만든다. */
+	FBoardTurn MakeBoardTurn() const;
 
 	/** 서버가 클라이언트의 부스트 플래그를 인정해도 되는지 유닛에게 묻는다. 유닛이 아니면 항상 참. */
 	bool IsSpeedBoostAllowed() const;
