@@ -15,6 +15,14 @@ FVector UHoneyBalloonProfile::GetThrowOrigin(const AUnit& Unit, const FVector& D
 	return Unit.GetPawnViewLocation() + Direction * ThrowOffset;
 }
 
+FPaintBurstParams UHoneyBalloonProfile::MakeBurstParams(uint8 PaintId, int32 Seed) const
+{
+	FPaintBurstParams Params = Burst;
+	Params.PaintId = PaintId;
+	Params.Seed = Seed;
+	return Params;
+}
+
 float UHoneyBalloonProfile::GetProjectileRadius() const
 {
 	const AHoneyBalloonProjectile* const Defaults = ProjectileClass ? ProjectileClass->GetDefaultObject<AHoneyBalloonProjectile>() : nullptr;
