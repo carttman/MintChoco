@@ -121,13 +121,19 @@ Every item here cost real debugging time once. Read before any MCP write.
   ComponentMask, FunctionOutput) are addressed as `"None"` in `connect_expressions`.
   `MaterialTools.get_expressions`/`recompile` and `MaterialInstanceTools.list_parameters` take
   `material_or_function` / `material`.
-- `get_expression_inputs` mislabels a multi-output source: it prints the first output's name
-  whatever the wire really uses. The truth is the raw `outputIndex` in
-  `ObjectTools.get_properties(..., ["Inputs"])` on a Custom node. `connect_expressions` **by
-  output name does land correctly**; only the read is unreliable. Its unwired pins come back
-  with `expression` as the **string** `"None"`, so test `str(ex) == "None"`, not `is None`.
-  Make/Break pins are `FExpressionInput`s that `ObjectTools.get_properties` cannot read; verify
-  wiring with `get_expression_inputs`.
+- `get_expression_inputs` mislabels a multi-output source, and the rule is narrower than it
+  looks: **when several input pins of one node read the same multi-output source, every one of
+  them reports the first such pin's output name.** A node with only one pin from that source
+  reports it correctly. So on a slab fed five times by one `BreakMaterialAttributes` every pin
+  reads `Normal` (the first of the five), while the `Multiply` next to it, with a single Break
+  pin, reads `ClearCoat` truthfully — same source, same session. Read a suspicious pin by
+  disconnecting its siblings first: the name corrects itself immediately, which is also the
+  cheapest way to prove a wire landed where you meant. `connect_expressions` **by output name
+  does land correctly**; only the read is unreliable. Its unwired pins come back with
+  `expression` as the **string** `"None"`, so test `str(ex) == "None"`, not `is None`.
+  Make/Break pins are `FExpressionInput`s that `ObjectTools.get_properties` cannot read — and
+  neither are a `Multiply`'s `A`/`B`, so there is no property route to the truth on an ordinary
+  node; verify wiring with `get_expression_inputs` and the sibling trick above.
 - A fresh Custom node already holds one unnamed input. Appending a Custom node input triggers an
   automatic compile that fails with "missing input N" until the pin is wired; only the
   recompile after wiring counts. Setting a call node's `MaterialFunction` through `ObjectTools`

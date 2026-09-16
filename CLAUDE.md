@@ -94,7 +94,12 @@ Tangent); `CustomizedUVs` and WPO are vertex-frequency. The looks also borrow `C
 since Substrate ignores those pins. Height is read through a cubic B-spline that also returns
 its analytic slope (`MF_PaintHeightField` → `MF_PaintNormal`), never a finite difference, and its
 width never drops below one texel. Look style (coat / fuzz / roughness / flow) is
-`MPC_PaintStyle`, driven by `mc.Paint.Style`. Everything else: `docs/Traps.md`.
+`MPC_PaintStyle`, driven by `mc.Paint.Style`, and no material reads that collection by hand:
+every paint and ink surface runs its coat, fuzz and roughness through `MF_PaintStyle`, whose
+outputs are already scaled and whose output order is load-bearing like `MF_TeamLook`'s. A
+team-tinted material outside the look (graybox, a test asset) opts out with a `PaintStyleExempt`
+scalar. Tests: `MintChoco.Paint.Materials.LookStyle` catches a material that skipped the function,
+`.LookStyleCollection` catches a collection entry nothing reads. Everything else: `docs/Traps.md`.
 
 ## Gameplay systems in one line each
 
