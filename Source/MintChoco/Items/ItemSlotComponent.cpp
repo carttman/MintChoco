@@ -578,6 +578,31 @@ void UItemSlotComponent::ApplySpeedBoost(bool bEnabled)
 	}
 }
 
+void FItemAuraStack::Push(const FGameplayTag& Tag, UMaterialInterface* Material)
+{
+	if (!Material)
+	{
+		return;
+	}
+
+	// 같은 태그가 이미 켜져 있으면 한 칸만 차지하게 지우고 맨 뒤로 다시 넣는다.
+	Pop(Tag);
+
+	FItemAuraEntry& Entry = Entries.AddDefaulted_GetRef();
+	Entry.Tag = Tag;
+	Entry.Material = Material;
+}
+
+void FItemAuraStack::Pop(const FGameplayTag& Tag)
+{
+	Entries.RemoveAll([&Tag](const FItemAuraEntry& Entry) { return Entry.Tag == Tag; });
+}
+
+UMaterialInterface* FItemAuraStack::Top() const
+{
+	return Entries.IsEmpty() ? nullptr : Entries.Last().Material;
+}
+
 void UItemSlotComponent::StartEffectFeedback(const UItemProfile& Item, const FGameplayTag& Tag)
 {
 	if (GetNetMode() == NM_DedicatedServer)
@@ -597,12 +622,16 @@ void UItemSlotComponent::StartEffectFeedback(const UItemProfile& Item, const FGa
 		UGameAudioSubsystem::PlayAttached(AudioTags::Audio_Item_Activate, AttachTo, NAME_None, Item.Sounds);
 	}
 
+	// 오라를 정하지 않은 아이템이면 Push가 아무 일도 하지 않으므로 남의 오라가 그대로 남는다.
+	AuraStack.Push(Tag, Item.AuraMaterial);
+	UpdateAura();
+
 	// 갱신(같은 아이템 재사용)은 태그 수가 1에서 1로 머물러 여기까지 오지 않는다. 그래도
 	// 이미 켜진 것이 있으면 겹치지 않게 그대로 둔다.
 	if (Item.ActivateFX && !EffectComponents.Contains(Tag))
 	{
 		UNiagaraComponent* const FX = UNiagaraFunctionLibrary::SpawnSystemAttached(
-			Item.ActivateFX, AttachTo, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator,
+			Item.ActivateFX, AttachTo, NAME_None, Item.ActivateFXOffset, FRotator::ZeroRotator,
 			FVector(Item.ActivateFXScale), EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true,
 			ENCPoolMethod::None);
 		if (FX)
@@ -614,6 +643,9 @@ void UItemSlotComponent::StartEffectFeedback(const UItemProfile& Item, const FGa
 
 void UItemSlotComponent::StopEffectFeedback(const FGameplayTag& Tag)
 {
+	AuraStack.Pop(Tag);
+	UpdateAura();
+
 	TObjectPtr<UNiagaraComponent> FX;
 	if (EffectComponents.RemoveAndCopyValue(Tag, FX) && FX)
 	{
@@ -623,6 +655,20 @@ void UItemSlotComponent::StopEffectFeedback(const FGameplayTag& Tag)
 	// 효과가 끝나면(스턴으로 끊긴 경우 포함) 자세 클립도 내려가므로 구간 소리는 노티파이가 끄지만,
 	// 블렌드 아웃 중에 다른 자세로 덮이는 등 NotifyEnd가 늦거나 빠지는 경우를 여기서 막는다.
 	StopAllAnimationSounds(0.1f);
+}
+
+void UItemSlotComponent::UpdateAura()
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	const ACharacter* const Character = Cast<ACharacter>(GetOwner());
+	if (USkeletalMeshComponent* const Mesh = Character ? Character->GetMesh() : nullptr)
+	{
+		Mesh->SetOverlayMaterial(AuraStack.Top());
+	}
 }
 
 void UItemSlotComponent::MulticastSpinnerShot_Implementation(const UPaintGunProfile* Volley, const FPaintShot& Shot)

@@ -40,6 +40,10 @@ namespace
 	const FName PaintIdMapParam(TEXT("PaintIdMap"));
 	const FName PaintTexelSizeParam(TEXT("PaintTexelSize"));
 	const FName PaintDistRangeParam(TEXT("PaintDistRange"));
+	/** Paint thickness in world cm. Derived from the material, never authored here: see SetPaintHeight. */
+	const FName PaintMaxHeightParam(TEXT("PaintMaxHeight"));
+	/** World size of one paint texel, so the height read can filter by a length instead of a texel count. */
+	const FName PaintTexelCmParam(TEXT("PaintTexelCm"));
 	const FName PositionMapParam(TEXT("PositionMap"));
 	const FName BoundsMinParam(TEXT("BoundsMin"));
 	const FName BoundsSizeParam(TEXT("BoundsSize"));
@@ -67,6 +71,17 @@ namespace
 			}
 		}
 		return Result.IsEmpty() ? TEXT("none") : Result;
+	}
+
+	/**
+	 * Nanite scales a material's 0..1 displacement by DisplacementScaling.Magnitude, so that
+	 * magnitude is the paint's thickness in world cm. The shading normal slopes a texel by the
+	 * same number, so it is read back from the material instead of being authored twice: the two
+	 * copies drifted apart before, and a normal steeper than the silhouette reads as sparkle.
+	 */
+	void SetPaintHeight(UMaterialInstanceDynamic& SurfaceMID, const UMaterialInterface& BaseMaterial)
+	{
+		SurfaceMID.SetScalarParameterValue(PaintMaxHeightParam, BaseMaterial.GetDisplacementScaling().Magnitude);
 	}
 }
 
@@ -210,6 +225,9 @@ void UPaintableComponent::BeginPlay()
 	SurfaceMID->SetScalarParameterValue(PaintTexelSizeParam, 1.0f / Layout.AtlasSize);
 	// The reads decode the brush's distance encoding, so both sides must agree on its range.
 	SurfaceMID->SetScalarParameterValue(PaintDistRangeParam, PaintDistanceRange);
+	SetPaintHeight(*SurfaceMID, *BaseMaterial);
+	// The height read filters by a world length, so a coarsened atlas reads like a fine one.
+	SurfaceMID->SetScalarParameterValue(PaintTexelCmParam, Layout.TexelCm);
 	// The reader normalizes the pixel's local position with these and differentiates the position
 	// atlas in unscaled local space, letting the Local -> World transform apply the scale.
 	SurfaceMID->SetVectorParameterValue(BoundsMinParam, FLinearColor(MeshLocalBounds.Min));

@@ -9,6 +9,7 @@
 
 class UAnimSequenceBase;
 class UItemAbility;
+class UMaterialInterface;
 class UNiagaraSystem;
 class UStaticMesh;
 class USoundBank;
@@ -115,6 +116,27 @@ public:
 	/** ActivateFX가 붙을 때의 균일 배율. 1이 에셋 원래 크기다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect", meta = (ClampMin = "0.01"))
 	float ActivateFXScale = 1.0f;
+
+	/**
+	 * ActivateFX가 붙을 위치(캐릭터 메시 기준, cm). 0이면 메시 원점이고, 캐릭터 메시는 원점이
+	 * 발밑이라 기본값이 곧 발치다. Z를 올리면 몸통이나 머리 위에 뜬다.
+	 *
+	 * 소켓이 아니라 고정 오프셋이다: 효과 중에 몸이 어떤 자세를 잡든 이펙트는 같은 자리에 있는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect", meta = (ForceUnits = "cm"))
+	FVector ActivateFXOffset = FVector::ZeroVector;
+
+	/**
+	 * 효과가 도는 동안 캐릭터 메시에 씌우는 오라(Overlay Material). 비어 있으면 오라가 없다.
+	 *
+	 * ActivateFX와 같은 이유로 여기 있다: 두 캐릭터가 같은 연출을 쓰고, 어느 아이템이 오라를
+	 * 갖는지는 코드의 분기가 아니라 이 칸이 찼는지로 정해진다.
+	 *
+	 * 스켈레탈 메시 용도(bUsedWithSkeletalMesh)가 없는 머티리얼은 엔진이 조용히 버린다
+	 * (FSkeletalMeshSceneProxy). 출하 에셋은 FItemProfileAssetTest가 지킨다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect")
+	TObjectPtr<UMaterialInterface> AuraMaterial;
 
 	/**
 	 * 조준 중(IsAimingItem) 손에 들려 보이는 메시. 비어 있으면 아무것도 들지 않는다.

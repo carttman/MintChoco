@@ -9,7 +9,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
 #include "NiagaraComponent.h"
-#include "NiagaraSystem.h"
+#include "NiagaraFunctionLibrary.h"
 #include "TimerManager.h"
 
 #include "Audio/AudioGameplayTags.h"
@@ -67,24 +67,6 @@ AItemPickup::AItemPickup()
 	Laser->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Laser->SetGenerateOverlapEvents(false);
 	Laser->SetCastShadow(false);
-
-	// 기둥은 활성이 되는 순간 StartPillar가 직접 켠다. 자동 활성이면 템플릿이 비어 있어도
-	// 켜지려 들고, 예고 상태와 데디케이티드 서버에서까지 돈다(돔의 거품과 같은 규칙).
-	Pillar = CreateDefaultSubobject<UNiagaraComponent>(TEXT("Pillar"));
-	Pillar->SetupAttachment(RootComponent);
-	Pillar->bAutoActivate = false;
-	// 액터가 사라질 때 같이 사라져야 한다. 스스로 정리하면 두 번 죽는다.
-	Pillar->SetAutoDestroy(false);
-	Pillar->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	Pillar->SetGenerateOverlapEvents(false);
-
-	// 반짝임도 기둥과 같은 규칙이다: StartBoxSparkle이 직접 켠다.
-	BoxSparkle = CreateDefaultSubobject<UNiagaraComponent>(TEXT("BoxSparkle"));
-	BoxSparkle->SetupAttachment(RootComponent);
-	BoxSparkle->bAutoActivate = false;
-	BoxSparkle->SetAutoDestroy(false);
-	BoxSparkle->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	BoxSparkle->SetGenerateOverlapEvents(false);
 
 	// 스크린 공간이라 카메라를 따로 보지 않아도 늘 정면이고 글자 크기가 거리와 무관하다.
 	Label = CreateDefaultSubobject<UWidgetComponent>(TEXT("Label"));
@@ -218,9 +200,6 @@ void AItemPickup::OnRep_Collected()
 	UpdateMotionEnabled();
 	if (bCollected)
 	{
-		// 숨기면 자식도 같이 안 보이지만, 예약된 타이머까지 걷으려면 여기서 직접 끈다.
-		StopPillar();
-		StopBoxSparkle();
 		SetActorHiddenInGame(true);
 		// 서버는 OnTriggerBeginOverlap이 직접 부르고 클라이언트는 복제로 온다: 머신마다 한 번.
 		UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_Item_Pickup, GetActorLocation(), Profile ? Profile->Sounds.Get() : nullptr);
@@ -275,6 +254,7 @@ void AItemPickup::ApplyState()
 	{
 		Mesh->SetVisibility(bActive);
 	}
+	UpdateAura(bActive);
 	if (Laser)
 	{
 		Laser->SetVisibility(!bActive);
@@ -286,68 +266,43 @@ void AItemPickup::ApplyState()
 	}
 	UpdateMotionEnabled();
 
-	if (bActive)
-	{
-		StartPillar();
-		StartBoxSparkle();
-	}
-
 	BP_OnStateChanged(State);
 }
 
-void AItemPickup::StartPillar()
+void AItemPickup::UpdateAura(bool bActive)
 {
-	UWorld* const World = GetWorld();
-	if (bPillarStarted || !Pillar || !PillarTemplate || !World || World->GetNetMode() == NM_DedicatedServer)
+	if (GetNetMode() == NM_DedicatedServer)
 	{
 		return;
 	}
-	bPillarStarted = true;
 
-	Pillar->SetAsset(PillarTemplate);
-	Pillar->Activate(true);
-
-	if (PillarSeconds > 0.0f)
+	if (!bActive || !AuraFX)
 	{
-		World->GetTimerManager().SetTimer(PillarTimer, this, &AItemPickup::StopPillar, PillarSeconds, /*bLoop=*/false);
+		if (AuraFXComponent)
+		{
+			// 대시 트레일과 같다. 새 스폰만 멈추고 떠 있던 입자는 제 수명대로 사라진다.
+			// 습득은 이 경로가 아니다: 그쪽은 액터를 통째로 숨기므로(OnRep_Collected) 오라도 같이 걷힌다.
+			AuraFXComponent->Deactivate();
+			AuraFXComponent = nullptr;
+		}
+		return;
 	}
-}
 
-void AItemPickup::StopPillar()
-{
-	if (UWorld* const World = GetWorld())
-	{
-		World->GetTimerManager().ClearTimer(PillarTimer);
-	}
-	if (Pillar)
-	{
-		// DeactivateImmediate가 아니다. 스폰만 멈추고 떠 있는 입자는 제 수명대로 옅어진다.
-		Pillar->Deactivate();
-	}
-}
-
-void AItemPickup::StartBoxSparkle()
-{
-	const UWorld* const World = GetWorld();
-	if (bBoxSparkleStarted || !BoxSparkle || !BoxSparkleTemplate || !World || World->GetNetMode() == NM_DedicatedServer)
+	if (AuraFXComponent)
 	{
 		return;
 	}
-	bBoxSparkleStarted = true;
 
-	// 상자 메시는 흔들리지만 반짝임은 제자리에 둔다. 메시를 따라 붙이면 반짝임까지 같이 출렁인다.
-	BoxSparkle->SetRelativeLocation(FVector(0.0f, 0.0f, BoxSparkleHeight));
-	BoxSparkle->SetAsset(BoxSparkleTemplate);
-	BoxSparkle->Activate(true);
-}
-
-void AItemPickup::StopBoxSparkle()
-{
-	if (BoxSparkle)
-	{
-		// 기둥과 같다: 스폰만 멈추고 떠 있는 입자는 제 수명대로 옅어진다.
-		BoxSparkle->Deactivate();
-	}
+	// 메시에 붙인다. 박스가 떠다니고 도는 것을 오라가 그대로 따라간다.
+	AuraFXComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		AuraFX,
+		Mesh,
+		NAME_None,
+		FVector::ZeroVector,
+		FRotator::ZeroRotator,
+		EAttachLocation::SnapToTarget,
+		// Deactivate 뒤 남은 입자가 다 사라지면 스스로 정리된다.
+		true);
 }
 
 void AItemPickup::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,

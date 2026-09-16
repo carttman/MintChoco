@@ -93,10 +93,16 @@ The paint buffer is a procedural planar atlas: one island per enabled local dire
 from the pixel's local normal, so paint only shows on kept directions; anything else, and any
 non-paintable static mesh, gets a transient side-splat decal. Stamps and the cell grid are in
 the scaled-local frame (world cm). Paint thickness is `DisplacementScaling.Magnitude` in world
-cm and must equal `PaintMaxHeight`. Nanite tessellation is on by default in 5.8; displacement
+cm and is the only knob: `UPaintableComponent` derives the shader's `PaintMaxHeight` from it.
+Nanite tessellation is on by default in 5.8; displacement
 follows the vertex normal and never recomputes shading normals. Per-pixel data through the
 layer stack rides pixel attributes only (Anisotropy, Refraction.rg, PixelDepthOffset, Opacity,
-Tangent); `CustomizedUVs` and WPO are vertex-frequency. Everything else: `docs/Traps.md`.
+Tangent); `CustomizedUVs` and WPO are vertex-frequency. The looks also borrow `ClearCoat`,
+`ClearCoatRoughness` and `AmbientOcclusion` for `FuzzAmount` / `FuzzRoughness` / `SSSMFPScale`,
+since Substrate ignores those pins. Height is read through a cubic B-spline that also returns
+its analytic slope (`MF_PaintHeightField` → `MF_PaintNormal`), never a finite difference, and its
+width never drops below one texel. Look style (coat / fuzz / roughness / flow) is
+`MPC_PaintStyle`, driven by `mc.Paint.Style`. Everything else: `docs/Traps.md`.
 
 ## Gameplay systems in one line each
 

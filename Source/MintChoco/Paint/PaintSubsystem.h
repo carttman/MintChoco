@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Paint/PaintCellGrid.h"
 #include "Paint/PaintIslandLayout.h"
+#include "Paint/PaintLookStyle.h"
 #include "Paint/PaintSplat.h"
 #include "Paint/PaintStar.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -112,6 +113,14 @@ public:
 
 	TArray<UPaintableComponent*> GetPaintables() const;
 
+	const FPaintLookStyle& GetLookStyle() const { return LookStyle; }
+
+	/**
+	 * Keeps the look scalars and pushes them to every surface at once. A surface that begins
+	 * play later reads them back on its own, so a sweep set before a level loads still lands.
+	 */
+	void SetLookStyle(const FPaintLookStyle& Style);
+
 	/**
 	 * Hands back the atlas for this mesh and layout, baking it on a worker thread first if no
 	 * surface has asked for it yet. OnReady fires on the game thread, right away for a cached
@@ -184,4 +193,6 @@ private:
 	TMap<int32, TObjectPtr<UTextureRenderTarget2D>> ScratchTargets;
 
 	FPaintStarShaderState StarPaint;
+
+	FPaintLookStyle LookStyle;
 };

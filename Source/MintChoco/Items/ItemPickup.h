@@ -97,43 +97,18 @@ protected:
 	TObjectPtr<UStaticMeshComponent> Laser;
 
 	/**
-	 * "여기 아이템이 새로 생겼다"고 알리는 빛 기둥. 활성이 되는 순간 켜지고 PillarSeconds 뒤에 꺼진다.
+	 * 활성 상태의 박스에 붙는 오라. 비어 있으면 오라가 없다.
 	 *
-	 * Laser와 다른 것이다: Laser는 나타나기 **전** 예고이고, 이쪽은 나타난 **뒤** 표시다.
-	 * 연출뿐이라 데디케이티드 서버에서는 켜지 않는다.
+	 * 메시에 붙으므로 박스가 떠다니고 도는 것을 그대로 따라간다. 상태는 복제되므로 모든
+	 * 머신에서 같이 켜지고 꺼진다. 아이템 종류와 무관하게 같은 오라라 프로필이 아니라
+	 * 클래스 디폴트에 둔다.
 	 */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Pillar")
-	TObjectPtr<UNiagaraComponent> Pillar;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
+	TObjectPtr<UNiagaraSystem> AuraFX;
 
-	/** 빛 기둥 이펙트. 비어 있으면 기둥 없이 아이템만 나온다. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Pillar")
-	TObjectPtr<UNiagaraSystem> PillarTemplate;
-
-	/**
-	 * 기둥이 서 있는 시간(초). 0 이하면 아이템이 사라질 때까지 계속 선다.
-	 *
-	 * **색은 아이템마다 나누지 않는다.** 놓이는 것은 무작위 상자이고 무엇이 들었는지는 먹은 뒤에야
-	 * 정해져 보이므로(룰렛), 기둥 색이 내용물을 알려주면 룰렛이 무의미해진다.
-	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Pillar", meta = (ClampMin = "0", ForceUnits = "s"))
-	float PillarSeconds = 5.0f;
-
-	/**
-	 * 상자 둘레에서 계속 도는 반짝임. 아이템이 나오는 순간 켜지고 누가 가져갈 때 꺼진다.
-	 *
-	 * 기둥과 달리 시간 제한이 없다: 상자가 거기 있는 동안 내내 돈다. 연출뿐이라
-	 * 데디케이티드 서버에서는 켜지 않는다.
-	 */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Sparkle")
-	TObjectPtr<UNiagaraComponent> BoxSparkle;
-
-	/** 반짝임 이펙트. 비어 있으면 반짝임 없이 상자만 나온다. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Sparkle")
-	TObjectPtr<UNiagaraSystem> BoxSparkleTemplate;
-
-	/** 반짝임이 도는 높이(cm). 상자 메시(Z +60)를 감싸게 맞춘다. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Sparkle", meta = (ForceUnits = "cm"))
-	float BoxSparkleHeight = 60.0f;
+	/** 그 오라. 지속되는 이펙트라 상태가 풀릴 때 직접 꺼야 하므로 들고 있는다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> AuraFXComponent;
 
 	/** 아이템 위에 뜨는 디버그 이름표(스크린 공간). PIE에서 bShowLabel이 켜져 있고 활성 상태일 때만 보인다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Label")
@@ -180,24 +155,15 @@ protected:
 private:
 	void ApplyProfile();
 	void ApplyState();
+
+	/** 활성 상태에 맞춰 오라를 켜고 끈다. 데디케이티드 서버는 지나간다. */
+	void UpdateAura(bool bActive);
 	void Activate();
 	void UpdateLabel();
 	bool IsLabelEnabled() const;
 
 	/** 활성이고 아직 아무도 가져가지 않았을 때만 틱(연출)이 돈다. */
 	void UpdateMotionEnabled();
-
-	/** 빛 기둥을 켜고 끌 시각을 예약한다. 그릴 머신에서만, 활성이 되는 순간 한 번. */
-	void StartPillar();
-
-	/** 기둥을 끈다. PillarSeconds가 지났거나 누가 가져갔을 때. */
-	void StopPillar();
-
-	/** 상자 둘레의 반짝임을 켠다. 그릴 머신에서만, 활성이 되는 순간 한 번. */
-	void StartBoxSparkle();
-
-	/** 반짝임을 끈다. 누가 가져갔을 때. */
-	void StopBoxSparkle();
 
 	UFUNCTION()
 	void OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
@@ -207,13 +173,6 @@ private:
 	TWeakObjectPtr<AItemSpawnPoint> SpawnPoint;
 
 	FTimerHandle ActivateTimer;
-	FTimerHandle PillarTimer;
-
-	/** 기둥을 이미 한 번 켰는지. ApplyState는 여러 번 불리므로(BeginPlay, OnRep) 여기서 거른다. */
-	bool bPillarStarted = false;
-
-	/** 반짝임을 이미 한 번 켰는지. 기둥과 같은 이유. */
-	bool bBoxSparkleStarted = false;
 
 	/** 연출 시계(초)와 BP가 정한 메시의 기준 상대 트랜스폼. BeginPlay에서 읽는다. */
 	float MotionTime = 0.0f;

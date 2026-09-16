@@ -171,6 +171,24 @@ Every item here cost real debugging time once. Read before any MCP write.
   code (`M_PP_LookStylize`). Before the tonemapper, PostProcessInput0 arrives divided by
   pre-exposure and the emissive output is multiplied back, so colour ratios are exposure-safe; an
   `EyeAdaptation` node gives the exposure scale.
+- A Custom node's `AdditionalOutputs` and `AdditionalDefines` **are** writable through
+  `ObjectTools.set_properties` (`{"OutputName", "OutputType"}` / `{"DefineName", "DefineValue"}`),
+  and the extra outputs show up in `get_expression_output_names` right away. That is the way to
+  return a value and its analytic derivative from one kernel instead of evaluating it twice.
+- Adding a `FunctionInput` or `FunctionOutput` leaves every existing call node's pins stale, and
+  the next compile fails with "Failed to compile Material" on each master. Re-set the call node's
+  `MaterialFunction` through `ObjectTools` to refresh its pins, then wire the new ones.
+- A **Custom node code change does not reach anything already rendering**, not even after
+  `recompile` plus a fresh PIE session - the captures come back pixel-identical. Save and restart
+  the editor. Budget for it: iterating on Custom HLSL is one restart per attempt.
+- `EditorAppToolset.CaptureViewport` requires `captureTransform` **and** `annotations` even though
+  the schema shows them as optional; over HTTP pass them as explicit `null`, which is also what
+  makes it capture the running Simulate view rather than the editor world.
+- Driving the server from PowerShell over HTTP is the only way to get a capture out without the
+  base64 crossing the tool result: POST `initialize` to `http://127.0.0.1:8000/mcp`, keep the
+  `Mcp-Session-Id` header, POST `notifications/initialized`, then `tools/call`. Read the SSE
+  `data:` lines, pull `result.content[0].text`, and write `returnValue.image.data` straight to a
+  PNG. Restarting the editor expires the session, so drop the cached id with it.
 - A `VectorParameter`'s default output is `RGB`; a Custom input that reads `.w` needs
   `from_output_name: "RGBA"`. `DynamicParameter` outputs are `Param1..Param4`, `RGB`, `RGBA`; the
   first wire into a freshly created Custom node input can fail and succeed on a retry.

@@ -9,6 +9,8 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
+#include "Kismet/KismetMaterialLibrary.h"
+#include "Materials/MaterialParameterCollection.h"
 #include "Tasks/Task.h"
 
 #include "Audio/AudioGameplayTags.h"
@@ -23,6 +25,47 @@
 #include "Paint/PaintableComponent.h"
 #include "Screen/ScreenFadeSubsystem.h"
 #include "Weapons/PaintProjectile.h"
+
+namespace
+{
+	/**
+	 * Takes the style scalars positionally and leaves anything not given at its current value, so
+	 * a sweep can change one axis per line. With no arguments it only prints what is set.
+	 */
+	/** The two MPC_PaintStyle entries: Style packs the look, Style2 carries what did not fit. */
+	const FName StylePackedParameter(TEXT("Style"));
+	const FName StyleExtraParameter(TEXT("Style2"));
+
+	void PaintStyleCommand(const TArray<FString>& Args, UWorld* World)
+	{
+		UPaintSubsystem* const Paint = World ? World->GetSubsystem<UPaintSubsystem>() : nullptr;
+		if (!Paint)
+		{
+			UE_LOG(LogPaint, Warning, TEXT("mc.Paint.Style: 페인트 서브시스템이 없는 월드다."));
+			return;
+		}
+
+		FPaintLookStyle Style = Paint->GetLookStyle();
+		float* const Fields[] = {
+			&Style.CoatScale, &Style.FuzzScale, &Style.RoughnessBias, &Style.Flow, &Style.NormalStrength};
+		const int32 Given = FMath::Min(Args.Num(), static_cast<int32>(UE_ARRAY_COUNT(Fields)));
+		for (int32 Index = 0; Index < Given; ++Index)
+		{
+			*Fields[Index] = FCString::Atof(*Args[Index]);
+		}
+		if (Given > 0)
+		{
+			Paint->SetLookStyle(Style);
+		}
+		UE_LOG(LogPaint, Log, TEXT("mc.Paint.Style coat=%.2f fuzz=%.2f rough=%.2f flow=%.2f normal=%.2f"),
+			Style.CoatScale, Style.FuzzScale, Style.RoughnessBias, Style.Flow, Style.NormalStrength);
+	}
+
+	FAutoConsoleCommandWithWorldAndArgs GPaintStyleCommand(
+		TEXT("mc.Paint.Style"),
+		TEXT("페인트 표면의 룭 스칼라를 바꿄다: <coat 0..1> <fuzz 0..2> <rough 0..1> <flow 0..1> [normal 0..1]. 인자를 생략하면 현재 값만 찍는다."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&PaintStyleCommand));
+}
 
 void UPaintSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
@@ -290,6 +333,26 @@ TArray<UPaintableComponent*> UPaintSubsystem::GetPaintables() const
 		}
 	}
 	return Result;
+}
+
+void UPaintSubsystem::SetLookStyle(const FPaintLookStyle& Style)
+{
+	LookStyle = Style;
+
+	// A collection reaches every paint material at once and is live without a recompile, which
+	// is what makes a look sweep possible at all; a material parameter would only reach the one
+	// instance that was written, and a layer parameter cannot be written by name from C++.
+	UMaterialParameterCollection* const Collection = UPaintSettings::Get().StyleCollection.LoadSynchronous();
+	if (!Collection)
+	{
+		UE_LOG(LogPaint, Warning, TEXT("StyleCollectionÇ74 Åc6Åb4 ¸ed Âa4Î7c·7c¹7c Äe0 ¬f3Ç74 Åc6²e4."));
+		return;
+	}
+	UWorld* const World = GetWorld();
+	UKismetMaterialLibrary::SetVectorParameterValue(World, Collection, StylePackedParameter,
+		FLinearColor(Style.CoatScale, Style.FuzzScale, Style.RoughnessBias, Style.Flow));
+	UKismetMaterialLibrary::SetVectorParameterValue(World, Collection, StyleExtraParameter,
+		FLinearColor(Style.NormalStrength, 0.0f, 0.0f, 0.0f));
 }
 
 void UPaintSubsystem::RequestAtlas(
