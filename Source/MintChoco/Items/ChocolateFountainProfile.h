@@ -65,10 +65,39 @@ public:
 	bool bBurstMatchesRadius = true;
 
 	/**
+	 * 참이면 도포를 사방으로 뿌리지 않고 **돔 안 무작위 지점에 하나씩** 떨어뜨린다(분수).
+	 * 회차가 갈수록 반경이 1.0에서 ScatterEndRadiusScale까지 **선형으로** 넓어지고 탄 수가
+	 * ScatterCountStep씩 는다. Burst.Count가 첫 회차의 탄 수다.
+	 *
+	 * 거짓이면 예전 방식이다: 방사상으로 뿌리고 반경은 BurstGrowth로 회차마다 곱해진다.
+	 * 그래서 이 값을 넣지 않은 에셋은 전과 똑같이 돈다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ChocolateFountain|Scatter")
+	bool bScatterBursts = false;
+
+	/**
+	 * 마지막 회차의 반경 배율. 1.2면 돔보다 20% 넓은 원까지 흩뿌리며 끝난다. 첫 회차는 언제나
+	 * 1.0(돔과 같은 반경)이다. bScatterBursts가 참일 때만 쓰인다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ChocolateFountain|Scatter", meta = (ClampMin = "0.1"))
+	float ScatterEndRadiusScale = 1.2f;
+
+	/** 회차마다 늘어나는 탄 수. bScatterBursts가 참일 때만 쓰인다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "ChocolateFountain|Scatter", meta = (ClampMin = "0"))
+	int32 ScatterCountStep = 1;
+
+	/**
+	 * BurstIndex번째(0부터) 도포의 반경 배율. 흩뿌림이면 1.0 → ScatterEndRadiusScale의 선형
+	 * 보간이고, 아니면 BurstGrowth의 거듭제곱(예전 동작)이다.
+	 */
+	float RadiusScaleForBurst(int32 BurstIndex) const;
+
+	/**
 	 * 이번 도포에 쓸 파라미터. 색과 시드를 채우고, 필요하면 속도를 반경에 맞춘다.
 	 * RadiusScale은 Radius에 곱해지는 배율이다(넓어지는 도포용). 1이면 돔과 같은 범위.
+	 * BurstIndex는 0부터 세는 회차로, 흩뿌림에서 탄 수를 늘리는 데 쓴다.
 	 */
-	FPaintBurstParams MakeBurst(uint8 InPaintId, int32 Seed, float RadiusScale = 1.0f) const;
+	FPaintBurstParams MakeBurst(uint8 InPaintId, int32 Seed, float RadiusScale = 1.0f, int32 BurstIndex = 0) const;
 
 	virtual void LogUnsetReferences(const UObject* Owner) const override;
 };

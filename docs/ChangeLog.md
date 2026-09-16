@@ -516,25 +516,19 @@ UPaintSubsystem::GetPaintIdUnder(위치, 깊이)        히트가 없는 곳에�
 
 ---
 
-## 아이템 — 초콜릿 분수
+## 아이템 — 초콜릿 분수 (도포 일정)
 
-### 넘치는 발밑 도포 (`BurstCount` / `BurstInterval` / `BurstGrowth`)
+### 돔이 타이머를 들고 반복해서 뿌린다 (`BurstCount` / `BurstInterval`)
 
-설치 순간 한 번만 뿌리던 것을 1초마다 점점 넓게 네 번 뿌리도록 바꿨다.
-
-```
-t=0s   1.0배      설치와 동시에
-t=1s   1.4배
-t=2s   1.96배
-t=3s   2.74배     여기서 끝, 돔도 같이 사라진다
-```
+설치 순간 한 번만 뿌리던 것을 여러 번 나눠 뿌리도록 바꿨다. **지금 뿌리는 모양과 값은
+`아이템 — 초콜릿 분수 (흩뿌림)`에 있다** — 여기는 그 일정을 누가 어떻게 들고 있는지다.
 
 | | |
 |---|---|
-| 어디에 | `UChocolateFountainProfile`에 값 셋, `AChocolateFountain::StartGroundBursts` / `FireGroundBurst` |
-| 무엇을 | 돔이 타이머를 들고 `APaintBurst`를 `BurstCount`번 뿌린다. 한 번마다 반경 배율에 `BurstGrowth`를 곱한다 |
+| 어디에 | `UChocolateFountainProfile`의 값들, `AChocolateFountain::StartGroundBursts` / `FireGroundBurst` |
+| 무엇을 | 돔이 타이머를 들고 `APaintBurst`를 `BurstCount`번 뿌린다. 회차마다 반경 배율이 달라진다 |
 | 대체한 것 | `UGA_ChocolateFountain::OnItemActivated`의 `APaintBurst::Spawn` 한 줄 |
-| 값 | `BurstCount` 4, `BurstInterval` 1.0초, `BurstGrowth` 1.4, `DA_Item_ChocolateFountain.Lifetime` 5 → **3초** |
+| 값 | `DA_Item_ChocolateFountain.Lifetime` 5 → **3초**, `Radius` 900 |
 
 **일정을 능력이 아니라 돔이 들고 있다.** 초콜릿 분수는 즉발(`Duration` 0)이라 능력 인스턴스가
 곧 끝나 타이머를 얹을 자리가 없다. 돔은 정확히 `Lifetime` 동안 살고 `EndPlay`에서 타이머를
@@ -543,21 +537,26 @@ t=3s   2.74배     여기서 끝, 돔도 같이 사라진다
 **돔 크기는 안 커진다.** 커지는 것은 바닥 도포뿐이다. 돔은 탄을 막는 벽이라 크기가 변하면
 전투 판정이 흔들린다.
 
-#### 배율이 속도에 닿는 두 가지 경로
+#### 반경 배율이 정해지는 세 가지 경로
 
-`DA_Item_ChocolateFountain`은 `bBurstMatchesRadius`가 **거짓**이다(`Radius` 900, `Burst.Speed` 900,
-`MinPitch` = `MaxPitch` = 0). 그래서 `MakeBurst`가 두 갈래다.
+`RadiusScaleForBurst(Index)`가 회차 번호에서 배율을 구하고, `MakeBurst`가 그 배율을 어디에
+쓸지 정한다.
 
-| `bBurstMatchesRadius` | 배율이 곱해지는 곳 | 왜 |
+| 설정 | 배율을 구하는 법 | 배율이 닿는 곳 |
 |---|---|---|
-| 참 | `Radius`. `SpeedForRange`가 v² 관계로 환산 | 45도 포물선의 사거리는 v²에 비례 |
-| 거짓 (지금) | `Speed`에 그대로 선형 | 수평으로 쏘면 떨어지는 시간이 속도와 무관 → 거리가 v에 비례 |
+| `bScatterBursts` 참 (**지금**) | 1.0 → `ScatterEndRadiusScale` **선형 보간** | `ScatterRadius`. 착탄점까지의 거리가 곧 사거리 |
+| 거짓 + `bBurstMatchesRadius` 참 | `BurstGrowth`의 거듭제곱 | `Radius`. `SpeedForRange`가 v² 관계로 환산 |
+| 거짓 + `bBurstMatchesRadius` 거짓 | 〃 | `Speed`에 그대로 선형. 수평 발사(`MinPitch` = `MaxPitch` = 0)는 체공이 속도와 무관해 거리가 v에 비례 |
+
+**곱해 나가지 않고 번호로 구한다.** 곱셈은 기하급수라 마지막 회차가 어디에 닿을지 손으로 못
+맞춘다. 번호로 구하면 마지막이 정확히 끝값이다.
 
 #### 마지막 한 번을 수명 안으로 당긴다
 
-`(BurstCount − 1) × BurstInterval`이 `Lifetime`과 같으므로 마지막 도포와 `SetLifeSpan`이
-같은 프레임에 온다. **두 타이머의 순서는 정해져 있지 않다.** 그래서 남은 시간이 간격보다
-짧으면 0.05초 여유를 두고 앞당겨 예약한다. 가장 넓게 칠하는 마지막 한 번이 안 나가면 안 된다.
+`(BurstCount − 1) × BurstInterval`이 `Lifetime`에 닿으면 마지막 도포와 `SetLifeSpan`이 같은
+프레임에 온다. **두 타이머의 순서는 정해져 있지 않다.** 그래서 남은 시간이 간격보다 짧으면
+0.05초 여유를 두고 앞당겨 예약한다. 가장 넓게 칠하는 마지막 한 번이 안 나가면 안 된다.
+지금 값(7회 × 0.5초, 수명 3초)에서는 마지막이 3.00s가 아니라 **2.95s**에 나간다.
 
 ---
 
@@ -722,26 +721,31 @@ t=3s   2.74배     여기서 끝, 돔도 같이 사라진다
 
 ## 맵 — 풍선
 
-### 파열 탄 교체 (`DA_Paintball_BalloonBurst`)
+### 파열 탄과 흩뿌림 (`DA_Paintball_BalloonBurst`)
 
 | | |
 |---|---|
 | 어디에 | `Lvl_Stage`의 `BP_Balloon` **9개 전부** (인스턴스 값이다) |
-| 무엇을 | `BurstPaintball` `DA_Paintball_Heavy` → **`DA_Paintball_BalloonBurst`**, `BurstCount` 24 → **8** |
-| 대체한 것 | 자국이 너무 작아 24발을 뿌려도 티가 안 났다 |
+| 무엇을 | `BurstPaintball` `DA_Paintball_Heavy` → **`DA_Paintball_BalloonBurst`**, `BurstCount` 24 → 8 → **16**, `BurstSpeed` 200 → **600**, 탄의 `GravityScale` 0.25 → **2.25** |
+| 대체한 것 | 자국이 너무 작아 24발을 뿌려도 티가 안 났고, 그 뒤엔 탄이 너무 느리게 떠 있었다 |
 
 `DA_Paintball_BalloonBurst`는 **`DA_Paintball_Bomb`(디저트 폭격 탄)의 복사본**이다. 원본을
-공유하면 풍선을 만질 때마다 폭격이 같이 움직인다.
+공유하면 풍선을 만질 때마다 폭격이 같이 움직인다. 참조는 `Lvl_Stage` 하나뿐이다.
 
 | | 브러시 | volume | 자국 반경 |
 |---|---|---|---|
 | 전 (`DA_Paintball_Heavy`) | `DA_Brush_Mop` (Base 40) | 1.6 | **50.6cm** |
 | 후 (`DA_Paintball_BalloonBurst`) | `DA_Brush_Bomb` (Base 150) | 3.0 | **260cm** |
 
-반경이 5배, 넓이가 26배다. 그래서 발수를 24 → 8로 줄여도 칠해지는 양은 훨씬 늘어난다.
+반경이 5배, 넓이가 26배다.
 
-**CDO만 고치면 안 된다.** 레벨에 놓인 9개가 각자 값을 들고 있다. `BurstSpeed` 200,
-`MaxHealth` 20은 그대로다.
+**속도와 중력을 같이 올린 이유.** 흩어지는 반경과 체공 시간이 같은 두 값에 묶여 있다:
+반경 `R = v² / (980 × 중력)`, 체공 `t ∝ v / 중력`. 중력만 3배로 올리면 낙하는 빨라지지만
+**반경이 1/3로 쪼그라든다.** `v → 3v`, `중력 → 9×중력`으로 같이 올리면 `v²/중력`이 그대로라
+반경은 163cm를 유지한 채 체공만 1/3(1.15초 → **0.38초**)이 된다.
+
+**CDO만 고치면 안 된다.** 레벨에 놓인 9개가 각자 값을 들고 있다. `MaxHealth` 20,
+`RespawnDelay` 10은 그대로다.
 
 ---
 
@@ -785,6 +789,174 @@ t=3s   2.74배     여기서 끝, 돔도 같이 사라진다
 | `User.Noise Strength` | 155 | 60 | 900cm/s로 나는 벌에서 흩어지지 않게 |
 
 이미터 이름은 `HangingParticulates` 하나뿐이다(GPU 스프라이트).
+
+---
+
+## 아이템 — 꿀풍선
+
+### 파열 자국 5배, 던지는 속도 2배, 스턴 반경 (`DA_Item_HoneyBalloon`)
+
+| | |
+|---|---|
+| 어디에 | `DA_Item_HoneyBalloon`과 그 전용 탄 `DA_Paintball_HoneyBalloon` (참조는 이 아이템 하나뿐) |
+| 무엇을 | 탄의 브러시 `DA_Brush_HoneyBalloon` → **`DA_Brush_Bomb`**, `SplatVolume` 3 → **8.4**, `ThrowSpeed` 3000 → **6000**, `StunRadius` 300 → **600** |
+| 대체한 것 | 자국이 87cm라 12발을 뿌려도 바닥에 티가 안 났다 |
+
+| | 브러시 | volume | 자국 반경 |
+|---|---|---|---|
+| 전 | `DA_Brush_HoneyBalloon` (Base 50) | 3.0 | **87cm** |
+| 후 | `DA_Brush_Bomb` (Base 150) | 8.4 | **435cm** (정확히 5.0배) |
+
+`GravityScale`은 1 그대로, `Burst.Speed`도 500 그대로다 — **흩어지는 범위(사거리 255cm)는
+건드리지 않고 자국 크기만 키웠다.** 브러시를 바꿨으니 `MaxRadius`가 150 → 600이 되어 캡에
+걸리지 않는다.
+
+`StunRadius` 600은 **히어로 랜딩의 착지 판정과 같은 값**이다(만충 기준). 꿀풍선은 충전이
+없으므로 배율 없이 600 고정이다.
+
+---
+
+## 아이템 — 꿀벌
+
+### 궤적을 차지샷만큼, 파열은 꿀풍선의 2/3 (`DA_Item_Bee`)
+
+| | |
+|---|---|
+| 어디에 | `DA_Item_Bee`의 `TrailDeposit` / `Burst`, 새 탄 `DA_Paintball_BeeBurst` |
+| 무엇을 | 궤적 브러시 `DA_Brush_Paintball` → **`DA_Brush_Bomb`** + `SplatVolume` 1 → **1.35**, `MarkSpacing` 40 → **170**, 파열탄 `DA_Paintball_Heavy` → **`DA_Paintball_BeeBurst`** |
+| 대체한 것 | 궤적 자국이 12cm인데 간격이 40cm라 **자국끼리 닿지도 않는 점선**이었다 |
+
+| | 브러시 | volume | 자국 반경 | 간격 |
+|---|---|---|---|---|
+| 궤적 · 전 | `DA_Brush_Paintball` (Base 12) | 1.0 | **12cm** | 40cm |
+| 궤적 · 후 | `DA_Brush_Bomb` (Base 150) | 1.35 | **174cm** | 170cm |
+| 파열 · 전 (`DA_Paintball_Heavy`) | `DA_Brush_Mop` (Base 40) | 1.6 | **51cm** | — |
+| 파열 · 후 (`DA_Paintball_BeeBurst`) | `DA_Brush_Bomb` (Base 150) | 3.74 | **290cm** | — |
+
+궤적 174cm / 간격 170cm는 **차지샷 볼리와 같은 수치**다(`DA_Paintball_SniperVolley_T`
+volume 1.35, `VolleySpacing` 170). 파열 290cm는 꿀풍선 435cm의 정확히 2/3다.
+
+**`DA_Paintball_Heavy`를 고치면 안 된다.** `BP_Balloon`(CDO)과 `DA_Weapon_Lob`이 같이 쓴다.
+그래서 `DA_Paintball_Bomb`을 복사해 `DA_Paintball_BeeBurst`를 새로 만들고 `GravityScale`을
+1로 되돌렸다 — 파열 사거리(255cm)를 예전과 같게 두기 위해서다.
+
+**이만큼 칠해도 되는 근거는 카운터가 살아 있기 때문이다.** `ABeeProjectile::ReceivePaintHit`
+(`BeeProjectile.cpp:498`)이 상대 팀 타격만 누적해 `Health` 100에 닿으면 `Destroy()` 한다 —
+파열도 하지 않고 조용히 사라진다. 차지샷 직격 `HitPower` 100이면 **한 방**, 샷건 펠릿 25면
+**4발**이다. 꿀벌은 수명 8초 · 속도 900이라 격추하지 않으면 경로 72m를 폭 3.5m로 칠한다
+(약 250 m², 스테이지 8,660 m²의 2.9%). 카운터를 약화시키는 변경은 이 항목과 같이 봐야 한다.
+
+`StunRadius` 250은 그대로다.
+
+---
+
+## 아이템 — 스위트 스피너
+
+### 고리가 아니라 원판을 덮는다 (`CoverRadius` / `SweepCycles`)
+
+| | |
+|---|---|
+| 어디에 | `USweetSpinnerProfile`(필드 2개 + 순수 함수 2개), `UGA_SweetSpinner::HandleVolley`, `DA_Item_SweetSpinner`, `DA_Scatter_Spinner`, `DA_Paintball_SweetSpiner` |
+| 무엇을 | `CoverRadius` **400cm**, `SweepCycles` **3**, `MuzzleSpeed` 600 → **640**, 탄 `SplatVolume` 3 → **5.76** |
+| 대체한 것 | 발수가 아니라 **모든 탄이 같은 거리에 떨어지는 것**이 원인이었다 |
+
+**왜 적게 칠해졌나.** `PitchDeg` 60 고정 + 총구 속도 600 고정이라 사거리
+`v²·sin(2θ)/980`이 모든 발에 같았다 — 반경 **318cm 고리 한 줄**에만 떨어진다. 발사 구간
+1.5초에 `VolleyInterval` 0.02로 **75발**이 나가는데, 고리 둘레 1,998cm에 지름 174cm 자국
+75개면 **6.5배 덧칠**이고 고리 안팎은 한 방울도 닿지 않았다. 발수를 늘려도 같은 고리를 더
+덧칠할 뿐이다.
+
+**고친 방법.** `CoverRadius`가 0보다 크면 발마다 목표 거리를 정하고
+(`SweetSpinner::VolleyRangeCm`, 0↔반경 삼각파를 √로 편 것) 그 거리에 닿는 피치를 역산한다
+(`SweetSpinner::PitchForRange`). 요가 도는 동안 낙하 거리가 안팎을 오가므로 궤적이 **나선**이
+되어 원판을 덮는다. 두 함수 다 월드 없이 도는 순수 함수다.
+
+- 피치는 두 해 중 **높은 쪽**을 쓴다. 거리 0이 수평(무한히 날아감)이 아니라 90도(발밑)가
+  되어야 스피너가 제자리에서 뿌리는 모양이 된다. 기존 `PitchDeg` 60도 318cm의 높은 해였다.
+- `MuzzleSpeed`를 640으로 올린 이유: 최대 사거리가 `v²/980`이라 600에서는 **367cm**밖에 안 돼
+  `CoverRadius` 400에 못 미친다. 640이면 418cm다.
+- 자국을 120cm(`50 × √5.76`, 브러시 캡 150)로 키운 근거: 0.5초당 25발이 반경 400 원판
+  (502,655 cm²)을 덮으려면 자국 넓이의 합이 넉넉히 두 배는 돼야 한다. 25 × π × 120² =
+  1,130,973 cm² → **2.25배**.
+
+`CoverRadius` 0이면 예전 동작 그대로라, 이 값을 넣지 않은 에셋은 전과 같다.
+
+---
+
+## 아이템 — 히어로 랜딩
+
+### 칠하는 반경을 보이는 원에서 역산한다 (`PaintRadiusScale`)
+
+| | |
+|---|---|
+| 어디에 | `UHeroLandingProfile::PaintRadiusScale`, `UGA_HeroLanding::HandleLanded`, `DA_Item_HeroLanding` |
+| 무엇을 | `PaintRadiusScale` **2.0**, `Burst.Count` 1 → **24**, `MinPitch` 0 → **5**, `MaxPitch` 0 → **85** |
+| 대체한 것 | 보이는 원은 300~600cm인데 칠은 **충전과 무관하게 400cm 고정**이었다 |
+
+**왜 어긋났나.** 칠하는 것이 탄 **한 발**이었고, 그 자국 반경이 `DA_Brush_HeroLanding`의
+`MaxRadius` 400에 걸려 있었다(`BaseRadius 400 × √3 = 693`이 400으로 잘린다). 충전 배율은
+`Speed`와 `Count`에만 걸리는데 발이 하나라 `Count`도 1에서 안 움직이고, `Speed`는 자국
+크기와 무관하다. 그래서 충전을 얼마나 하든 칠은 같았다.
+
+**고친 방법.** `PaintRadiusScale`이 0보다 크면 속도를 반경에서 역산한다:
+`Burst.Speed = PaintBurst::SpeedForRange(StunRadius × 충전배율 × PaintRadiusScale, 탄중력)`.
+보이는 원(`StunRadius × 충전배율`)과 **같은 값에서 나오므로 둘이 따로 놀 수 없다.**
+
+| 충전 | 보이는 원 | 칠하는 반경 |
+|---|---|---|
+| 만충 | 600cm | **1200cm** |
+| 최소(0.5) | 300cm | **600cm** |
+
+탄 수를 24로 올린 것은 반경이 두 배가 되면 넓이가 네 배라서다. 400cm 자국 24발이면 반경
+1200 원판 대비 2.67배로, 빈 곳 없이 덮인다. `MinPitch` 5 / `MaxPitch` 85는 사거리를
+`0.17R ~ R`로 벌려 가운데도 닿게 한 것이다(피치가 곧 사거리를 정한다).
+
+`PaintRadiusScale` 0이면 예전 동작(`Speed × √배율`)이다.
+
+---
+
+## 아이템 — 초콜릿 분수 (흩뿌림)
+
+### 돔 안에 무작위로 떨어지는 분수 (`bScatterBursts`)
+
+| | |
+|---|---|
+| 어디에 | `FPaintBurstParams::ScatterRadius`와 `APaintBurst::BurstScatter`(새 함수), `UChocolateFountainProfile`(필드 3개 + `RadiusScaleForBurst`), `AChocolateFountain::FireGroundBurst`, `DA_Item_ChocolateFountain`, `DA_Paintball_ChocolateFountain` |
+| 무엇을 | `bScatterBursts` **참**, `BurstCount` 4 → **7**, `BurstInterval` 1.0 → **0.5**, `Burst.Count` 3 → **5**, `ScatterEndRadiusScale` **1.2**, `ScatterCountStep` **1**, 탄의 브러시 → **`DA_Brush_Bomb`**(자국 **260cm**), `GravityScale` 1 → **2.0** |
+| 대체한 것 | 자국 반경이 **900cm**(돔과 같다)라 3발이면 돔 바닥이 통째로 한 번에 칠해졌다 — "분수"가 아니라 원 하나를 찍는 것이었다 |
+
+**`APaintBurst`에 흩뿌림 모드를 넣었다.** `ScatterRadius`가 0보다 크면 방사상 대신 그 반경의
+원판 안 무작위 지점마다 탄을 하나씩 떨어뜨린다. 착탄점까지 45도로 던지므로 사거리를 정하는
+것은 `Speed`가 아니라 반경이고(`SpeedForRange`로 발마다 역산), `MinPitch`/`MaxPitch`는 쓰이지
+않는다. 거리를 **√로 펴서** 뽑는다 — 그냥 뽑으면 면적이 반경의 제곱으로 느는 만큼 가운데가
+몰린다. 0이면 예전 방식이라 꿀풍선·히어로 랜딩·꿀벌은 그대로다.
+
+**반경은 곱셈이 아니라 회차 번호로 구한다.** 예전 `BurstGrowth` 1.4는 1 → 1.4 → 1.96 → 2.74로
+기하급수라 마지막이 어디에 닿을지 손으로 못 맞춘다. 흩뿌림에서는
+`RadiusScaleForBurst(Index)`가 1.0 → `ScatterEndRadiusScale`를 **회차 수로 나눠 선형 보간**하므로
+마지막 회차가 정확히 끝값에 닿는다.
+
+| 회차 | 시각 | 반경 | 탄 수 |
+|---|---|---|---|
+| 0 | 0.00s | 900cm | 5 |
+| 1 | 0.50s | 930cm | 6 |
+| 2 | 1.00s | 960cm | 7 |
+| 3 | 1.50s | 990cm | 8 |
+| 4 | 2.00s | 1020cm | 9 |
+| 5 | 2.50s | 1050cm | 10 |
+| 6 | **2.95s** | **1080cm** | **11** |
+
+마지막이 3.00s가 아니라 2.95s인 것은 `FireGroundBurst`의 `DeathMargin` 때문이다 — 수명과 같은
+프레임에 걸리면 타이머 순서에 따라 아예 안 뿌려질 수 있어 살짝 당긴다. 총 56발.
+
+**탄의 중력을 2.0으로 올린 이유.** 45도 포물선의 체공은 `2v·sin45/g`이고 `v = √(R·g)`이라
+`체공 ∝ √(R/g)`다. 중력 0.25(폭격탄 그대로)였다면 최대 반경 1080cm까지 날아가는 데 **약 3초**가
+걸려 돔이 사라진 뒤에 떨어진다. 2.0이면 약 1.0초다.
+
+**`DA_Paintball_Bomb`을 그대로 쓰지 않았다.** 분수 전용인
+`DA_Paintball_ChocolateFountain`(참조가 이 아이템 하나뿐)의 브러시만 폭격탄과 같은
+`DA_Brush_Bomb`으로 바꿨다. 원본을 공유하면 폭격을 만질 때마다 분수가 같이 움직인다 —
+`DA_Paintball_BalloonBurst`와 같은 이유다.
 
 ---
 
@@ -892,8 +1064,13 @@ git diff --name-status <머지전_내커밋> HEAD -- Content/Maps Content/LevelP
 | `BP_Unit` → `InkTank` | `RefillPerSecond` **0.10**, `RefillDelayAfterSpend` 0.5 |
 | `BP_Unit` → `CharMoveComp` 바닥 배율 | `OwnFloorMultiplier` 1.5, `EnemyFloorMultiplier` 0.5, `EnemyFloorDashMultiplier` 1.0 |
 | `BP_GameMode` | `MatchDuration` **180**, `CountdownDuration` 0, `ItemSpawnInterval` 3 |
-| `Lvl_Stage`의 `BP_Balloon` **9개 전부** | `BurstPaintball` **`DA_Paintball_BalloonBurst`**, `BurstCount` **8**, `BurstSpeed` 200, `MaxHealth` 20 |
-| `DA_Item_ChocolateFountain` | `Lifetime` 3, `BurstCount` 4, `BurstInterval` 1.0, `BurstGrowth` 1.4 |
+| `Lvl_Stage`의 `BP_Balloon` **9개 전부** | `BurstPaintball` **`DA_Paintball_BalloonBurst`**, `BurstCount` **16**, `BurstSpeed` **600**, `MaxHealth` 20, `RespawnDelay` 10 |
+| `DA_Item_ChocolateFountain` | `Lifetime` 3, `Radius` 900, `bScatterBursts` **true**, `BurstCount` **7**, `BurstInterval` **0.5**, `Burst.Count` **5**, `ScatterEndRadiusScale` **1.2**, `ScatterCountStep` **1** |
+| `DA_Paintball_BalloonBurst` | `GravityScale` **2.25**, 브러시 `DA_Brush_Bomb` volume 3 (자국 260cm) |
+| `DA_Item_HoneyBalloon` | `ThrowSpeed` **6000**, `StunRadius` **600**, 탄 브러시 **`DA_Brush_Bomb`** volume **8.4** (자국 **435cm**) |
+| `DA_Item_Bee` | 궤적 브러시 **`DA_Brush_Bomb`** volume **1.35** (174cm), `MarkSpacing` **170**, 파열탄 **`DA_Paintball_BeeBurst`**(290cm), `StunRadius` 250, `Health` 100 |
+| `DA_Item_SweetSpinner` | `CoverRadius` **400**, `SweepCycles` **3**, `Turns` 4, `VolleyInterval` 0.02 / `DA_Scatter_Spinner.MuzzleSpeed` **640** / `DA_Paintball_SweetSpiner` volume **5.76**(120cm) |
+| `DA_Item_HeroLanding` | `PaintRadiusScale` **2.0**, `StunRadius` 600, `MinChargeScale` 0.5, `Burst.Count` **24**, `MinPitch` **5** / `MaxPitch` **85** |
 | `BP_ItemPickup` | `PillarTemplate` = `NS_ItemPillar`, `PillarSeconds` 0, `BoxSparkleTemplate` = `NS_ItemBoxSparkle`, `BoxSparkleHeight` 60 |
 | `BP_Unit` 카메라 | `ViewPitchMin` **-45**, `ViewPitchMax` **45** |
 | `BP_Unit` 무기 | `PaintWeapon.Profile` = `DA_Weapon_Fan_T`, `SecondaryWeapon.Profile` = `DA_Weapon_Sniper_T` |

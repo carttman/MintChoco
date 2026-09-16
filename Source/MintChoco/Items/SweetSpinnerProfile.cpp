@@ -12,6 +12,28 @@ float SweetSpinner::VolleyYawDegrees(float StartYaw, int32 Index, int32 Count, f
 	return StartYaw + StepDeg * Index;
 }
 
+float SweetSpinner::VolleyRangeCm(int32 Index, int32 Count, float Radius, float SweepCycles)
+{
+	if (Count <= 0 || Radius <= 0.0f)
+	{
+		return 0.0f;
+	}
+	const float T = static_cast<float>(FMath::Max(Index, 0)) / static_cast<float>(Count);
+	const float Phase = FMath::Frac(T * FMath::Max(SweepCycles, UE_KINDA_SMALL_NUMBER));
+	// 0 → 1 → 0. 톱니가 아니라 삼각파라 바깥 끝에서 안쪽으로 되돌아오며 그 사이도 채운다.
+	const float Triangle = 1.0f - FMath::Abs(2.0f * Phase - 1.0f);
+	return Radius * FMath::Sqrt(Triangle);
+}
+
+float SweetSpinner::PitchForRange(float RangeCm, float MuzzleSpeed, float GravityScale)
+{
+	const float SpeedSquared = FMath::Square(FMath::Max(MuzzleSpeed, UE_KINDA_SMALL_NUMBER));
+	const float Sin2Theta = FMath::Clamp(
+		FMath::Max(RangeCm, 0.0f) * 980.0f * FMath::Max(GravityScale, 0.0f) / SpeedSquared, 0.0f, 1.0f);
+	// 높은 해를 고른다: 45도가 최대 사거리이고, 거리가 0에 가까울수록 90도(발밑)에 가까워진다.
+	return 90.0f - FMath::RadiansToDegrees(0.5f * FMath::Asin(Sin2Theta));
+}
+
 bool SweetSpinner::FindVolleyWindow(const UAnimSequenceBase* Sequence, float& OutStart, float& OutEnd)
 {
 	if (!Sequence)

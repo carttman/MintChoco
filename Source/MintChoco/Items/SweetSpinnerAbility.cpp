@@ -12,7 +12,9 @@
 #include "Items/SweetSpinnerProfile.h"
 #include "MintChoco.h"
 #include "Weapons/PaintGunProfile.h"
+#include "Weapons/PaintScatterProfile.h"
 #include "Weapons/PaintWeaponComponent.h"
+#include "Weapons/PaintballProfile.h"
 
 UGA_SweetSpinner::UGA_SweetSpinner()
 {
@@ -203,8 +205,28 @@ void UGA_SweetSpinner::HandleVolley(int32 ActionNumber)
 		Origin.Z = Weapon->GetMuzzleTransform().GetLocation().Z;
 	}
 
-	// 피치는 프로필이 정한 고정값이라 모든 발이 같은 높이로 나간다.
-	const FRotator Rotation(Spinner->PitchDeg, static_cast<float>(Flat.Rotation().Yaw), 0.0f);
+	// CoverRadius가 0이면 피치가 고정이라 모든 발이 같은 거리에 떨어진다(고리 하나만 덧칠된다).
+	// 0보다 크면 이번 발이 노리는 거리를 정하고 거기에 닿는 피치를 역산해, 요가 도는 동안
+	// 낙하 거리가 안팎을 오가며 원판을 덮는다.
+	float Pitch = Spinner->PitchDeg;
+	if (Spinner->CoverRadius > 0.0f)
+	{
+		const UPaintScatterProfile* const Scatter = Spinner->Volley->Scatter;
+		const UPaintballProfile* const Ball = Spinner->Volley->Paintball;
+		if (Scatter && Ball)
+		{
+			const float Range = SweetSpinner::VolleyRangeCm(ActionNumber, VolleyCount, Spinner->CoverRadius, Spinner->SweepCycles);
+			Pitch = SweetSpinner::PitchForRange(Range, Scatter->MuzzleSpeed, Ball->GravityScale);
+		}
+		else
+		{
+			// 산탄이나 탄 프로필이 비어 있으면 사거리를 계산할 근거가 없다. 고정 피치로 돌아간다.
+			UE_CLOG(ActionNumber == 0, LogMintChoco, Warning,
+				TEXT("%s: 스피너의 Volley에 Scatter 또는 Paintball이 없어 CoverRadius를 쓰지 못합니다."),
+				*GetNameSafe(Unit));
+		}
+	}
+	const FRotator Rotation(Pitch, static_cast<float>(Flat.Rotation().Yaw), 0.0f);
 
 	// 총 프로필의 조준 트레이스는 시선(ViewOrigin, ViewDirection)에서 그 방향의 첫 표면으로 수렴한다.
 	FPaintFireContext Context;

@@ -33,6 +33,18 @@ public:
 	FPaintBurstParams Burst;
 
 	/**
+	 * 칠해지는 반경이 **보이는 착지 원(StunRadius)의 몇 배**인가. 2면 보이는 원의 두 배까지
+	 * 자국이 닿는다. 탄 속도를 사거리에서 역산하므로 Burst.Speed는 쓰이지 않는다.
+	 *
+	 * 0이면 예전 동작이다: Burst.Speed를 그대로 쓰고 충전 배율만 √로 곱한다. 그래서 이 값을
+	 * 넣지 않은 에셋은 전과 같다.
+	 *
+	 * 충전 배율은 보이는 원과 똑같이 걸린다 — 덜 충전한 착지는 원도 칠도 같은 비율로 작아진다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HeroLanding", meta = (ClampMin = "0", ForceUnits = "x"))
+	float PaintRadiusScale = 2.0f;
+
+	/**
 	 * 소유 클라이언트에만 보이는 착지점 표시. 매 틱 조준점으로 옮겨지고 내리꽂기부터 고정된다.
 	 *
 	 * ALandingMarker를 넣으면 충전량에 따라 자라는 안쪽 원까지 그린다. 그냥 AActor여도

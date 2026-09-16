@@ -185,7 +185,7 @@ private:
 	/** 지금까지 뿌린 도포 수. BurstProfile->BurstCount에 닿으면 멈춘다. */
 	int32 GroundBurstsDone = 0;
 
-	/** 다음 도포에 쓸 반경 배율. 한 번 뿌릴 때마다 BurstGrowth가 곱해진다. */
+	/** 방금 뿌린 도포의 반경 배율. 회차 번호로 프로필이 계산해 준 값이다(진단용으로만 들고 있다). */
 	float GroundBurstScale = 1.0f;
 
 	/** 첫 도포 이후 흐른 시간. 마지막 도포를 수명 안으로 당길 때 본다. */

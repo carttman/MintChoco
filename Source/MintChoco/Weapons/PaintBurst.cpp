@@ -30,6 +30,21 @@ float PaintBurst::SpeedForRange(float RangeCm, float GravityScale)
 	return FMath::Sqrt(FMath::Max(RangeCm, 0.0f) * 980.0f * FMath::Max(GravityScale, UE_KINDA_SMALL_NUMBER));
 }
 
+void PaintBurst::ComputeScatterOffsets(int32 Seed, int32 Count, float Radius, TArray<FVector2D>& OutOffsets)
+{
+	OutOffsets.Reset(Count);
+	const FRandomStream Random(Seed);
+	const float Safe = FMath::Max(Radius, 0.0f);
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		const float Yaw = (static_cast<float>(Index) + Random.FRand()) * (360.0f / FMath::Max(Count, 1));
+		// √로 펴지 않으면 면적이 반경의 제곱으로 늘어나는 만큼 가운데가 몰린다.
+		const float Distance = Safe * FMath::Sqrt(Random.FRand());
+		const float Radians = FMath::DegreesToRadians(Yaw);
+		OutOffsets.Add(FVector2D(FMath::Cos(Radians), FMath::Sin(Radians)) * Distance);
+	}
+}
+
 APaintBurst::APaintBurst()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -101,6 +116,20 @@ void APaintBurst::Burst()
 	// 서버의 탄이 칠하고, 클라이언트의 탄은 같은 궤적의 그림이다.
 	const bool bCosmetic = !HasAuthority();
 
+	if (Params.ScatterRadius > 0.0f)
+	{
+		BurstScatter(bCosmetic);
+	}
+	else
+	{
+		BurstRadial(bCosmetic);
+	}
+}
+
+void APaintBurst::BurstRadial(bool bCosmetic)
+{
+	UWorld* const World = GetWorld();
+
 	TArray<FVector> Directions;
 	PaintBurst::ComputeDirections(Params.Seed, Params.Count, Params.MinPitch, Params.MaxPitch, Directions);
 
@@ -110,6 +139,31 @@ void APaintBurst::Burst()
 		const int32 BallSeed = static_cast<int32>(HashCombineFast(static_cast<uint32>(Params.Seed), static_cast<uint32>(Index)));
 		const FTransform SpawnTransform(Directions[Index].Rotation(), Origin);
 		Params.Paintball->Launch(*World, SpawnTransform, /*Instigator=*/nullptr, Directions[Index] * Params.Speed, Params.PaintId, BallSeed, bCosmetic);
+	}
+}
+
+void APaintBurst::BurstScatter(bool bCosmetic)
+{
+	UWorld* const World = GetWorld();
+
+	TArray<FVector2D> Offsets;
+	PaintBurst::ComputeScatterOffsets(Params.Seed, Params.Count, Params.ScatterRadius, Offsets);
+
+	const FVector Origin = GetActorLocation();
+	const float Gravity = Params.Paintball->GravityScale;
+	for (int32 Index = 0; Index < Offsets.Num(); ++Index)
+	{
+		const int32 BallSeed = static_cast<int32>(HashCombineFast(static_cast<uint32>(Params.Seed), static_cast<uint32>(Index)));
+
+		// 45도로 던지면 사거리가 곧 v²/(980×중력)이라, 착탄점까지의 거리만으로 속도가 나온다.
+		// 가운데에 떨어질 탄은 거리가 0이라 속도도 0이고, 그 자리에서 그대로 떨어진다.
+		const float Distance = static_cast<float>(Offsets[Index].Size());
+		const float Speed = PaintBurst::SpeedForRange(Distance, Gravity);
+		const FVector Flat(Offsets[Index].X, Offsets[Index].Y, 0.0f);
+		const FVector Direction = (Flat.GetSafeNormal() + FVector::UpVector).GetSafeNormal();
+
+		const FTransform SpawnTransform(Direction.Rotation(), Origin);
+		Params.Paintball->Launch(*World, SpawnTransform, /*Instigator=*/nullptr, Direction * Speed, Params.PaintId, BallSeed, bCosmetic);
 	}
 }
 

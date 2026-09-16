@@ -27,6 +27,23 @@ namespace SweetSpinner
 	MINTCHOCO_API bool FindVolleyWindow(const UAnimSequenceBase* Sequence, float& OutStart, float& OutEnd);
 
 	/**
+	 * Index번째 산탄이 노리는 착탄 거리(cm). 0과 Radius 사이를 SweepCycles번 왕복한다.
+	 *
+	 * 삼각파라 끝에서 방향만 바뀌고 건너뛰는 자리가 없다. 거리를 √로 펴는 이유는 흩뿌림과
+	 * 같다: 선형으로 쓸면 면적이 반경의 제곱으로 늘어나는 만큼 가운데가 몰린다.
+	 */
+	MINTCHOCO_API float VolleyRangeCm(int32 Index, int32 Count, float Radius, float SweepCycles);
+
+	/**
+	 * RangeCm에 떨어뜨리는 발사 피치(도). 사거리 = v²·sin(2θ) ÷ (980·중력)을 뒤집은 것이고,
+	 * 두 해 중 **높은 쪽**(45도 이상)을 준다 — 가까이 떨어뜨릴수록 가파르게 띄워야 스피너가
+	 * 제자리에서 뿌리는 모양이 되고, 거리 0이 수평(무한히 날아감)이 아니라 90도(발밑)가 된다.
+	 *
+	 * 최대 사거리(v²/980·중력)를 넘는 목표는 45도로 잘린다.
+	 */
+	MINTCHOCO_API float PitchForRange(float RangeCm, float MuzzleSpeed, float GravityScale);
+
+	/**
 	 * 효과 안에서 산탄이 나가는 구간(초). 시작 동작이 끝난 뒤 회전이 시작되고, 회전 클립 안에
 	 * 표시(Inner)가 있으면 그 안에서만 쏜다. 전부 지속시간 안으로 잘린다.
 	 */
@@ -69,6 +86,24 @@ public:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spinner", meta = (ClampMin = "-89", ClampMax = "89", ForceUnits = "deg"))
 	float PitchDeg = 15.0f;
+
+	/**
+	 * 착탄이 덮을 원판의 반경(cm). 0이면 PitchDeg 고정이라 **모든 탄이 같은 거리에 떨어져 고리
+	 * 하나만 덧칠된다**(예전 동작). 0보다 크면 발마다 이 반경 안의 목표 거리를 정하고 그 거리에
+	 * 닿는 피치를 역산하므로, 요가 도는 동안 낙하 거리가 안팎을 오가며 원판 전체를 나선으로 덮는다.
+	 *
+	 * 탄의 최대 사거리(총구 속도와 중력이 정한다)보다 크게 잡으면 그 사거리에서 잘린다 —
+	 * 반경을 늘리려면 산탄 프로필의 MuzzleSpeed도 같이 올려야 한다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spinner", meta = (ClampMin = "0", ForceUnits = "cm"))
+	float CoverRadius = 0.0f;
+
+	/**
+	 * 발사 구간 동안 안팎을 왕복하는 횟수. 발사 구간이 1.5초일 때 3이면 0.5초마다 원판을 한 번
+	 * 훑는다. 크게 잡을수록 자주 훑지만 한 번 훑을 때의 발수가 줄어 듬성해진다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spinner", meta = (ClampMin = "0.1"))
+	float SweepCycles = 3.0f;
 
 	/** 한 번의 산탄. 총 프로필이라 알약·산탄 패턴·사거리(총구 속도와 중력)를 그대로 재사용한다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spinner")

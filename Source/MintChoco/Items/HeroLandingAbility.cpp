@@ -14,6 +14,7 @@
 #include "Items/LandingMarker.h"
 #include "MintChoco.h"
 #include "Weapons/PaintBurst.h"
+#include "Weapons/PaintballProfile.h"
 
 UGA_HeroLanding::UGA_HeroLanding()
 {
@@ -183,9 +184,19 @@ void UGA_HeroLanding::HandleLanded()
 		FPaintBurstParams Burst = Landing->Burst;
 		Burst.PaintId = GetPaintId();
 		Burst.Seed = FMath::Rand();
-		// 파열 반경은 v² ÷ (980 × 중력배율)이라 속도의 제곱에 비례한다. 반경을 Scale배로
-		// 하려면 속도는 √Scale배다.
-		Burst.Speed *= FMath::Sqrt(Scale);
+		if (Landing->PaintRadiusScale > 0.0f && Burst.Paintball)
+		{
+			// 보이는 원은 StunRadius × Scale이다. 칠은 그 PaintRadiusScale 배까지 닿아야 하므로
+			// 반경을 그대로 속도로 역산한다 — 손으로 환산하면 둘이 따로 논다.
+			Burst.Speed = PaintBurst::SpeedForRange(
+				Landing->StunRadius * Scale * Landing->PaintRadiusScale, Burst.Paintball->GravityScale);
+		}
+		else
+		{
+			// 파열 반경은 v² ÷ (980 × 중력배율)이라 속도의 제곱에 비례한다. 반경을 Scale배로
+			// 하려면 속도는 √Scale배다.
+			Burst.Speed *= FMath::Sqrt(Scale);
+		}
 		// 탄 수까지 줄여야 약한 착지가 실제로 덜 칠한다. 최소 한 발은 남긴다.
 		Burst.Count = FMath::Max(FMath::RoundToInt32(Burst.Count * Scale), 1);
 		APaintBurst::Spawn(*World, Origin, Burst);

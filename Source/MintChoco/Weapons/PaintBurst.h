@@ -23,6 +23,16 @@ namespace PaintBurst
 	 * 반경을 손으로 속도로 환산하지 않고 그대로 쓰기 위한 함수다.
 	 */
 	MINTCHOCO_API float SpeedForRange(float RangeCm, float GravityScale);
+
+	/**
+	 * 반경 Radius인 원판 안의 착탄점들(중심 기준 수평 오프셋, cm). 시드가 같으면 어느 머신에서나
+	 * 같다.
+	 *
+	 * 거리를 √로 펴서 뽑는다: 그냥 뽑으면 면적이 반경의 제곱으로 늘어나는 만큼 **가운데가
+	 * 몰린다.** 방위각은 ComputeDirections와 같은 규칙으로 한 바퀴를 고르게 나눠 그 칸 안에서만
+	 * 흔든다 — 발수가 적을 때 한쪽으로 쏠리지 않게.
+	 */
+	MINTCHOCO_API void ComputeScatterOffsets(int32 Seed, int32 Count, float Radius, TArray<FVector2D>& OutOffsets);
 }
 
 /** APaintBurst 하나가 뿌리는 것. 서버가 정해 초기 복제로 모든 머신에 간다. */
@@ -55,6 +65,16 @@ struct MINTCHOCO_API FPaintBurstParams
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Burst")
 	int32 Seed = 0;
+
+	/**
+	 * 0보다 크면 방사상으로 뿌리는 대신 이 반경의 원판 **안 무작위 지점**에 하나씩 떨어뜨린다
+	 * (분수). 탄마다 제 착탄점까지 45도 위 궤적으로 던지므로 사거리를 정하는 것은 Speed가 아니라
+	 * 이 반경이고, MinPitch/MaxPitch도 쓰이지 않는다.
+	 *
+	 * 0이면 예전 방식 그대로라, 이 값을 넣지 않은 아이템(꿀풍선, 히어로 랜딩, 꿀벌)은 전과 같다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Burst", meta = (ClampMin = "0", ForceUnits = "cm"))
+	float ScatterRadius = 0.0f;
 
 	/**
 	 * 터진 자리에서 한 번 재생하는 연출. 비어 있으면 아무것도 하지 않으므로, 값을 넣지 않은
@@ -114,6 +134,12 @@ protected:
 
 private:
 	void Burst();
+
+	/** 사방으로 같은 속도. Params.ScatterRadius가 0일 때의 예전 방식이다. */
+	void BurstRadial(bool bCosmetic);
+
+	/** 원판 안 무작위 지점마다 그 거리에 닿는 속도로 하나씩. Params.ScatterRadius가 정한다. */
+	void BurstScatter(bool bCosmetic);
 
 	/** 데디케이티드 서버가 아니면 BurstFX를 그 자리에 한 번 띄운다. */
 	void SpawnBurstFX();

@@ -103,9 +103,14 @@ void AChocolateFountain::FireGroundBurst()
 	}
 
 	// 사용자 팀 색이라 돔 벽에 삼켜지지 않고 그대로 통과한다.
-	APaintBurst::Spawn(*World, GetActorLocation(), BurstProfile->MakeBurst(PaintId, FMath::Rand(), GroundBurstScale));
+	//
+	// 반경 배율은 회차 번호에서 프로필이 계산한다: 흩뿌림이면 1.0 → ScatterEndRadiusScale의
+	// 선형 보간, 아니면 BurstGrowth의 거듭제곱이다. 곱해 나가지 않고 번호로 구해야 마지막
+	// 회차가 정확히 끝값에 닿는다.
+	const int32 BurstIndex = GroundBurstsDone;
+	GroundBurstScale = BurstProfile->RadiusScaleForBurst(BurstIndex);
+	APaintBurst::Spawn(*World, GetActorLocation(), BurstProfile->MakeBurst(PaintId, FMath::Rand(), GroundBurstScale, BurstIndex));
 	++GroundBurstsDone;
-	GroundBurstScale *= BurstProfile->BurstGrowth;
 
 	if (GroundBurstsDone >= BurstProfile->BurstCount)
 	{

@@ -4,12 +4,35 @@
 #include "MintChoco.h"
 #include "Weapons/PaintballProfile.h"
 
-FPaintBurstParams UChocolateFountainProfile::MakeBurst(uint8 InPaintId, int32 Seed, float RadiusScale) const
+float UChocolateFountainProfile::RadiusScaleForBurst(int32 BurstIndex) const
+{
+	const int32 Index = FMath::Max(BurstIndex, 0);
+	if (!bScatterBursts)
+	{
+		return FMath::Pow(BurstGrowth, static_cast<float>(Index));
+	}
+	// 마지막 회차가 정확히 ScatterEndRadiusScale이 되도록 회차 수로 나눈다. 도포가 한 번뿐이면
+	// 나눌 것이 없으므로 첫 회차의 1.0이 곧 마지막이다.
+	const int32 Last = FMath::Max(BurstCount - 1, 1);
+	const float Alpha = FMath::Clamp(static_cast<float>(Index) / static_cast<float>(Last), 0.0f, 1.0f);
+	return FMath::Lerp(1.0f, ScatterEndRadiusScale, Alpha);
+}
+
+FPaintBurstParams UChocolateFountainProfile::MakeBurst(uint8 InPaintId, int32 Seed, float RadiusScale, int32 BurstIndex) const
 {
 	FPaintBurstParams Params = Burst;
 	Params.PaintId = InPaintId;
 	Params.Seed = Seed;
 	const float Scale = FMath::Max(RadiusScale, 0.01f);
+
+	if (bScatterBursts)
+	{
+		// 흩뿌림에서는 반경이 사거리를 직접 정하므로 Speed도 MinPitch/MaxPitch도 쓰이지 않는다.
+		Params.ScatterRadius = Radius * Scale;
+		Params.Count = FMath::Max(Burst.Count + FMath::Max(BurstIndex, 0) * ScatterCountStep, 1);
+		return Params;
+	}
+
 	if (bBurstMatchesRadius && Params.Paintball)
 	{
 		// 속도가 사거리를 정하므로 배율을 반경에 곱하면 도포 범위가 그대로 따라온다.

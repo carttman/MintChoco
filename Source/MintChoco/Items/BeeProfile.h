@@ -82,7 +82,13 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bee", meta = (ClampMin = "1", ForceUnits = "s"))
 	float Lifetime = 8.0f;
 
-	/** 격추까지 견디는 타격력의 합. 스나이퍼 100 한 방, 샷건 알갱이 3짜리 34발. */
+	/**
+	 * 격추까지 견디는 타격력의 합. 차지샷 직격(HitPower 100)이면 한 방, 샷건 펠릿(25)이면 네 발이다
+	 * (한 번의 사격이 펠릿 다섯이므로 거의 다 맞으면 한 번). 격추된 꿀벌은 터지지 않고 사라진다.
+	 *
+	 * 궤적 도포가 넓은 만큼 이 값이 곧 상대의 유일한 대응 수단이다 — 올릴 때는 TrailDeposit과
+	 * 같이 봐야 한다.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bee", meta = (ClampMin = "1"))
 	float Health = 100.0f;
 
