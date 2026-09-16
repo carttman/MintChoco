@@ -23,6 +23,7 @@ class USphereComponent;
 class UAudioComponent;
 class UNiagaraComponent;
 class USpringArmComponent;
+class UStaticMesh;
 class UStaticMeshComponent;
 class UUnitInputConfig;
 class UUnitMovementComponent;
@@ -118,6 +119,12 @@ public:
 	 * 몸 위에 실루엣만 둥둥 뜬다. 판단만 하므로 유닛 없이도 부를 수 있다.
 	 */
 	static bool ShouldShowShell(bool bStateActive, bool bCameraFaded);
+
+	/**
+	 * 조준 중 손에 무언가를 보여야 하는가. 조준 중이 아니거나 아이템이 그 슬롯을 비워 두었으면
+	 * 아무것도 들지 않는다. 메시와 이펙트가 같은 규칙을 탄다. 판단만 하므로 유닛 없이도 부른다.
+	 */
+	static bool ShouldShowHeld(bool bAiming, const UObject* Asset);
 
 	/**
 	 * 입력으로 움직일 수 없는 상태인지(스턴, 히어로 랜딩). 입력 핸들러와 무브먼트 컴포넌트가
@@ -391,6 +398,17 @@ protected:
 	TObjectPtr<UStaticMeshComponent> GunMesh;
 
 	/**
+	 * 조준 중 손에 든 아이템(꿀풍선). 평소에는 숨어 있고, 무엇을 들지와 어느 소켓에 붙일지는
+	 * 든 아이템의 프로필이 정한다(HeldMesh, HeldFX, HeldSocket).
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item")
+	TObjectPtr<UStaticMeshComponent> HeldItemMesh;
+
+	/** 조준 중 손에 붙어 있는 이펙트. 트레일과 같은 이유로 들고 있다가 조준이 끝날 때 끈다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> HeldItemFXComponent;
+
+	/**
 	 * 대시 중 발밑의 보드. 평소에는 숨어 있고 대시 **동작**이 시작되면 보이며 끝나면 숨는다.
 	 * 스폰하지 않고 켜고 끄므로 복제가 필요 없다: 각 머신의 애님 인스턴스가 자기 화면의 상태
 	 * 기계를 보고 SetBoardShown으로 세우므로, 그 머신이 그리는 동작과 항상 일치한다.
@@ -489,6 +507,19 @@ private:
 
 	/** 보임 의도와 카메라 페이드를 합쳐 실제 가시성을 정한다. */
 	void UpdateGunVisibility();
+
+public:
+	/**
+	 * 든 아이템과 조준 상태에 맞춰 손의 메시를 켜고 끈다. 슬롯 컴포넌트가 조준을 세울 때와
+	 * 복제로 받을 때 양쪽에서 부른다 — bAiming은 소유자에게 복제되지 않으므로 한쪽만으로는
+	 * 모든 머신에서 맞지 않는다(대시·자세와 같은 규칙).
+	 */
+	void UpdateHeldItem();
+
+private:
+	/** 손의 이펙트만. UpdateHeldItem이 메시보다 먼저 부른다 — 둘은 독립이다. */
+	void UpdateHeldItemFX();
+
 
 	/** 대시 동작이 돌고 있고 카메라 페이드가 아닐 때만 보드가 보인다. */
 	void UpdateBoardVisibility();

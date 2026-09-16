@@ -19,6 +19,7 @@
 #include "Engine/StaticMesh.h"
 #include "Game/GameGameState.h"
 #include "Game/GamePlayerState.h"
+#include "Game/TeamLook.h"
 #include "Game/TeamTypes.h"
 #include "Game/UnitInputConfig.h"
 #include "Game/UnitMovementComponent.h"
@@ -30,6 +31,7 @@
 #include "InputActionValue.h"
 #include "Items/ItemGameplayEffect.h"
 #include "Items/ItemGameplayTags.h"
+#include "Items/ItemProfile.h"
 #include "Items/ItemSettings.h"
 #include "Items/ItemSlotComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -138,6 +140,15 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	GunMesh->SetGenerateOverlapEvents(false);
 	GunMesh->SetCanEverAffectNavigation(false);
 	GunMesh->SetVisibility(false);
+
+	// 손에 든 아이템도 같은 규칙. 어느 소켓에 붙일지는 아이템마다 다르므로 여기서 정하지 않고
+	// UpdateHeldItem가 프로필을 보고 그때 붙인다.
+	HeldItemMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HeldItemMesh"));
+	HeldItemMesh->SetupAttachment(GetMesh());
+	HeldItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	HeldItemMesh->SetGenerateOverlapEvents(false);
+	HeldItemMesh->SetCanEverAffectNavigation(false);
+	HeldItemMesh->SetVisibility(false);
 
 	// 보드도 같은 규칙. Board 소켓은 ApplyUnitData가 메시를 정한 뒤 붙인다.
 	BoardMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoardMesh"));
@@ -319,6 +330,7 @@ void AUnit::SetCameraFaded(bool bFaded)
 		bCameraFaded = true;
 		UpdateGunVisibility();
 		UpdateBoardVisibility();
+		UpdateHeldItem();
 		UpdateSuperArmorOutline();
 		UpdateSpeedStarAura();
 		return;
@@ -332,6 +344,7 @@ void AUnit::SetCameraFaded(bool bFaded)
 	bCameraFaded = false;
 	UpdateGunVisibility();
 	UpdateBoardVisibility();
+	UpdateHeldItem();
 	UpdateSuperArmorOutline();
 	UpdateSpeedStarAura();
 }
@@ -529,6 +542,11 @@ bool AUnit::HasSpeedStar() const
 bool AUnit::ShouldShowShell(bool bStateActive, bool bCameraFaded)
 {
 	return bStateActive && !bCameraFaded;
+}
+
+bool AUnit::ShouldShowHeld(bool bAiming, const UObject* Asset)
+{
+	return bAiming && Asset != nullptr;
 }
 
 void AUnit::HandleSpeedStarTagChanged(const FGameplayTag Tag, int32 NewCount)
@@ -1341,6 +1359,81 @@ void AUnit::UpdateGunVisibility()
 		// 카메라가 안에 들어와 몸이 반투명해진 동안에는 총도 감춘다. 페이드는 스켈레탈 메시의
 		// 재질 슬롯만 바꾸므로(SetCameraFaded) 총만 불투명하게 남아 화면을 가린다.
 		GunMesh->SetVisibility(bGunVisible && !bCameraFaded);
+	}
+}
+
+void AUnit::UpdateHeldItem()
+{
+	// 메시와 이펙트는 독립이라(하나만 넣어도 된다) 메시 쪽에서 일찍 빠져나가도 이펙트는 돈다.
+	UpdateHeldItemFX();
+
+	if (!HeldItemMesh)
+	{
+		return;
+	}
+
+	const UItemProfile* const Held = ItemSlot ? ItemSlot->GetHeldItem() : nullptr;
+	UStaticMesh* const HeldMeshAsset = Held ? Held->HeldMesh.Get() : nullptr;
+	const bool bAiming = ItemSlot && ItemSlot->IsAimingItem();
+
+	if (!ShouldShowHeld(bAiming, HeldMeshAsset))
+	{
+		HeldItemMesh->SetVisibility(false);
+		return;
+	}
+
+	// 소켓은 아이템마다 다르므로 켤 때마다 다시 붙인다. 소켓이 없는 스켈레톤이면 메시 원점에
+	// 남으므로, 물건이 발밑에 보이면 그 이름의 소켓이 빠진 것이다(총, 잉크병과 같은 증상).
+	HeldItemMesh->SetStaticMesh(HeldMeshAsset);
+	HeldItemMesh->AttachToComponent(
+		GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, Held->HeldSocket);
+
+	// 총과 같은 이유로 카메라 페이드 중에는 감춘다: 페이드는 스켈레탈 메시의 재질만 바꾸므로
+	// 손의 물건만 불투명하게 남아 화면을 가린다.
+	HeldItemMesh->SetVisibility(!bCameraFaded);
+}
+
+void AUnit::UpdateHeldItemFX()
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	const UItemProfile* const Held = ItemSlot ? ItemSlot->GetHeldItem() : nullptr;
+	UNiagaraSystem* const FX = Held ? Held->HeldFX.Get() : nullptr;
+	const bool bAiming = ItemSlot && ItemSlot->IsAimingItem();
+
+	// 메시와 같은 규칙에 카메라 페이드를 더한다. 이펙트도 페이드된 몸 위에 혼자 남으면 눈에 띈다.
+	if (!ShouldShowHeld(bAiming, FX) || bCameraFaded)
+	{
+		if (HeldItemFXComponent)
+		{
+			// 대시 트레일과 같다. 새 스폰만 멈추고 떠 있던 입자는 제 수명대로 사라진다.
+			HeldItemFXComponent->Deactivate();
+			HeldItemFXComponent = nullptr;
+		}
+		return;
+	}
+
+	if (HeldItemFXComponent)
+	{
+		return;
+	}
+
+	HeldItemFXComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		FX,
+		GetMesh(),
+		Held->HeldSocket,
+		FVector::ZeroVector,
+		FRotator::ZeroRotator,
+		EAttachLocation::SnapToTarget,
+		// Deactivate 뒤 남은 입자가 다 사라지면 스스로 정리된다.
+		true);
+
+	if (HeldItemFXComponent)
+	{
+		HeldItemFXComponent->SetVariableLinearColor(TeamLook::NiagaraTintParameter, TeamLook::GetColor(GetPaintId(), GetWorld()));
 	}
 }
 

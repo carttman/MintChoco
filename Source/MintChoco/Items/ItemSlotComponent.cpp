@@ -382,6 +382,17 @@ void UItemSlotComponent::SetItemPoseOverride(UAnimSequenceBase* Animation, EItem
 void UItemSlotComponent::SetAiming(bool bNewAiming)
 {
 	bAiming = bNewAiming;
+	// 소유자와 서버는 여기서, 나머지 머신은 OnRep_Aiming에서. bAiming은 소유자에게 복제되지
+	// 않으므로 한쪽만으로는 모든 머신에서 맞지 않는다.
+	OnRep_Aiming();
+}
+
+void UItemSlotComponent::OnRep_Aiming()
+{
+	if (AUnit* const Unit = Cast<AUnit>(GetOwner()))
+	{
+		Unit->UpdateHeldItem();
+	}
 }
 
 void UItemSlotComponent::PlayInstantUseFeedback(const UItemProfile* Item)
