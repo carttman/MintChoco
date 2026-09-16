@@ -99,6 +99,33 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment", meta = (ClampMin = "0.01", ForceUnits = "s"))
 	float RowInterval = 0.05f;
 
+	/**
+	 * 좌클릭하고 첫 행이 떨어지기까지의 시간(초). 그동안 경로에 예고 표식이 순차로 놓인다.
+	 * 0이면 예고 없이 곧바로 떨어진다.
+	 *
+	 * 상대가 피할 틈이기도 하다: 길게 잡을수록 맞히기 어렵고 짧을수록 회피가 어렵다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment", meta = (ClampMin = "0", ForceUnits = "s"))
+	float LeadInSeconds = 1.0f;
+
+	/**
+	 * 리드인 동안 경로에 놓이는 예고 표식. 비워 두면 표식 없이 기다리기만 한다.
+	 *
+	 * 행마다 하나씩 가운데 열 자리에, 아래로 트레이스해 지형에 얹는다. 조준 미리보기
+	 * (AimPreviewFX, 본인 화면 전용)와 달리 이건 모든 플레이어가 본다 — 피하라는 표시다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment")
+	TObjectPtr<UNiagaraSystem> TelegraphFX;
+
+	/**
+	 * 표식을 몇 행마다 하나씩 놓을지. 1이면 행마다, 5면 다섯 행에 하나다.
+	 *
+	 * 표식 수만 줄이고 훑는 시간은 리드인 그대로다 — 간격이 그만큼 벌어진다. 행 수는 맵 크기를
+	 * 따라가므로(상한 MaxRows) 넓은 맵에서 표식이 촘촘해 보이면 이 값을 올린다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment", meta = (ClampMin = "1"))
+	int32 TelegraphRowStride = 1;
+
 	/** 경계 상자의 최고점에서 이만큼 위에서 떨어진다(cm). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment", meta = (ClampMin = "0", ForceUnits = "cm"))
 	float DropHeight = 300.0f;
