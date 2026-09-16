@@ -57,9 +57,18 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HoneyBalloon", meta = (ClampMin = "0", ForceUnits = "cm"))
 	float StunRadius = 300.0f;
 
-	/** 터질 때 뿌리는 탄. PaintId와 Seed는 런타임에 채워진다. */
+	/** 터질 때 뿌리는 탄. PaintId와 Seed, 그리고 파열음 뱅크는 런타임에 채워진다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "HoneyBalloon")
 	FPaintBurstParams Burst;
+
+	/**
+	 * 터질 때 APaintBurst에 넘길 파라미터. 에셋에 적힌 Burst에 런타임이 정하는 것을 채워 준다:
+	 * 페인트 id, 파열 시드, 그리고 이 아이템의 전용 사운드 뱅크(Sounds).
+	 *
+	 * 뱅크를 여기서 실어 보내는 이유는 APaintBurst가 프로필을 모르기 때문이다. 복제되는 것은
+	 * 파라미터뿐이라, 파열음을 아이템마다 다르게 내려면 참조가 파라미터에 실려 있어야 한다.
+	 */
+	FPaintBurstParams MakeBurstParams(uint8 PaintId, int32 Seed) const;
 
 	virtual void LogUnsetReferences(const UObject* Owner) const override;
 };
