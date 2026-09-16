@@ -5,6 +5,7 @@
 #include "PaintDeposit.generated.h"
 
 class UPaintBrushProfile;
+class UPaintSplashProfile;
 class UWorld;
 struct FHitResult;
 struct FPaintSplat;
@@ -49,6 +50,13 @@ struct MINTCHOCO_API FPaintDeposit
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint", meta = (ClampMin = "0", ForceUnits = "s"))
 	float StunSuperArmorDuration = 1.0f;
 
+	/**
+	 * What the contact scatters beyond its splat: the droplets players see and the phantom
+	 * landings they are scored for. Unset - the default - leaves the landing a single splat.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paint")
+	TObjectPtr<UPaintSplashProfile> Splash;
+
 	bool CanPaint() const { return BrushProfile != nullptr; }
 
 	/** Stun for a shot at Charge (0 to 1) of full strength: StunDuration at 1, proportionally less below. */
@@ -65,9 +73,10 @@ struct MINTCHOCO_API FPaintDeposit
 	 * not on a paintable surface, the world has no paint subsystem, or BrushProfile is unset.
 	 * A hit actor that is a paint hit receiver is struck with HitPower first, whether or not it
 	 * is also painted. StarGen marks the splat as a speed-star trail of that generation; 0 is
-	 * plain paint.
+	 * plain paint. BallRadius (cm) only matters to a deposit with a Splash, which scales its
+	 * droplets by it.
 	 */
-	bool ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed, float Charge = 1.0f, uint8 StarGen = 0) const;
+	bool ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed, float Charge = 1.0f, uint8 StarGen = 0, float BallRadius = 0.0f) const;
 
 	/** Strikes the hit actor if it is a paint hit receiver. Returns true when something received the hit. */
 	bool StrikeReceiver(const FHitResult& Hit, uint8 PaintId) const;

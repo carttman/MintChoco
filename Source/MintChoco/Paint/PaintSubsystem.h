@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Paint/PaintCellGrid.h"
 #include "Paint/PaintIslandLayout.h"
+#include "Paint/PaintLookStyle.h"
 #include "Paint/PaintSplat.h"
 #include "Paint/PaintStar.h"
 #include "Subsystems/WorldSubsystem.h"
@@ -94,6 +95,14 @@ public:
 
 	TArray<UPaintableComponent*> GetPaintables() const;
 
+	const FPaintLookStyle& GetLookStyle() const { return LookStyle; }
+
+	/**
+	 * Keeps the look scalars and pushes them to every surface at once. A surface that begins
+	 * play later reads them back on its own, so a sweep set before a level loads still lands.
+	 */
+	void SetLookStyle(const FPaintLookStyle& Style);
+
 	/**
 	 * Hands back the atlas for this mesh and layout, baking it on a worker thread first if no
 	 * surface has asked for it yet. OnReady fires on the game thread, right away for a cached
@@ -140,6 +149,16 @@ private:
 	/** Spawns the project's side-splat effect at the contact. Nothing on a dedicated server, which has no eyes. */
 	void SpawnSideSplatEffect(const FPaintSplat& Splat);
 
+	/** Hands the splat to every paintable surface within its extent, each once. */
+	void StampSurfaces(const FPaintSplat& Splat);
+
+	/**
+	 * Scores the splash a splat carries: its phantom landings, derived from the splat alone, mark
+	 * cells as score-only splats of their own. Every machine runs it on the same replicated splat,
+	 * so the grids agree without another byte on the wire.
+	 */
+	void ApplyPhantomLandings(const FPaintSplat& Splat);
+
 	TArray<TWeakObjectPtr<UPaintableComponent>> Paintables;
 
 	/** The settings' effect class once loaded; a project without one simply shows nothing. */
@@ -156,4 +175,6 @@ private:
 	TMap<int32, TObjectPtr<UTextureRenderTarget2D>> ScratchTargets;
 
 	FPaintStarShaderState StarPaint;
+
+	FPaintLookStyle LookStyle;
 };

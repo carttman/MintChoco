@@ -6,6 +6,7 @@
 #include "PaintSplat.generated.h"
 
 class UMaterialInterface;
+class UPaintSplashProfile;
 
 /**
  * Size of the paint-id space. Ids 0-3 are player teams, 4-6 are reserved for game
@@ -161,6 +162,40 @@ struct FPaintSplat
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
 	bool bTransient = false;
+
+	/**
+	 * What the contact scatters beyond this splat, or null for a plain one. Carried so every
+	 * machine derives the same phantom landings for the score (UPaintSubsystem::ApplySplat) while
+	 * the GPU draws its own droplets; the two never have to talk.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint")
+	TObjectPtr<const UPaintSplashProfile> Splash;
+
+	/** Direction the ball was travelling at the contact; with IncidentSpeed and BallRadius, the splash's input. */
+	UPROPERTY()
+	FVector_NetQuantizeNormal IncidentDir = FVector::ForwardVector;
+
+	/** cm/s. */
+	UPROPERTY()
+	uint16 IncidentSpeed = 0;
+
+	/** cm. */
+	UPROPERTY()
+	uint8 BallRadius = 0;
+
+	/**
+	 * Marks the score grid and draws nothing, needing no atlas. Never sent: a phantom landing is
+	 * made this way on the machine that expands the splash.
+	 */
+	UPROPERTY(NotReplicated)
+	bool bScoreOnly = false;
+
+	/**
+	 * Draws into the paint buffer and marks no cell: the picture without the score. Never sent: a
+	 * splash droplet's mark is made this way on the machine whose effect landed it.
+	 */
+	UPROPERTY(NotReplicated)
+	bool bDrawOnly = false;
 
 	/** Farthest painted point from the center, in world cm. This is the overlap query radius. */
 	float GetWorldExtent() const { return Radius * Stretch; }

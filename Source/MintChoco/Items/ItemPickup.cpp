@@ -8,6 +8,8 @@
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 #include "TimerManager.h"
 
 #include "Audio/AudioGameplayTags.h"
@@ -252,6 +254,7 @@ void AItemPickup::ApplyState()
 	{
 		Mesh->SetVisibility(bActive);
 	}
+	UpdateAura(bActive);
 	if (Laser)
 	{
 		Laser->SetVisibility(!bActive);
@@ -264,6 +267,42 @@ void AItemPickup::ApplyState()
 	UpdateMotionEnabled();
 
 	BP_OnStateChanged(State);
+}
+
+void AItemPickup::UpdateAura(bool bActive)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	if (!bActive || !AuraFX)
+	{
+		if (AuraFXComponent)
+		{
+			// 대시 트레일과 같다. 새 스폰만 멈추고 떠 있던 입자는 제 수명대로 사라진다.
+			// 습득은 이 경로가 아니다: 그쪽은 액터를 통째로 숨기므로(OnRep_Collected) 오라도 같이 걷힌다.
+			AuraFXComponent->Deactivate();
+			AuraFXComponent = nullptr;
+		}
+		return;
+	}
+
+	if (AuraFXComponent)
+	{
+		return;
+	}
+
+	// 메시에 붙인다. 박스가 떠다니고 도는 것을 오라가 그대로 따라간다.
+	AuraFXComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		AuraFX,
+		Mesh,
+		NAME_None,
+		FVector::ZeroVector,
+		FRotator::ZeroRotator,
+		EAttachLocation::SnapToTarget,
+		// Deactivate 뒤 남은 입자가 다 사라지면 스스로 정리된다.
+		true);
 }
 
 void AItemPickup::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,

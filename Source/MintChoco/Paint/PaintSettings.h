@@ -92,9 +92,18 @@ public:
 
 	/**
 	 * Team colors and gloss (MPC_TeamLook). Every team-tinted material reads it through
-	 * MF_TeamLook and C++ through TeamLook::Get, so the two never disagree. Unset falls back
-	 * to the built-in table in TeamLook.cpp.
+	 * MF_TeamLook and C++ through TeamLook::Get, so the two never disagree. It is the only
+	 * source of team colors: unset, both teams come out neutral grey.
 	 */
 	UPROPERTY(Config, EditAnywhere, Category = "Team Look")
 	TSoftObjectPtr<UMaterialParameterCollection> TeamLookCollection;
+
+	/**
+	 * MPC_PaintStyle: the look scalars every paint surface reads, shared by all of them.
+	 * Style packs (CoatScale, FuzzScale, RoughnessBias, Flow) and Style2 (NormalStrength, ...).
+	 * A collection is used rather than material parameters because it is live at runtime, so a
+	 * look sweep reaches every surface at once without a recompile.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Paint Style")
+	TSoftObjectPtr<UMaterialParameterCollection> StyleCollection;
 };

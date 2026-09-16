@@ -40,6 +40,10 @@ namespace
 	const FName PaintIdMapParam(TEXT("PaintIdMap"));
 	const FName PaintTexelSizeParam(TEXT("PaintTexelSize"));
 	const FName PaintDistRangeParam(TEXT("PaintDistRange"));
+	/** Paint thickness in world cm. Derived from the material, never authored here: see SetPaintHeight. */
+	const FName PaintMaxHeightParam(TEXT("PaintMaxHeight"));
+	/** World size of one paint texel, so the height read can filter by a length instead of a texel count. */
+	const FName PaintTexelCmParam(TEXT("PaintTexelCm"));
 	const FName PositionMapParam(TEXT("PositionMap"));
 	const FName BoundsMinParam(TEXT("BoundsMin"));
 	const FName BoundsSizeParam(TEXT("BoundsSize"));
@@ -67,6 +71,17 @@ namespace
 			}
 		}
 		return Result.IsEmpty() ? TEXT("none") : Result;
+	}
+
+	/**
+	 * Nanite scales a material's 0..1 displacement by DisplacementScaling.Magnitude, so that
+	 * magnitude is the paint's thickness in world cm. The shading normal slopes a texel by the
+	 * same number, so it is read back from the material instead of being authored twice: the two
+	 * copies drifted apart before, and a normal steeper than the silhouette reads as sparkle.
+	 */
+	void SetPaintHeight(UMaterialInstanceDynamic& SurfaceMID, const UMaterialInterface& BaseMaterial)
+	{
+		SurfaceMID.SetScalarParameterValue(PaintMaxHeightParam, BaseMaterial.GetDisplacementScaling().Magnitude);
 	}
 }
 
@@ -210,6 +225,9 @@ void UPaintableComponent::BeginPlay()
 	SurfaceMID->SetScalarParameterValue(PaintTexelSizeParam, 1.0f / Layout.AtlasSize);
 	// The reads decode the brush's distance encoding, so both sides must agree on its range.
 	SurfaceMID->SetScalarParameterValue(PaintDistRangeParam, PaintDistanceRange);
+	SetPaintHeight(*SurfaceMID, *BaseMaterial);
+	// The height read filters by a world length, so a coarsened atlas reads like a fine one.
+	SurfaceMID->SetScalarParameterValue(PaintTexelCmParam, Layout.TexelCm);
 	// The reader normalizes the pixel's local position with these and differentiates the position
 	// atlas in unscaled local space, letting the Local -> World transform apply the scale.
 	SurfaceMID->SetVectorParameterValue(BoundsMinParam, FLinearColor(MeshLocalBounds.Min));
@@ -305,6 +323,14 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 		return;
 	}
 
+	// A score-only splat needs the grid, which is ready long before the atlas. It still waits
+	// behind anything queued, so ownership keeps the order the authority decided.
+	if (Splat.bScoreOnly && PendingSplats.IsEmpty() && CellGrid.IsBuilt())
+	{
+		MarkScore(Splat);
+		return;
+	}
+
 	if (bPaintReady && PendingSplats.IsEmpty())
 	{
 		DrawSplat(Splat);
@@ -321,21 +347,34 @@ void UPaintableComponent::UpdateTickEnabled()
 	SetComponentTickEnabled(bOverlay || !PendingSplats.IsEmpty());
 }
 
+void UPaintableComponent::MarkScore(const FPaintSplat& Splat)
+{
+	// Same stamp the brush draws, so ownership can only differ from the picture by the stamp's
+	// satellites and the cell resolution. The locks come with the splat, so this machine skips
+	// what the authority skipped. A score-only splat stands for a mark a few cells wide at most;
+	// at half its radius it would fall between cell centers more often than not, so it claims
+	// its whole radius, about what the drawn mark's satellites reach.
+	const FPaintLockGens Locks = FPaintLockGens::Unpack(Splat.LockGens);
+	const float CoreFraction = Splat.bScoreOnly ? 1.0f : CellStampFraction;
+	CellGrid.Mark(ComputeLocalStamp(Splat), Splat.PaintId, Splat.StarGen, Locks, CoreFraction);
+}
+
 void UPaintableComponent::DrawSplat(const FPaintSplat& Splat)
 {
-	const FPaintLocalStamp Stamp = ComputeLocalStamp(Splat);
-
-	// Same stamp the brush draws, so ownership can only differ from the picture by the stamp's
-	// satellites and the cell resolution. Marked first: the score exists even where there is no
-	// picture (a dedicated server). The locks come with the splat, so this machine skips what the
-	// authority skipped.
-	const FPaintLockGens Locks = FPaintLockGens::Unpack(Splat.LockGens);
-	CellGrid.Mark(Stamp, Splat.PaintId, Splat.StarGen, Locks, CellStampFraction);
-
-	if (!SurfaceMID || !PaintRenderTarget)
+	// Marked first: the score exists even where there is no picture (a dedicated server). A
+	// draw-only splat is the picture alone: a splash droplet's mark, whose score was claimed by
+	// its phantom when the contact was applied.
+	if (!Splat.bDrawOnly)
+	{
+		MarkScore(Splat);
+	}
+	if (Splat.bScoreOnly || !SurfaceMID || !PaintRenderTarget)
 	{
 		return;
 	}
+
+	const FPaintLocalStamp Stamp = ComputeLocalStamp(Splat);
+	const FPaintLockGens Locks = FPaintLockGens::Unpack(Splat.LockGens);
 
 	FStampRects Rects;
 	BuildStampRects(Stamp, Rects);

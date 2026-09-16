@@ -9,6 +9,8 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
+#include "Kismet/KismetMaterialLibrary.h"
+#include "Materials/MaterialParameterCollection.h"
 #include "Tasks/Task.h"
 
 #include "Audio/AudioGameplayTags.h"
@@ -17,9 +19,52 @@
 #include "Paint/PaintLog.h"
 #include "Paint/PaintPlatformCoverage.h"
 #include "Paint/PaintSettings.h"
+#include "Paint/PaintSplash.h"
+#include "Paint/PaintSplashProfile.h"
 #include "Paint/PaintSplatEffect.h"
 #include "Paint/PaintableComponent.h"
 #include "Screen/ScreenFadeSubsystem.h"
+
+namespace
+{
+	/**
+	 * Takes the style scalars positionally and leaves anything not given at its current value, so
+	 * a sweep can change one axis per line. With no arguments it only prints what is set.
+	 */
+	/** The two MPC_PaintStyle entries: Style packs the look, Style2 carries what did not fit. */
+	const FName StylePackedParameter(TEXT("Style"));
+	const FName StyleExtraParameter(TEXT("Style2"));
+
+	void PaintStyleCommand(const TArray<FString>& Args, UWorld* World)
+	{
+		UPaintSubsystem* const Paint = World ? World->GetSubsystem<UPaintSubsystem>() : nullptr;
+		if (!Paint)
+		{
+			UE_LOG(LogPaint, Warning, TEXT("mc.Paint.Style: 페인트 서브시스템이 없는 월드다."));
+			return;
+		}
+
+		FPaintLookStyle Style = Paint->GetLookStyle();
+		float* const Fields[] = {
+			&Style.CoatScale, &Style.FuzzScale, &Style.RoughnessBias, &Style.Flow, &Style.NormalStrength};
+		const int32 Given = FMath::Min(Args.Num(), static_cast<int32>(UE_ARRAY_COUNT(Fields)));
+		for (int32 Index = 0; Index < Given; ++Index)
+		{
+			*Fields[Index] = FCString::Atof(*Args[Index]);
+		}
+		if (Given > 0)
+		{
+			Paint->SetLookStyle(Style);
+		}
+		UE_LOG(LogPaint, Log, TEXT("mc.Paint.Style coat=%.2f fuzz=%.2f rough=%.2f flow=%.2f normal=%.2f"),
+			Style.CoatScale, Style.FuzzScale, Style.RoughnessBias, Style.Flow, Style.NormalStrength);
+	}
+
+	FAutoConsoleCommandWithWorldAndArgs GPaintStyleCommand(
+		TEXT("mc.Paint.Style"),
+		TEXT("페인트 표면의 룭 스칼라를 바꿄다: <coat 0..1> <fuzz 0..2> <rough 0..1> <flow 0..1> [normal 0..1]. 인자를 생략하면 현재 값만 찍는다."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&PaintStyleCommand));
+}
 
 void UPaintSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
@@ -123,8 +168,21 @@ void UPaintSubsystem::ApplySplat(const FPaintSplat& Splat)
 
 	// The one per-splat hook every machine passes (the server directly, a client from the replicated
 	// log). A volley lands many in one frame; the bank's concurrency limit keeps that to a few voices.
-	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_Splat, Splat.Location);
+	// A phantom landing and a droplet's mark are silent: their contact already made its sound.
+	if (!Splat.bScoreOnly && !Splat.bDrawOnly)
+	{
+		UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_Splat, Splat.Location);
+	}
 
+	StampSurfaces(Splat);
+	if (Splat.Splash)
+	{
+		ApplyPhantomLandings(Splat);
+	}
+}
+
+void UPaintSubsystem::StampSurfaces(const FPaintSplat& Splat)
+{
 	// A physics overlap rather than the registry: collision, not a bounding box, decides which
 	// surfaces the stamp can reach, and it is the same query a projectile hit came from.
 	TArray<FOverlapResult> Overlaps;
@@ -151,6 +209,42 @@ void UPaintSubsystem::ApplySplat(const FPaintSplat& Splat)
 		{
 			Paintable->ApplySplat(Splat);
 		}
+	}
+}
+
+void UPaintSubsystem::ApplyPhantomLandings(const FPaintSplat& Splat)
+{
+	const UPaintSplashProfile& Profile = *Splat.Splash;
+
+	PaintSplash::FSpawnInput Input;
+	Input.ImpactPoint = Splat.Location;
+	Input.ImpactNormal = Splat.Normal;
+	Input.IncidentVelocity = FVector(Splat.IncidentDir) * static_cast<double>(Splat.IncidentSpeed);
+	Input.BallRadius = Splat.BallRadius > 0 ? static_cast<float>(Splat.BallRadius) : 6.0f;
+	Input.Seed = Splat.Seed;
+
+	TArray<PaintSplash::FPhantomLanding> Landings;
+	PaintSplash::PhantomLandings(Profile, Input, GetWorld()->GetGravityZ(), Landings);
+	for (int32 Index = 0; Index < Landings.Num(); ++Index)
+	{
+		const PaintSplash::FPhantomLanding& Landing = Landings[Index];
+		const float Radius = Profile.ComputeMarkRadius(Landing.Speed) * Profile.PhantomCellRadiusScale;
+		if (Radius <= 0.0f)
+		{
+			continue;
+		}
+
+		// A round mark on the contact's own plane, so the parent's frame serves. No splash of its
+		// own: a phantom never expands again.
+		FPaintSplat Phantom = Splat;
+		Phantom.Splash = nullptr;
+		Phantom.bScoreOnly = true;
+		Phantom.Location = Landing.Point;
+		Phantom.Radius = Radius;
+		Phantom.Stretch = 1.0f;
+		Phantom.ImpactU = 0.0f;
+		Phantom.Seed = static_cast<uint16>(HashCombineFast(static_cast<uint32>(Splat.Seed), static_cast<uint32>(Index + 1)) & 0xFFFF);
+		StampSurfaces(Phantom);
 	}
 }
 
@@ -211,6 +305,26 @@ TArray<UPaintableComponent*> UPaintSubsystem::GetPaintables() const
 		}
 	}
 	return Result;
+}
+
+void UPaintSubsystem::SetLookStyle(const FPaintLookStyle& Style)
+{
+	LookStyle = Style;
+
+	// A collection reaches every paint material at once and is live without a recompile, which
+	// is what makes a look sweep possible at all; a material parameter would only reach the one
+	// instance that was written, and a layer parameter cannot be written by name from C++.
+	UMaterialParameterCollection* const Collection = UPaintSettings::Get().StyleCollection.LoadSynchronous();
+	if (!Collection)
+	{
+		UE_LOG(LogPaint, Warning, TEXT("StyleCollectionÇ74 Åc6Åb4 ¸ed Âa4Î7c·7c¹7c Äe0 ¬f3Ç74 Åc6²e4."));
+		return;
+	}
+	UWorld* const World = GetWorld();
+	UKismetMaterialLibrary::SetVectorParameterValue(World, Collection, StylePackedParameter,
+		FLinearColor(Style.CoatScale, Style.FuzzScale, Style.RoughnessBias, Style.Flow));
+	UKismetMaterialLibrary::SetVectorParameterValue(World, Collection, StyleExtraParameter,
+		FLinearColor(Style.NormalStrength, 0.0f, 0.0f, 0.0f));
 }
 
 void UPaintSubsystem::RequestAtlas(
