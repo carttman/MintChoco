@@ -16,8 +16,6 @@
 #include "EngineUtils.h"
 #include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
-#include "Materials/MaterialParameterCollection.h"
-#include "Materials/MaterialParameterCollectionInstance.h"
 #include "TimerManager.h"
 
 #include "Look/LookPreset.h"
@@ -25,7 +23,6 @@
 #include "Look/LookSettings.h"
 #include "MintChoco.h"
 #include "Paint/PaintBrushProfile.h"
-#include "Paint/PaintSettings.h"
 #include "Paint/PaintSplat.h"
 #include "Paint/PaintSubsystem.h"
 #include "Weapons/PaintProjectile.h"
@@ -189,7 +186,7 @@ bool LookPreset::ResolveArgument(const FString& Argument, const TArray<FName>& S
 	{
 		return false;
 	}
-	if (Trimmed.Equals(TEXT("Off"), ESearchCase::IgnoreCase) || Trimmed.Equals(TEXT("Baseline"), ESearchCase::IgnoreCase))
+	if (Trimmed.Equals(TEXT("Off"), ESearchCase::IgnoreCase))
 	{
 		OutIndex = INDEX_NONE;
 		return true;
@@ -274,7 +271,6 @@ void ULookSubsystem::ApplyPreset(ULookPreset* Preset)
 			UE_LOG(LogMintChoco, Warning, TEXT("룩 프리셋 %s: 콘솔 변수 %s 가 없다."), *Preset->GetName(), *Entry.Name);
 		}
 	}
-	ApplyTeamLook(*World, Preset->TeamLookValues);
 	ApplyMaterialSwaps(*World, Preset->MaterialSwaps);
 
 	UE_LOG(LogMintChoco, Log, TEXT("룩 프리셋 %s 를 얹었다."), *Preset->ShortName.ToString());
@@ -337,13 +333,6 @@ void ULookSubsystem::RestoreState(bool bWorldEnding)
 				}
 			}
 		}
-		if (UMaterialParameterCollectionInstance* const Instance = TeamLookInstance.Get())
-		{
-			for (const TPair<FName, FLinearColor>& Entry : TeamLookOriginals)
-			{
-				Instance->SetVectorParameterValue(Entry.Key, Entry.Value);
-			}
-		}
 		for (const FLookSwappedSlot& Swapped : SwappedSlots)
 		{
 			UMeshComponent* const Mesh = Swapped.Mesh.Get();
@@ -361,8 +350,6 @@ void ULookSubsystem::RestoreState(bool bWorldEnding)
 	HiddenClouds.Reset();
 	DomeSlots.Reset();
 	DomeMaterial.Reset();
-	TeamLookInstance.Reset();
-	TeamLookOriginals.Reset();
 	SwapTable.Reset();
 	SwappedSlots.Reset();
 	ActivePreset = nullptr;
@@ -533,37 +520,6 @@ void ULookSubsystem::ApplySkyDome(UWorld& World, const FLookSkyDomeSettings& Set
 				DomeSlots.Emplace(Mesh, Slot);
 			}
 		});
-	}
-}
-
-void ULookSubsystem::ApplyTeamLook(UWorld& World, const TArray<FLookCollectionValue>& Values)
-{
-	if (Values.IsEmpty())
-	{
-		return;
-	}
-	UMaterialParameterCollection* const Collection = UPaintSettings::Get().TeamLookCollection.LoadSynchronous();
-	UMaterialParameterCollectionInstance* const Instance = Collection ? World.GetParameterCollectionInstance(Collection) : nullptr;
-	if (!Instance)
-	{
-		UE_LOG(LogMintChoco, Warning, TEXT("룩 프리셋: MPC_TeamLook 인스턴스가 없어 팀 룩 값을 건너뛴다."));
-		return;
-	}
-	TeamLookInstance = Instance;
-
-	for (const FLookCollectionValue& Entry : Values)
-	{
-		FLinearColor Original;
-		if (!Instance->GetVectorParameterValue(Entry.ParameterName, Original))
-		{
-			UE_LOG(LogMintChoco, Warning, TEXT("룩 프리셋: MPC_TeamLook 에 %s 항목이 없다."), *Entry.ParameterName.ToString());
-			continue;
-		}
-		if (!TeamLookOriginals.Contains(Entry.ParameterName))
-		{
-			TeamLookOriginals.Add(Entry.ParameterName, Original);
-		}
-		Instance->SetVectorParameterValue(Entry.ParameterName, Entry.Value);
 	}
 }
 

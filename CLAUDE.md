@@ -37,8 +37,9 @@ live; no recompile, no restart.
 - Shaders read it through `MF_TeamLook(TeamId)` → `Color, Subsurface, Roughness, Specular,
   Metallic, WetCoat`. Never reorder or delete those outputs: call nodes address them by index.
 - C++ reads it through `TeamLook::Get / GetColor / GetDisplayColor` (`Game/TeamLook.h`), which
-  resolve `UPaintSettings::TeamLookCollection`; the fallback table in `TeamLook.cpp` must match
-  the MPC seed. `Teams::` holds ids and names only.
+  resolve `UPaintSettings::TeamLookCollection`. The MPC is the only source — there is no fallback
+  table, and a collection that will not load leaves both teams neutral grey. Look presets do not
+  touch team color. `Teams::` holds ids and names only.
 - Every team-tinted master declares a scalar `TeamId` (0 Mint, 1 Choco); per-team MIs differ
   only by `TeamId`. A non-team look (`MI_InkLiquid_Red`, `MI_InkSurface_Red`) sets
   `UseTeamLook = 0`. `ML_Look_Mint/Choco` call the function with a constant 0/1, so the old
@@ -112,7 +113,11 @@ Tangent); `CustomizedUVs` and WPO are vertex-frequency. Everything else: `docs/T
   `ServerTravel` skips the cover.
 - Steam sessions: use `Online::GetSubsystem(GetWorld())`, keep `bAllowJoinInProgress` on, and
   filter lobbies with a private key; any filter change must be repackaged on both PCs.
-- Look presets (`Source/MintChoco/Look/`): `ULookPreset` data assets in `/Game/Assets/Look/`, listed
-  in `[/Script/MintChoco.LookSettings]`, laid on at runtime only by `ULookSubsystem`
-  (`mc.Look <name|number|Off>`, `mc.Look.List`); levels and source assets never change on disk.
+- Look presets (`Source/MintChoco/Look/`): the shipped look is **baked into the level**. Hybrid
+  lives in `Lvl_Stage` / `Lvl_Stage_inside` (post-process volume, sun, hidden volumetric cloud)
+  plus `MI_StageSkyDome` and `MPC_TeamLook`, so the editor viewport, PIE and a packaged build all
+  show the same thing. `ULookPreset` assets and `ULookSubsystem` (`mc.Look <name|number|Off>`,
+  `mc.Look.List`) are a comparison tool that lays a preset over the baked look at runtime;
+  `mc.Look Off` is the baked look and `mc.Look Baseline` the pre-bake one. Details and the
+  pre-bake values: `docs/history/2026-09-look-bake/PreBake.md`.
   Comparison captures set the `ReviewPreset` / `ReviewSetup` on the settings CDO before Simulate.

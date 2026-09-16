@@ -12,7 +12,6 @@ class UExponentialHeightFogComponent;
 class ULookPreset;
 class ULookReviewSetup;
 class UMaterialInterface;
-class UMaterialParameterCollectionInstance;
 class UMeshComponent;
 class USceneComponent;
 class USkyLightComponent;
@@ -22,7 +21,6 @@ struct FLookMaterialSwap;
 struct FLookSkyDomeSettings;
 struct FLookSkyLightSettings;
 struct FLookSunSettings;
-struct FLookCollectionValue;
 
 /**
  * 콘솔 변수를 바꾸기 전 원래 문자열을 기억했다가 되돌린다. 콘솔 변수는 프로세스 전역이라
@@ -45,7 +43,7 @@ private:
 namespace LookPreset
 {
 	/**
-	 * mc.Look 인자를 목록 인덱스로 바꾼다. "Off", "Baseline", "0" 은 INDEX_NONE(끄기),
+	 * mc.Look 인자를 목록 인덱스로 바꾼다. "Off" 와 "0" 은 INDEX_NONE(끄기),
 	 * "1".."N" 은 목록 순서, 나머지는 ShortName(대소문자 무시). 알아들을 수 없으면 false.
 	 */
 	MINTCHOCO_API bool ResolveArgument(const FString& Argument, const TArray<FName>& ShortNames, int32& OutIndex);
@@ -100,8 +98,8 @@ struct FLookSwappedSlot
 /**
  * 룩 프리셋을 월드에 런타임으로만 얹는다. 레벨 액터와 에셋은 디스크에서 바뀌지 않는다.
  *
- * 얹기 전에 해, 스카이라이트, 안개, 구름, 스카이돔, MPC_TeamLook, 콘솔 변수의 원래 값을
- * 기억하고, 프리셋의 후처리는 경계 없는 트랜지언트 볼륨으로 레벨 볼륨 위에 올린다.
+ * 얹기 전에 해, 스카이라이트, 안개, 구름, 스카이돔, 콘솔 변수의 원래 값을 기억하고,
+ * 프리셋의 후처리는 경계 없는 트랜지언트 볼륨으로 레벨 볼륨 위에 올린다.
  * Restore 는 그 반대이고 월드가 사라질 때도 불린다.
  *
  * ULookSettings 의 리뷰 설정이 채워져 있으면 월드 시작 때 그 프리셋을 얹고, 리뷰 셋업의
@@ -140,7 +138,6 @@ private:
 	void ApplyFog(UWorld& World, const FLookFogSettings& Settings);
 	void HideClouds(UWorld& World);
 	void ApplySkyDome(UWorld& World, const FLookSkyDomeSettings& Settings);
-	void ApplyTeamLook(UWorld& World, const TArray<FLookCollectionValue>& Values);
 	void ApplyMaterialSwaps(UWorld& World, const TArray<FLookMaterialSwap>& Swaps);
 
 	/** 월드의 메시 슬롯을 훑어 스왑 표에 있는 머티리얼을 바꿔 끼운다. 리스폰과 카메라 페이드 뒤를 따라잡는다. */
@@ -174,9 +171,6 @@ private:
 	/** MID 로 바꾼 스카이돔 슬롯과 원래 머티리얼. */
 	TArray<TPair<TWeakObjectPtr<UStaticMeshComponent>, int32>> DomeSlots;
 	TWeakObjectPtr<UMaterialInterface> DomeMaterial;
-
-	TWeakObjectPtr<UMaterialParameterCollectionInstance> TeamLookInstance;
-	TMap<FName, FLinearColor> TeamLookOriginals;
 
 	FLookConsoleVariableBackup ConsoleVariables;
 

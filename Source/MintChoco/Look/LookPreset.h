@@ -142,19 +142,6 @@ struct FLookConsoleVariable
 	FString Value;
 };
 
-/** MPC_TeamLook 의 이 월드 인스턴스에 덮어쓸 벡터 항목(MintSurface 등). 에셋 기본값은 그대로다. */
-USTRUCT(BlueprintType)
-struct FLookCollectionValue
-{
-	GENERATED_BODY()
-
-	UPROPERTY(EditAnywhere, Category = "Team Look")
-	FName ParameterName;
-
-	UPROPERTY(EditAnywhere, Category = "Team Look")
-	FLinearColor Value = FLinearColor::White;
-};
-
 /** 월드의 메시 슬롯 중 From 을 쓰는 곳을 To 로 바꿔 끼운다. */
 USTRUCT(BlueprintType)
 struct FLookMaterialSwap
@@ -207,9 +194,6 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Rendering")
 	TArray<FLookConsoleVariable> ConsoleVariables;
-
-	UPROPERTY(EditAnywhere, Category = "Team Look")
-	TArray<FLookCollectionValue> TeamLookValues;
 
 	UPROPERTY(EditAnywhere, Category = "Materials")
 	TArray<FLookMaterialSwap> MaterialSwaps;

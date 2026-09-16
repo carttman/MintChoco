@@ -92,8 +92,8 @@ public:
 
 	/**
 	 * Team colors and gloss (MPC_TeamLook). Every team-tinted material reads it through
-	 * MF_TeamLook and C++ through TeamLook::Get, so the two never disagree. Unset falls back
-	 * to the built-in table in TeamLook.cpp.
+	 * MF_TeamLook and C++ through TeamLook::Get, so the two never disagree. It is the only
+	 * source of team colors: unset, both teams come out neutral grey.
 	 */
 	UPROPERTY(Config, EditAnywhere, Category = "Team Look")
 	TSoftObjectPtr<UMaterialParameterCollection> TeamLookCollection;

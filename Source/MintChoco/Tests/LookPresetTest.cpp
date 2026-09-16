@@ -18,7 +18,7 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FLookArgumentTest::RunTest(const FString& Parameters)
 {
-	const TArray<FName> Names = {TEXT("SoftPBR"), TEXT("Hybrid"), TEXT("Toon")};
+	const TArray<FName> Names = {TEXT("SoftPBR"), TEXT("Hybrid"), TEXT("Toon"), TEXT("Baseline")};
 
 	struct FCase
 	{
@@ -28,11 +28,11 @@ bool FLookArgumentTest::RunTest(const FString& Parameters)
 	};
 	const FCase Cases[] = {
 		{TEXT("Off"), true, INDEX_NONE},
-		{TEXT("baseline"), true, INDEX_NONE},
+		{TEXT("baseline"), true, 3},
 		{TEXT("0"), true, INDEX_NONE},
 		{TEXT("1"), true, 0},
 		{TEXT("3"), true, 2},
-		{TEXT("4"), false, INDEX_NONE},
+		{TEXT("5"), false, INDEX_NONE},
 		{TEXT("-1"), false, INDEX_NONE},
 		{TEXT("toon"), true, 2},
 		{TEXT(" HYBRID "), true, 1},

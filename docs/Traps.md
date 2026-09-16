@@ -144,14 +144,25 @@ before anything else.
 
 ## Look presets (`mc.Look`)
 
-`ULookSubsystem` lays a `ULookPreset` on a game or PIE world at runtime only: a transient unbound
-post-process volume (priority 1000), the level's sun, sky light, height fog, sky dome MID and
-volumetric cloud, `MPC_TeamLook` instance values, console variables, and material swaps rescanned
-every 0.5 s. `mc.Look Off` and world teardown restore all of it; console variables are process-wide,
-so `Deinitialize` restores them too.
+The shipped look is **baked into the level**, not applied at runtime. As of 2026-09-16 `Lvl_Stage`
+and `Lvl_Stage_inside` carry Hybrid in their own data: `PostProcessVolume_0` (18 overrides plus the
+`MI_PP_LookStylize_Hybrid` blendable), `DirectionalLight_0` (5800 K, source angle 0.3, specular
+0.7), `VolumetricCloud_0` hidden — and the shared assets `MI_StageSkyDome` and `MPC_TeamLook`.
+Pre-bake values and how to undo: `docs/history/2026-09-look-bake/PreBake.md`.
+
+`ULookSubsystem` is what remains for comparison. It lays a `ULookPreset` over that baked look on a
+game or PIE world at runtime only: a transient unbound post-process volume (priority 1000), the
+level's sun, sky light, height fog, sky dome MID and volumetric cloud, console variables, and
+material swaps rescanned every 0.5 s. `mc.Look Off` and world teardown restore all of it; console
+variables are process-wide, so `Deinitialize` restores them too. Team color is **not** part of a
+preset: `MPC_TeamLook` alone decides it.
 
 | Symptom | Check first |
 |---|---|
+| `mc.Look Off` does not look like the old UE-default look | It is not supposed to. Off is now the baked Hybrid look; `mc.Look Baseline` applies the pre-bake values. |
+| Hybrid on a baked map looks over-inked, outlines doubled | `WeightedBlendables` accumulate across volumes rather than override, so applying Hybrid on top of the baked level runs the cel/outline pass twice. `mc.Look Off`. |
+| `mc.Look Baseline` restores everything except the clouds | `bHideVolumetricCloud` is one-way — a preset can hide the cloud but none can show it. Tick `VolumetricCloud_0`'s Visible box in the Details panel. |
+| A preset's Sun value does nothing in PIE | `ULightComponentBase::SetIntensity` and friends are gated on `AreDynamicDataChangesAllowed()`, false for a Static-mobility light. Both stage maps are Movable; a new map may not be. |
 | A preset looks the same as Off | The preset only covers fields whose override flag is on (`bOverride_*` inside `PostProcess`, `bOverride*` in Sun, SkyLight, Fog, SkyDome); the level volume still decides everything else. `mc.Look.List` marks the active preset. |
 | Shadows stay hard after leaving Toon | `r.Shadow.Virtual.SMRT.RayCountDirectional` comes back on `mc.Look Off` and when the PIE world ends. The restore is set by code, so a later scalability change does not override it until the editor restarts. |
 | A Toon character shows its PBR material again | The camera-overlap fade restores the materials it stored; the rescan swaps them back within 0.5 s. A unit that never swaps uses a slot material missing from the preset's `MaterialSwaps.From`. |
