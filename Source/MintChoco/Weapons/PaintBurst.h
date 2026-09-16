@@ -7,6 +7,7 @@
 
 class UNiagaraSystem;
 class UPaintballProfile;
+class USoundBank;
 
 /** 파열 방향 계산. 풍선과 APaintBurst가 같은 함수를 써서 같은 시드에 같은 그림이 나온다. */
 namespace PaintBurst
@@ -69,6 +70,16 @@ struct MINTCHOCO_API FPaintBurstParams
 	/** BurstFX가 뜨는 균일 배율. 1이 에셋 원래 크기다. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Burst", meta = (ClampMin = "0.01"))
 	float BurstFXScale = 1.0f;
+
+	/**
+	 * 파열음(Audio.World.Burst)을 이 아이템만 다르게 낼 때의 뱅크. 비어 있으면 프로젝트 기본
+	 * 뱅크의 소리가 난다(값을 넣지 않은 아이템은 그대로다).
+	 *
+	 * BurstFX와 같은 복제를 탄다: 초기 복제로 실린 이 참조가 각 머신의 BeginPlay 전에 도착해,
+	 * 소리도 연출과 같은 자리에서 한 번씩 난다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Burst")
+	TObjectPtr<const USoundBank> Sounds;
 };
 
 /**

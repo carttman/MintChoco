@@ -121,8 +121,9 @@ void APaintBurst::SpawnBurstFX()
 		return;
 	}
 
-	// 액터가 복제되어 머신마다 한 번 BeginPlay를 지나므로 소리도 여기서 한 번이다.
-	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_Burst, GetActorLocation());
+	// 액터가 복제되어 머신마다 한 번 BeginPlay를 지나므로 소리도 여기서 한 번이다. 뱅크가 실려
+	// 왔으면 그 아이템의 파열음이, 비어 있으면 기본 뱅크의 소리가 난다.
+	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_Burst, GetActorLocation(), Params.Sounds);
 
 	if (!Params.BurstFX)
 	{
