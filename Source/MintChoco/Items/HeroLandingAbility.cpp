@@ -10,6 +10,7 @@
 #include "Items/ItemAreaEffect.h"
 #include "Items/ItemGameplayEffect.h"
 #include "Items/ItemGameplayTags.h"
+#include "Items/ItemSlotComponent.h"
 #include "Items/LandingMarker.h"
 #include "MintChoco.h"
 #include "Weapons/PaintBurst.h"
@@ -68,6 +69,9 @@ void UGA_HeroLanding::OnItemActivated(AUnit& Unit, const UItemProfile& Profile)
 
 	Movement->SetHeroLandingParams(Landing->Landing);
 
+	// 어빌리티 인스턴스는 다시 쓰일 수 있다. 호버 FX를 한 번만 보내는 표시를 발동마다 되돌린다.
+	bHoverFXSent = false;
+
 	// 의도는 움직임을 실제로 계산하는 쪽이 세운다. 원격 클라이언트의 폰이라면 서버는 무브에 실려
 	// 오는 플래그로 따라간다: 서버가 먼저 세우면 아직 플래그가 없는 옛 무브가 도착해 시작을 되돌린다.
 	if (Unit.IsLocallyControlled())
@@ -106,15 +110,38 @@ void UGA_HeroLanding::OnItemActivated(AUnit& Unit, const UItemProfile& Profile)
 
 void UGA_HeroLanding::HandleTick(float DeltaTime)
 {
-	const AUnit* const Unit = GetUnit();
+	AUnit* const Unit = GetUnit();
 	const UUnitMovementComponent* const Movement = Unit ? Unit->GetUnitMovement() : nullptr;
-	if (!Marker || !Movement)
+	if (!Movement)
+	{
+		return;
+	}
+
+	const EHeroLandingPhase Phase = Movement->GetHeroLandingPhase();
+
+	// 호버에 들어서면 발밑 이펙트를 한 번 뿌린다. 호버는 정확히 HoverTime만큼이므로 끄는 시각을
+	// 각 머신이 스스로 셀 수 있고, 그래서 RPC가 한 번으로 끝난다.
+	//
+	// **아래 Marker 가드보다 앞에 둔다.** Marker는 로컬 조종 클라이언트만 스폰하므로
+	// (데디케이티드 서버에는 없다) 그 뒤에 두면 서버가 여기까지 오지 못해 FX가 아무에게도 안 간다.
+	if (IsAuthority() && !bHoverFXSent && Phase == EHeroLandingPhase::Hover && Landing && Landing->HoverFX)
+	{
+		if (UItemSlotComponent* const Slot = Unit->GetItemSlot())
+		{
+			Slot->MulticastPlayAttachedFX(
+				Landing->HoverFX, Landing->HoverFXScale, Landing->HoverFXZOffset,
+				Landing->Landing.HoverTime + Landing->HoverFXStopDelay);
+		}
+		bHoverFXSent = true;
+	}
+
+	// 아래는 조준 표시뿐이라 표시가 없는 머신은 여기서 끝난다.
+	if (!Marker)
 	{
 		return;
 	}
 
 	// 착지점이 정해진 뒤에는 고정.
-	const EHeroLandingPhase Phase = Movement->GetHeroLandingPhase();
 	if (Phase == EHeroLandingPhase::Dive || Phase == EHeroLandingPhase::Approach)
 	{
 		Marker->SetActorHiddenInGame(false);

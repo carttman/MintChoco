@@ -463,13 +463,6 @@ private:
 	 */
 	void UpdateBoardLoopSound();
 
-	/**
-	 * 스턴 상태에 맞춰 머리 위 FX를 켜고 끈다. 스턴 태그는 모든 머신에 복제되므로 각자
-	 * 자기 화면에 띄운다. 지속 시간을 따로 재지 않는다 — 태그가 사라질 때 끄면 그것이
-	 * 곧 스턴 시간이다.
-	 */
-	void UpdateStunFX(bool bStunned);
-
 	/** 발사 연출이 요구하는 총의 상태. 실제로 보이는지는 카메라 페이드까지 봐야 안다. */
 	bool bGunVisible = false;
 
@@ -556,9 +549,6 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UAudioComponent> BoardAudioComponent;
 
-	/** 스턴 중 머리 위에 붙는 FX. 스턴이 풀릴 때까지 이어지므로 직접 걷어내야 한다. */
-	UPROPERTY(Transient)
-	TObjectPtr<UNiagaraComponent> StunFXComponent;
 
 	/**
 	 * 컨텍스트를 넣어준 서브시스템. EndPlay 시점에는 Controller가 이미 떨어져 나갔을
