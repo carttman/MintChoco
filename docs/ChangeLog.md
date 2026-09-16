@@ -685,6 +685,41 @@ t=3s   2.74배     여기서 끝, 돔도 같이 사라진다
 
 ---
 
+## 맵 — 바닥 칠
+
+### 메인 바닥의 Allow CPU Access (`Boolean_483BB222`)
+
+| | |
+|---|---|
+| 어디에 | `Content/Maps/_GENERATED/User/Boolean_483BB222` — `Lvl_Stage`의 `BP_PaintableCube31`이 쓰는 바닥 메시 |
+| 무엇을 | `bAllowCPUAccess` false → **true** |
+| 대체한 것 | 에디터에서는 칠해지는데 **패키지 빌드에서만 바닥이 안 칠해지던** 증상 |
+
+`PaintAtlasBaker`는 LOD 0의 **CPU 사본**을 읽어 아틀라스를 굽는다. 에디터는 CPU 지오메트리를
+항상 들고 있어 플래그와 무관하게 읽히지만, **쿡된 빌드는 `bAllowCPUAccess`가 켜진 에셋만 CPU
+사본을 남긴다.** 그래서 에디터만 멀쩡하고 패키지만 깨지는 한쪽짜리 증상이 된다
+(`PaintMeshTriangles.cpp:31`이 찍는 `mesh geometry is not CPU-readable ... paint disabled.`).
+
+이 메시는 모델링 툴이 Boolean으로 만들어 `_GENERATED/User/`에 저장한 것이고, **그렇게 생성된
+스태틱 메시는 이 플래그가 기본으로 꺼져 있다.** 같은 폴더의 `Boolean_AAC84092`는 이미 켜져
+있었고, `Merge_7C718DE5`는 참조가 0건인 고아라 건드리지 않았다.
+
+이 바닥 하나가 `37,882,136 cm^2`(3,788 m2, 셀 그리드 320 x 320)로 스테이지 페인트 면적
+8,660 m2의 약 44%다. 나머지 30개 페인터블은 전부터 정상이었다.
+
+패키지 로그로 확인한 전후:
+
+| | 전 (`Unreal3D4`) | 후 (`Unreal3D5`) |
+|---|---|---|
+| `not CPU-readable` 경고 | 2 | **0** |
+| `cell grid` 줄 | 30 | **31** |
+| `baking a paint atlas` | 18 | **19** |
+
+**새 페인터블을 모델링 툴로 만들면 이 플래그부터 켜라.** 에디터에서만 테스트하면 절대
+드러나지 않고, 패키징해야만 나온다.
+
+---
+
 ## 맵 — 풍선
 
 ### 파열 탄 교체 (`DA_Paintball_BalloonBurst`)
