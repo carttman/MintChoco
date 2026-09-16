@@ -17,6 +17,8 @@
 #include "Paint/PaintLog.h"
 #include "Paint/PaintPlatformCoverage.h"
 #include "Paint/PaintSettings.h"
+#include "Paint/PaintSplash.h"
+#include "Paint/PaintSplashProfile.h"
 #include "Paint/PaintSplatEffect.h"
 #include "Paint/PaintableComponent.h"
 #include "Screen/ScreenFadeSubsystem.h"
@@ -123,8 +125,21 @@ void UPaintSubsystem::ApplySplat(const FPaintSplat& Splat)
 
 	// The one per-splat hook every machine passes (the server directly, a client from the replicated
 	// log). A volley lands many in one frame; the bank's concurrency limit keeps that to a few voices.
-	UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_Splat, Splat.Location);
+	// A phantom landing and a droplet's mark are silent: their contact already made its sound.
+	if (!Splat.bScoreOnly && !Splat.bDrawOnly)
+	{
+		UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_World_Splat, Splat.Location);
+	}
 
+	StampSurfaces(Splat);
+	if (Splat.Splash)
+	{
+		ApplyPhantomLandings(Splat);
+	}
+}
+
+void UPaintSubsystem::StampSurfaces(const FPaintSplat& Splat)
+{
 	// A physics overlap rather than the registry: collision, not a bounding box, decides which
 	// surfaces the stamp can reach, and it is the same query a projectile hit came from.
 	TArray<FOverlapResult> Overlaps;
@@ -151,6 +166,42 @@ void UPaintSubsystem::ApplySplat(const FPaintSplat& Splat)
 		{
 			Paintable->ApplySplat(Splat);
 		}
+	}
+}
+
+void UPaintSubsystem::ApplyPhantomLandings(const FPaintSplat& Splat)
+{
+	const UPaintSplashProfile& Profile = *Splat.Splash;
+
+	PaintSplash::FSpawnInput Input;
+	Input.ImpactPoint = Splat.Location;
+	Input.ImpactNormal = Splat.Normal;
+	Input.IncidentVelocity = FVector(Splat.IncidentDir) * static_cast<double>(Splat.IncidentSpeed);
+	Input.BallRadius = Splat.BallRadius > 0 ? static_cast<float>(Splat.BallRadius) : 6.0f;
+	Input.Seed = Splat.Seed;
+
+	TArray<PaintSplash::FPhantomLanding> Landings;
+	PaintSplash::PhantomLandings(Profile, Input, GetWorld()->GetGravityZ(), Landings);
+	for (int32 Index = 0; Index < Landings.Num(); ++Index)
+	{
+		const PaintSplash::FPhantomLanding& Landing = Landings[Index];
+		const float Radius = Profile.ComputeMarkRadius(Landing.Speed) * Profile.PhantomCellRadiusScale;
+		if (Radius <= 0.0f)
+		{
+			continue;
+		}
+
+		// A round mark on the contact's own plane, so the parent's frame serves. No splash of its
+		// own: a phantom never expands again.
+		FPaintSplat Phantom = Splat;
+		Phantom.Splash = nullptr;
+		Phantom.bScoreOnly = true;
+		Phantom.Location = Landing.Point;
+		Phantom.Radius = Radius;
+		Phantom.Stretch = 1.0f;
+		Phantom.ImpactU = 0.0f;
+		Phantom.Seed = static_cast<uint16>(HashCombineFast(static_cast<uint32>(Splat.Seed), static_cast<uint32>(Index + 1)) & 0xFFFF);
+		StampSurfaces(Phantom);
 	}
 }
 

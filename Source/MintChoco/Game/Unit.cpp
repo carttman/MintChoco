@@ -20,6 +20,7 @@
 #include "Engine/StaticMesh.h"
 #include "Game/GameGameState.h"
 #include "Game/GamePlayerState.h"
+#include "Game/TeamLook.h"
 #include "Game/TeamTypes.h"
 #include "Game/UnitInputConfig.h"
 #include "Game/UnitMovementComponent.h"
@@ -31,6 +32,7 @@
 #include "InputActionValue.h"
 #include "Items/ItemGameplayEffect.h"
 #include "Items/ItemGameplayTags.h"
+#include "Items/ItemProfile.h"
 #include "Items/ItemSettings.h"
 #include "Items/ItemSlotComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -140,6 +142,15 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	GunMesh->SetCanEverAffectNavigation(false);
 	GunMesh->SetVisibility(false);
 
+	// 손에 든 아이템도 같은 규칙. 어느 소켓에 붙일지는 아이템마다 다르므로 여기서 정하지 않고
+	// UpdateHeldItem가 프로필을 보고 그때 붙인다.
+	HeldItemMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("HeldItemMesh"));
+	HeldItemMesh->SetupAttachment(GetMesh());
+	HeldItemMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	HeldItemMesh->SetGenerateOverlapEvents(false);
+	HeldItemMesh->SetCanEverAffectNavigation(false);
+	HeldItemMesh->SetVisibility(false);
+
 	// 보드도 같은 규칙. Board 소켓은 ApplyUnitData가 메시를 정한 뒤 붙인다.
 	BoardMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BoardMesh"));
 	BoardMesh->SetupAttachment(GetMesh());
@@ -157,6 +168,15 @@ AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
 	OutlineMesh->SetCanEverAffectNavigation(false);
 	OutlineMesh->SetCastShadow(false);
 	OutlineMesh->SetVisibility(false);
+
+	// 오라 껍데기. 테두리와 같은 이유로 같은 설정이고, 둘은 서로 독립이라 동시에 켜질 수 있다.
+	AuraMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("AuraMesh"));
+	AuraMesh->SetupAttachment(GetMesh());
+	AuraMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	AuraMesh->SetGenerateOverlapEvents(false);
+	AuraMesh->SetCanEverAffectNavigation(false);
+	AuraMesh->SetCastShadow(false);
+	AuraMesh->SetVisibility(false);
 }
 
 void AUnit::PossessedBy(AController* NewController)
@@ -207,6 +227,9 @@ void AUnit::BeginPlay()
 
 		SuperArmorTagHandle = AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_SuperArmor, EGameplayTagEventType::NewOrRemoved)
 			.AddUObject(this, &AUnit::HandleSuperArmorTagChanged);
+
+		SpeedStarTagHandle = AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Item_SpeedStar, EGameplayTagEventType::NewOrRemoved)
+			.AddUObject(this, &AUnit::HandleSpeedStarTagChanged);
 	}
 
 	// 빙의가 BeginPlay보다 먼저 온 경우(리슨 호스트)를 위해 한 번 더 맞춘다.
@@ -308,7 +331,9 @@ void AUnit::SetCameraFaded(bool bFaded)
 		bCameraFaded = true;
 		UpdateGunVisibility();
 		UpdateBoardVisibility();
+		UpdateHeldItem();
 		UpdateSuperArmorOutline();
+		UpdateSpeedStarAura();
 		return;
 	}
 
@@ -320,7 +345,9 @@ void AUnit::SetCameraFaded(bool bFaded)
 	bCameraFaded = false;
 	UpdateGunVisibility();
 	UpdateBoardVisibility();
+	UpdateHeldItem();
 	UpdateSuperArmorOutline();
+	UpdateSpeedStarAura();
 }
 
 int32 AUnit::GetTeam() const
@@ -504,10 +531,74 @@ void AUnit::UpdateSuperArmorOutline()
 {
 	if (OutlineMesh)
 	{
-		// 카메라가 안에 들어와 몸이 반투명해진 동안에는 테두리도 감춘다. 껍데기는 불투명이라
-		// 그대로 두면 페이드된 몸 위에 실루엣만 둥둥 뜬다.
-		OutlineMesh->SetVisibility(HasSuperArmor() && !bCameraFaded);
+		OutlineMesh->SetVisibility(ShouldShowShell(HasSuperArmor(), bCameraFaded));
 	}
+}
+
+bool AUnit::HasSpeedStar() const
+{
+	return AbilitySystem && AbilitySystem->HasMatchingGameplayTag(ItemTags::State_Item_SpeedStar);
+}
+
+bool AUnit::ShouldShowShell(bool bStateActive, bool bCameraFaded)
+{
+	return bStateActive && !bCameraFaded;
+}
+
+bool AUnit::ShouldShowHeld(bool bAiming, const UObject* Asset)
+{
+	return bAiming && Asset != nullptr;
+}
+
+void AUnit::HandleSpeedStarTagChanged(const FGameplayTag Tag, int32 NewCount)
+{
+	UpdateSpeedStarAura();
+}
+
+void AUnit::UpdateSpeedStarAura()
+{
+	const bool bShow = ShouldShowShell(HasSpeedStar(), bCameraFaded);
+
+	if (AuraMesh)
+	{
+		AuraMesh->SetVisibility(bShow);
+	}
+
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	// 입자는 껍데기 재질이 못 내는 부분(연기, 불꽃, 리본)을 맡는다. 껍데기와 같은 규칙을
+	// 따르므로 카메라가 몸 안에 들어오면 같이 걷힌다.
+	if (!bShow)
+	{
+		if (SpeedStarAuraFXComponent)
+		{
+			// 대시 트레일과 같다. 새 스폰만 멈추고, 떠 있던 입자는 제 수명대로 사라진다.
+			SpeedStarAuraFXComponent->Deactivate();
+			SpeedStarAuraFXComponent = nullptr;
+		}
+		return;
+	}
+
+	if (SpeedStarAuraFXComponent || !SpeedStarAuraFX)
+	{
+		return;
+	}
+
+	// SnapToTarget이 아니라 상대 오프셋으로 붙인다. 스냅은 메시 트랜스폼에 그대로 얹혀서
+	// 각도와 거리를 줄 자리가 없다. 둘 다 메시 컴포넌트의 로컬 축을 탄다.
+	SpeedStarAuraFXComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		SpeedStarAuraFX,
+		GetMesh(),
+		NAME_None,
+		SpeedStarAuraFXOffset,
+		SpeedStarAuraFXRotation,
+		EAttachLocation::KeepRelativeOffset,
+		// Deactivate 뒤 남은 입자가 다 사라지면 스스로 정리된다. false로 두면 스피드 스타를
+		// 쓸 때마다 꺼진 컴포넌트가 메시에 하나씩 쌓인다.
+		true);
 }
 
 void AUnit::Knockback(const FVector& From)
@@ -863,6 +954,12 @@ void AUnit::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Status_SuperArmor, EGameplayTagEventType::NewOrRemoved).Remove(SuperArmorTagHandle);
 	}
 	SuperArmorTagHandle.Reset();
+
+	if (AbilitySystem && SpeedStarTagHandle.IsValid())
+	{
+		AbilitySystem->RegisterGameplayTagEvent(ItemTags::State_Item_SpeedStar, EGameplayTagEventType::NewOrRemoved).Remove(SpeedStarTagHandle);
+	}
+	SpeedStarTagHandle.Reset();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -1280,6 +1377,81 @@ void AUnit::UpdateGunVisibility()
 	}
 }
 
+void AUnit::UpdateHeldItem()
+{
+	// 메시와 이펙트는 독립이라(하나만 넣어도 된다) 메시 쪽에서 일찍 빠져나가도 이펙트는 돈다.
+	UpdateHeldItemFX();
+
+	if (!HeldItemMesh)
+	{
+		return;
+	}
+
+	const UItemProfile* const Held = ItemSlot ? ItemSlot->GetHeldItem() : nullptr;
+	UStaticMesh* const HeldMeshAsset = Held ? Held->HeldMesh.Get() : nullptr;
+	const bool bAiming = ItemSlot && ItemSlot->IsAimingItem();
+
+	if (!ShouldShowHeld(bAiming, HeldMeshAsset))
+	{
+		HeldItemMesh->SetVisibility(false);
+		return;
+	}
+
+	// 소켓은 아이템마다 다르므로 켤 때마다 다시 붙인다. 소켓이 없는 스켈레톤이면 메시 원점에
+	// 남으므로, 물건이 발밑에 보이면 그 이름의 소켓이 빠진 것이다(총, 잉크병과 같은 증상).
+	HeldItemMesh->SetStaticMesh(HeldMeshAsset);
+	HeldItemMesh->AttachToComponent(
+		GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, Held->HeldSocket);
+
+	// 총과 같은 이유로 카메라 페이드 중에는 감춘다: 페이드는 스켈레탈 메시의 재질만 바꾸므로
+	// 손의 물건만 불투명하게 남아 화면을 가린다.
+	HeldItemMesh->SetVisibility(!bCameraFaded);
+}
+
+void AUnit::UpdateHeldItemFX()
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	const UItemProfile* const Held = ItemSlot ? ItemSlot->GetHeldItem() : nullptr;
+	UNiagaraSystem* const FX = Held ? Held->HeldFX.Get() : nullptr;
+	const bool bAiming = ItemSlot && ItemSlot->IsAimingItem();
+
+	// 메시와 같은 규칙에 카메라 페이드를 더한다. 이펙트도 페이드된 몸 위에 혼자 남으면 눈에 띈다.
+	if (!ShouldShowHeld(bAiming, FX) || bCameraFaded)
+	{
+		if (HeldItemFXComponent)
+		{
+			// 대시 트레일과 같다. 새 스폰만 멈추고 떠 있던 입자는 제 수명대로 사라진다.
+			HeldItemFXComponent->Deactivate();
+			HeldItemFXComponent = nullptr;
+		}
+		return;
+	}
+
+	if (HeldItemFXComponent)
+	{
+		return;
+	}
+
+	HeldItemFXComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
+		FX,
+		GetMesh(),
+		Held->HeldSocket,
+		FVector::ZeroVector,
+		FRotator::ZeroRotator,
+		EAttachLocation::SnapToTarget,
+		// Deactivate 뒤 남은 입자가 다 사라지면 스스로 정리된다.
+		true);
+
+	if (HeldItemFXComponent)
+	{
+		HeldItemFXComponent->SetVariableLinearColor(TeamLook::NiagaraTintParameter, TeamLook::GetColor(GetPaintId(), GetWorld()));
+	}
+}
+
 void AUnit::SetBoardShown(bool bShown)
 {
 	if (bBoardShown == bShown)
@@ -1433,6 +1605,18 @@ void AUnit::ApplyUnitData()
 		}
 	}
 
+	// 오라 껍데기도 같은 이유로 같은 처리를 받는다.
+	if (AuraMesh && UnitData->Mesh)
+	{
+		AuraMesh->SetSkeletalMesh(UnitData->Mesh);
+		AuraMesh->SetLeaderPoseComponent(MeshComponent);
+
+		for (int32 Index = 0; Index < AuraMesh->GetNumMaterials(); ++Index)
+		{
+			AuraMesh->SetMaterial(Index, SpeedStarAuraMaterial);
+		}
+	}
+
 	// 메시가 바뀌면 총도 그 캐릭터의 것으로. Gun 소켓이 없는 메시면 병과 마찬가지로 발밑에 남는다.
 	if (GunMesh)
 	{
@@ -1461,4 +1645,5 @@ void AUnit::ApplyUnitData()
 
 	// 메시가 교체되면 오버레이도 새 메시에 다시 걸어야 한다.
 	UpdateSuperArmorOutline();
+	UpdateSpeedStarAura();
 }

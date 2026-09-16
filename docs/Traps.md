@@ -41,6 +41,54 @@ before anything else.
   through Break inside a pixel chain. Parameters inside a Material Layer/Blend are namespaced
   per slot, so C++ cannot set them by name — feed runtime data through the stack `Input`.
 
+### Impact splash (droplets, secondary marks, phantom score)
+
+- A paintball contact is two things. The replicated `FPaintSplat` carries `Splash`
+  (`UPaintSplashProfile`), `IncidentDir/IncidentSpeed/BallRadius`, and every machine's
+  `UPaintSubsystem::ApplySplat` turns that into `PaintSplash::PhantomLandings` (analytic parabolas,
+  no traces) stamped as `bScoreOnly` splats: cells only, no picture, no sound. The visible droplets
+  are per machine: `UPaintballProfile::PlayImpactEffect` books a `UPaintSplashLandingHandler`,
+  spawns `ImpactFX` 1 cm off the surface, and `UPaintSplashSubsystem::ConfigureEffect` hands the
+  Niagara system `User.Drop{0..3}Offset/Velocity/Radius`, `User.DropletCount` and
+  `User.LandingHandler`. `NS_PaintSplash` (CPU emitter, stock modules only) reports each
+  collision through `ExportParticleDataToBlueprint` (Position = landing, Velocity = collision
+  normal, Size = launch speed) and the handler stamps a `bDrawOnly` splat with the profile's
+  `DropletBrush`: picture only, never a cell. Score and picture therefore differ by design; the
+  phantom radius is `DropletBrush->ComputeRadius(DropletSplatVolume, speed) *
+  PhantomCellRadiusScale`, and a cell is claimed only when its centre falls inside that stamp.
+- No secondary marks: check `mc.PaintSplash.Marks` (0 disables them), that the paintball's
+  `ImpactFX` is `NS_PaintSplash` and its `Deposit.Splash` profile has a `DropletBrush` with a
+  material (`MintChoco.Paint.Weapons.ProfileAssets` covers both), that the surface passes
+  `FPaintDeposit::ReceivesSplat` (a decal-only surface leaves no marks), and that the handler pool
+  is not exhausted (256 concurrent splashes; `mc.PaintSplash.Debug 1` logs every landing and draws
+  the reach). A dedicated server never spawns the effect.
+- Droplets fly but nothing lands: the Niagara `Collision` module traces `ECC_Visibility` on the
+  CPU; `KillParticles` ends a droplet at `HasCollided` or past `MaxTravel * 1.5`; the system state
+  must loop Once (Loop Duration = `User.MaxLifetime`) or the pooled component never finishes and
+  `OnSystemFinished` never releases the handler (it still expires after `MaxLifetime + 0.5 s`).
+- Never give `Particles.Position` an expression or a dynamic input through the MCP Niagara
+  toolset (editor assert, see `docs/UnrealMcp.md`); droplets spawn at the system origin, which is
+  why the component is placed 1 cm along the normal.
+- The blob: `NS_PaintSplash`'s `Blob` emitter is one local-space mesh particle (a 100 cm cube,
+  `Particles.Scale` = `User.BlobScale`, pivot lifted 50 mesh units so the cube stands on the
+  plane) whose material `M_PaintSplashBlob` ray-marches four droplets on drag-damped parabolas
+  plus a crown torus with the team look. Each droplet is a round cone from its head to a tail:
+  while the cohesion holds (C++ `PaintSplash::Cohesion`, `CohesionRadius` smooth-min fading over
+  `CohesionDecay`) the tail roots on the crown ring at the droplet's azimuth, so the splash reads
+  as fingers rising off the rim; as it pinches off the tail slides `TailSeconds` (material scalar,
+  0.06) behind the head and thins to a point, leaving teardrops. `CrownAt` defines the ring.
+  `UPaintSplashSubsystem::BuildBlobMaterial` makes a MID per splash (`PaintSplashBlob` names:
+  `Drop0..3` xyz offset + w radius, `Vel0..3`, `Phys`, `Crown`, `MarchMax`, `TeamId`) and
+  `PaintSplash::BlobScale` sizes the cube. `Droplets` keeps fixed bounds (±450 cm) because its
+  sprite renderer is disabled: an emitter with no enabled particle renderer and dynamic bounds
+  trips the "only Emitter sourced renderers" warning and has no bounds at all. No blob: `Splash.BlobMaterial` unset, the material
+  missing the Niagara mesh particles usage (`ProfileAssets` test), or `User.BlobScale` zero -
+  a zero-scale mesh particle silently stops the entire system, droplets and marks included.
+  Pixel Depth Offset must be wired by hand in the material editor (the MCP tool cannot), or the
+  blob intersects geometry at the cube's surface instead of the fluid's.
+- `APaintSplashTestActor` (Blueprintable) fires a fixed contact on a timer without a weapon:
+  drop one in a scratch level with `Paintball` set, Simulate, and watch the marks.
+
 ### Nanite tessellation displacement (UE 5.8)
 
 - Substrate: a slab stacked on top through `SubstrateVerticalLayering` may only use the
@@ -93,6 +141,34 @@ before anything else.
 | A plane-cut liquid (ink bottle) looks hollow or cut open from above | The two-sided "backface = surface" trick has no top geometry: from above you see the shaded inner walls below the waterline. `UInkBottleComponent` places a real disc (`SM_InkSurface`, `M_InkSurface`) on the cut plane every tick; the disc material clips outside `BottleRadius` and ripples via WPO with the same wave as the walls. Keep the fill clamped off the end caps (`SurfaceFillMargin`) or the disc z-fights them. |
 | The camera boom snags on another player, or a player stays translucent | Units ignore `ECC_Camera` on capsule and mesh (set again in `AUnit::PostInitializeComponents`, so a Blueprint override cannot bring it back). Overlap is detected by `CameraProbe`, a sphere on the local player's camera that overlaps other units' capsules only; the overlapped unit swaps every mesh slot to `CameraFadeMaterial` (`M_UnitCameraFade`, set on `BP_Unit`) until EndOverlap, `UpdateCameraProbe` (unpossess) or the prober's `EndPlay` restores it. |
 | Other players animate in slow motion on the listen-server host | The anim blueprint derives speed from per-tick position delta. On the server a remotely controlled pawn only moves when a `ServerMove` arrives (`ClientNetSendMoveDeltaTime` 0.0166 = 60 Hz), while the mesh ticks every frame, so the ticks with no displacement drag the average down. Read `Velocity` off the movement component instead — it holds its value between moves, so it is frame-rate independent. `t.MaxFPS 60` making the symptom vanish confirms it. |
+
+## Look presets (`mc.Look`)
+
+The shipped look is **baked into the level**, not applied at runtime. As of 2026-09-16 `Lvl_Stage`
+and `Lvl_Stage_inside` carry Hybrid in their own data: `PostProcessVolume_0` (18 overrides plus the
+`MI_PP_LookStylize_Hybrid` blendable), `DirectionalLight_0` (5800 K, source angle 0.3, specular
+0.7), `VolumetricCloud_0` hidden — and the shared assets `MI_StageSkyDome` and `MPC_TeamLook`.
+Pre-bake values and how to undo: `docs/history/2026-09-look-bake/PreBake.md`.
+
+`ULookSubsystem` is what remains for comparison. It lays a `ULookPreset` over that baked look on a
+game or PIE world at runtime only: a transient unbound post-process volume (priority 1000), the
+level's sun, sky light, height fog, sky dome MID and volumetric cloud, console variables, and
+material swaps rescanned every 0.5 s. `mc.Look Off` and world teardown restore all of it; console
+variables are process-wide, so `Deinitialize` restores them too. Team color is **not** part of a
+preset: `MPC_TeamLook` alone decides it.
+
+| Symptom | Check first |
+|---|---|
+| `mc.Look Off` does not look like the old UE-default look | It is not supposed to. Off is now the baked Hybrid look; `mc.Look Baseline` applies the pre-bake values. |
+| Hybrid on a baked map looks over-inked, outlines doubled | `WeightedBlendables` accumulate across volumes rather than override, so applying Hybrid on top of the baked level runs the cel/outline pass twice. `mc.Look Off`. |
+| `mc.Look Baseline` restores everything except the clouds | `bHideVolumetricCloud` is one-way — a preset can hide the cloud but none can show it. Tick `VolumetricCloud_0`'s Visible box in the Details panel. |
+| A preset's Sun value does nothing in PIE | `ULightComponentBase::SetIntensity` and friends are gated on `AreDynamicDataChangesAllowed()`, false for a Static-mobility light. Both stage maps are Movable; a new map may not be. |
+| A preset looks the same as Off | The preset only covers fields whose override flag is on (`bOverride_*` inside `PostProcess`, `bOverride*` in Sun, SkyLight, Fog, SkyDome); the level volume still decides everything else. `mc.Look.List` marks the active preset. |
+| Shadows stay hard after leaving Toon | `r.Shadow.Virtual.SMRT.RayCountDirectional` comes back on `mc.Look Off` and when the PIE world ends. The restore is set by code, so a later scalability change does not override it until the editor restarts. |
+| A Toon character shows its PBR material again | The camera-overlap fade restores the materials it stored; the rescan swaps them back within 0.5 s. A unit that never swaps uses a slot material missing from the preset's `MaterialSwaps.From`. |
+| Toon surfaces sparkle in shade or in the distance | Lumen noise crossing a band edge, or normal-map detail read as creases. Raise `CelParams.z` (band softness) or `OutlineParams.z` (normal threshold), or pull `FadeParams.xy` (outline fade, cm) closer in `MI_PP_LookStylize_Toon`. |
+| Metal, emissive or very dark surfaces look wrong under the cel pass | The pass divides scene colour by GBuffer diffuse colour. Below albedo luminance 0.02, on unlit pixels, and on Toon BSDF pixels (`FadeParams.w` = 1) it passes the scene through untouched. |
+| Review mannequins or splats missing from a capture | `ULookSettings::ReviewSetup` must be set on the settings CDO before Simulate starts. Splats wait `SplatDelay` for surfaces to register and log `리뷰 스플랫 N/M`. A mannequin placed inside level geometry shows only its shadow: pick open floor with traces first. |
 
 ## Items (Gameplay Ability System)
 

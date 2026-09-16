@@ -363,16 +363,16 @@ void APaintProjectile::OnHit(UPrimitiveComponent*, AActor*, UPrimitiveComponent*
 	{
 		return;
 	}
+	// The hit fires from inside the move, before the movement component zeroes its velocity,
+	// so this is still the impact velocity; the fallback covers a blocked first step.
+	FVector Velocity = Movement->Velocity;
+	if (Velocity.IsNearlyZero())
+	{
+		Velocity = (Hit.TraceEnd - Hit.TraceStart).GetSafeNormal() * Movement->InitialSpeed;
+	}
 	if (Profile && !bCosmetic)
 	{
-		// The hit fires from inside the move, before the movement component zeroes its velocity,
-		// so this is still the impact velocity; the fallback covers a blocked first step.
-		FVector Velocity = Movement->Velocity;
-		if (Velocity.IsNearlyZero())
-		{
-			Velocity = (Hit.TraceEnd - Hit.TraceStart).GetSafeNormal() * Movement->InitialSpeed;
-		}
-		Profile->Deposit.ApplyHit(GetWorld(), Hit, Velocity, PaintId, Seed);
+		Profile->Deposit.ApplyHit(GetWorld(), Hit, Velocity, PaintId, Seed, /*Charge=*/1.0f, /*StarGen=*/0, Profile->Radius);
 	}
 
 	// 연출용 공도 그린다: 착탄은 각 머신에서 제 공으로 일어나므로 이것이 그 화면의 한 번이다.
@@ -382,19 +382,11 @@ void APaintProjectile::OnHit(UPrimitiveComponent*, AActor*, UPrimitiveComponent*
 	{
 		UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_Weapon_Impact, Hit.ImpactPoint);
 	}
-	if (Profile && Profile->ImpactFX)
+	if (Profile)
 	{
-		UWorld* const World = GetWorld();
-		if (World && World->GetNetMode() != NM_DedicatedServer)
+		if (UWorld* const World = GetWorld())
 		{
-			// MakeFromZ다. FVector::Rotation()은 넘긴 방향을 +X(앞)로 삼으므로 바닥 법선을 주면
-			// 이펙트가 90도 눕는다. 이펙트의 위쪽인 +Z를 법선에 맞춰야 바닥에 선 채로 나온다.
-			const FRotator Upright = FRotationMatrix::MakeFromZ(Hit.ImpactNormal).Rotator();
-			if (UNiagaraComponent* const FX = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-					World, Profile->ImpactFX, Hit.ImpactPoint, Upright, FVector(Profile->ImpactFXScale)))
-			{
-				FX->SetVariableLinearColor(TeamLook::NiagaraTintParameter, TeamLook::GetColor(PaintId, World));
-			}
+			Profile->PlayImpactEffect(*World, Hit, Velocity, PaintId, Seed);
 		}
 	}
 

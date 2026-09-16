@@ -60,7 +60,7 @@ bool FTeamLookCollectionTest::RunTest(const FString& Parameters)
 	return true;
 }
 
-/** 컬렉션 없이도 두 팀이 구분되고, 팀이 아닌 id 는 중립으로 떨어지는지. */
+/** 컬렉션이 없으면 팀 색이 없다: 두 팀 다 중립 회색이라 설정 누락이 화면에 보인다. */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FTeamLookFallbackTest,
 	"MintChoco.Game.TeamLook.Fallback",
@@ -70,7 +70,8 @@ bool FTeamLookFallbackTest::RunTest(const FString& Parameters)
 {
 	const FTeamLook Mint = TeamLook::GetFrom(nullptr, Teams::Mint);
 	const FTeamLook Choco = TeamLook::GetFrom(nullptr, Teams::Choco);
-	TestFalse(TEXT("fallback colors differ between teams"), Mint.Color.Equals(Choco.Color));
+	TestTrue(TEXT("without a collection both teams are the same neutral grey"), Mint.Color.Equals(Choco.Color));
+	TestTrue(TEXT("that grey is achromatic"), Mint.Color.R == Mint.Color.G && Mint.Color.G == Mint.Color.B);
 
 	const FTeamLook Nobody = TeamLook::GetFrom(nullptr, 5);
 	TestTrue(TEXT("an invalid id is neutral grey"), Nobody.Color.R == Nobody.Color.G && Nobody.Color.G == Nobody.Color.B);

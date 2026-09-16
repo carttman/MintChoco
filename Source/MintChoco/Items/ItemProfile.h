@@ -10,6 +10,7 @@
 class UAnimSequenceBase;
 class UItemAbility;
 class UNiagaraSystem;
+class UStaticMesh;
 class USoundBank;
 class UTexture2D;
 
@@ -114,6 +115,28 @@ public:
 	/** ActivateFX가 붙을 때의 균일 배율. 1이 에셋 원래 크기다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Effect", meta = (ClampMin = "0.01"))
 	float ActivateFXScale = 1.0f;
+
+	/**
+	 * 조준 중(IsAimingItem) 손에 들려 보이는 메시. 비어 있으면 아무것도 들지 않는다.
+	 *
+	 * 조준은 bAiming으로 복제되므로 이 메시도 모든 머신에서 같이 보인다 — 자세와 같은 신호를
+	 * 타기 때문에 손의 물건과 자세가 어긋나지 않는다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UStaticMesh> HeldMesh;
+
+	/**
+	 * 조준 중 손에 붙는 이펙트. 비어 있으면 없다. 메시와 독립이라 둘 다 넣어도, 하나만 넣어도 된다.
+	 *
+	 * 팀 색은 다른 이펙트와 같이 User.TintColor로 나간다. 시스템이 그 파라미터를 읽지 않으면
+	 * 조용히 무시된다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+	TObjectPtr<UNiagaraSystem> HeldFX;
+
+	/** HeldMesh와 HeldFX를 붙일 캐릭터 소켓. 비어 있으면 메시 원점에 붙는다(소켓이 없는 스켈레톤). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")
+	FName HeldSocket;
 
 	/** 아이템을 쓰는 순간 한 번. 모든 머신에서 같은 타이밍에 나온다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Animation")

@@ -126,6 +126,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Paint|Coverage")
 	FPaintCoverage GetFaceCoverage(EPaintFaceDirection Direction) const { return CellGrid.GetCoverage(Direction); }
 
+	/** Edge of one coverage cell, in world cm. */
+	float GetScoreCellSize() const { return CellGrid.GetCellSize(); }
+
 	UFUNCTION(BlueprintCallable, Category = "Paint|Debug")
 	void SetDebugDraw(bool bText, bool bCells);
 
@@ -216,6 +219,8 @@ private:
 	FTransform GetScaledLocalToWorld() const;
 	FBox GetScaledBounds() const;
 	void OnAtlasReady(const FPaintAtlas& Atlas);
+	/** Claims the splat's cells for its paint id: the score half of DrawSplat, which needs only the grid. */
+	void MarkScore(const FPaintSplat& Splat);
 	void DrawSplat(const FPaintSplat& Splat);
 	/** Atlas rectangles the stamp can touch, one per island it reaches, gutter margin included. */
 	void BuildStampRects(const FPaintLocalStamp& Stamp, FStampRects& OutRects) const;

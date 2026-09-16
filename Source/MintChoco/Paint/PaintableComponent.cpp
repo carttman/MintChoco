@@ -305,6 +305,14 @@ void UPaintableComponent::ApplySplat(const FPaintSplat& Splat)
 		return;
 	}
 
+	// A score-only splat needs the grid, which is ready long before the atlas. It still waits
+	// behind anything queued, so ownership keeps the order the authority decided.
+	if (Splat.bScoreOnly && PendingSplats.IsEmpty() && CellGrid.IsBuilt())
+	{
+		MarkScore(Splat);
+		return;
+	}
+
 	if (bPaintReady && PendingSplats.IsEmpty())
 	{
 		DrawSplat(Splat);
@@ -321,21 +329,34 @@ void UPaintableComponent::UpdateTickEnabled()
 	SetComponentTickEnabled(bOverlay || !PendingSplats.IsEmpty());
 }
 
+void UPaintableComponent::MarkScore(const FPaintSplat& Splat)
+{
+	// Same stamp the brush draws, so ownership can only differ from the picture by the stamp's
+	// satellites and the cell resolution. The locks come with the splat, so this machine skips
+	// what the authority skipped. A score-only splat stands for a mark a few cells wide at most;
+	// at half its radius it would fall between cell centers more often than not, so it claims
+	// its whole radius, about what the drawn mark's satellites reach.
+	const FPaintLockGens Locks = FPaintLockGens::Unpack(Splat.LockGens);
+	const float CoreFraction = Splat.bScoreOnly ? 1.0f : CellStampFraction;
+	CellGrid.Mark(ComputeLocalStamp(Splat), Splat.PaintId, Splat.StarGen, Locks, CoreFraction);
+}
+
 void UPaintableComponent::DrawSplat(const FPaintSplat& Splat)
 {
-	const FPaintLocalStamp Stamp = ComputeLocalStamp(Splat);
-
-	// Same stamp the brush draws, so ownership can only differ from the picture by the stamp's
-	// satellites and the cell resolution. Marked first: the score exists even where there is no
-	// picture (a dedicated server). The locks come with the splat, so this machine skips what the
-	// authority skipped.
-	const FPaintLockGens Locks = FPaintLockGens::Unpack(Splat.LockGens);
-	CellGrid.Mark(Stamp, Splat.PaintId, Splat.StarGen, Locks, CellStampFraction);
-
-	if (!SurfaceMID || !PaintRenderTarget)
+	// Marked first: the score exists even where there is no picture (a dedicated server). A
+	// draw-only splat is the picture alone: a splash droplet's mark, whose score was claimed by
+	// its phantom when the contact was applied.
+	if (!Splat.bDrawOnly)
+	{
+		MarkScore(Splat);
+	}
+	if (Splat.bScoreOnly || !SurfaceMID || !PaintRenderTarget)
 	{
 		return;
 	}
+
+	const FPaintLocalStamp Stamp = ComputeLocalStamp(Splat);
+	const FPaintLockGens Locks = FPaintLockGens::Unpack(Splat.LockGens);
 
 	FStampRects Rects;
 	BuildStampRects(Stamp, Rects);
