@@ -42,6 +42,8 @@ namespace
 	const FName PaintDistRangeParam(TEXT("PaintDistRange"));
 	/** Paint thickness in world cm. Derived from the material, never authored here: see SetPaintHeight. */
 	const FName PaintMaxHeightParam(TEXT("PaintMaxHeight"));
+	/** World size of one paint texel, so the height read can filter by a length instead of a texel count. */
+	const FName PaintTexelCmParam(TEXT("PaintTexelCm"));
 	const FName PositionMapParam(TEXT("PositionMap"));
 	const FName BoundsMinParam(TEXT("BoundsMin"));
 	const FName BoundsSizeParam(TEXT("BoundsSize"));
@@ -224,6 +226,8 @@ void UPaintableComponent::BeginPlay()
 	// The reads decode the brush's distance encoding, so both sides must agree on its range.
 	SurfaceMID->SetScalarParameterValue(PaintDistRangeParam, PaintDistanceRange);
 	SetPaintHeight(*SurfaceMID, *BaseMaterial);
+	// The height read filters by a world length, so a coarsened atlas reads like a fine one.
+	SurfaceMID->SetScalarParameterValue(PaintTexelCmParam, Layout.TexelCm);
 	// The reader normalizes the pixel's local position with these and differentiates the position
 	// atlas in unscaled local space, letting the Local -> World transform apply the scale.
 	SurfaceMID->SetVectorParameterValue(BoundsMinParam, FLinearColor(MeshLocalBounds.Min));

@@ -97,4 +97,13 @@ public:
 	 */
 	UPROPERTY(Config, EditAnywhere, Category = "Team Look")
 	TSoftObjectPtr<UMaterialParameterCollection> TeamLookCollection;
+
+	/**
+	 * MPC_PaintStyle: the look scalars every paint surface reads, shared by all of them.
+	 * Style packs (CoatScale, FuzzScale, RoughnessBias, Flow) and Style2 (NormalStrength, ...).
+	 * A collection is used rather than material parameters because it is live at runtime, so a
+	 * look sweep reaches every surface at once without a recompile.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Paint Style")
+	TSoftObjectPtr<UMaterialParameterCollection> StyleCollection;
 };

@@ -39,11 +39,38 @@ before anything else.
   RG only), PixelDepthOffset (1), Opacity (1), Tangent (3) — every look layer must pass each one
   through Break → Make. In use: Anisotropy / Refraction.rg / PixelDepthOffset = per-team signed
   distances, Opacity = consumed coverage `S`, EmissiveColor.r = thin-paint opacity (slab
-  Emissive is deliberately unwired), Tangent = per-look `(SecondRoughness, weight, WetCoat)`
+  Emissive is deliberately unwired), **ClearCoat = FuzzAmount, ClearCoatRoughness =
+  FuzzRoughness, AmbientOcclusion = SSSMFPScale** (Substrate ignores those three pins, so the
+  looks borrow them), Tangent = per-look `(SecondRoughness, weight, WetCoat)`
   written by the looks rather than passed through. `CustomizedUVs` (and WPO) in a
   MaterialAttributes struct are **vertex-frequency** even when written by Make and read back
   through Break inside a pixel chain. Parameters inside a Material Layer/Blend are namespaced
   per slot, so C++ cannot set them by name — feed runtime data through the stack `Input`.
+
+- The height read is a **cubic B-spline over the paint buffer's G channel**, in
+  `MF_PaintHeightField`, and it returns `HeightDU` / `HeightDV` - the analytic slope of exactly the
+  height it returned. `MF_PaintNormal` consumes those instead of finite-differencing, so the
+  shading normal has no step size left to disagree with the silhouette about. The id (R) and the
+  edge distance (B) are never filtered: a splat's outline stays texel-sharp while its surface
+  smooths, which is what a flowed liquid actually looks like.
+- **The kernel width never goes below 1 texel.** Below that the support stops covering the
+  one-texel tap spacing, taps drop in and out as a pixel crosses a texel, and the paint comes back
+  covered in a regular grid of stripes. The other way to get those stripes is a dynamically-bounded
+  tap loop: the weight tables then need dynamic indexing, the compiler spills them, and the result
+  is the same striping. Keep the window a fixed size and `[unroll]` it - currently 12x12, which
+  covers widths up to 2.5 texels. 144 taps is the price and the top of the range is the
+  expensive end.
+- **The kernel width is in texels, not world cm.** A world length sounds more principled and
+  reads as nothing: a big floor coarsens its atlas to fit `MaxRenderTargetSize`, the stage
+  waffle lands at **4.24 cm per texel** (`Paint atlas: 0.50 cm texels requested, 4.24 cm needed`
+  in LogPaint), and 0.75 cm of blur came out as a width of 1.18 - the whole axis did nothing
+  while looking correctly wired. The noise being smoothed is texel-frequency by nature, so the
+  kernel follows the texel grid.
+- Look style (coat / fuzz / roughness / flow) lives in `MPC_PaintStyle`, not in material or layer
+  parameters. A layer parameter is namespaced per slot so C++ cannot write it by name, and a
+  material parameter only reaches the one instance written; a collection is live at runtime and
+  reaches every paint material at once, which is what makes a sweep possible. `mc.Paint.Style
+  <coat> <fuzz> <rough> <flow> [normal]` writes it; omitted arguments keep their current value.
 
 ### Impact splash (droplets, secondary marks, phantom score)
 
@@ -172,7 +199,8 @@ preset: `MPC_TeamLook` alone decides it.
 | A Toon character shows its PBR material again | The camera-overlap fade restores the materials it stored; the rescan swaps them back within 0.5 s. A unit that never swaps uses a slot material missing from the preset's `MaterialSwaps.From`. |
 | Toon surfaces sparkle in shade or in the distance | Lumen noise crossing a band edge, or normal-map detail read as creases. Raise `CelParams.z` (band softness) or `OutlineParams.z` (normal threshold), or pull `FadeParams.xy` (outline fade, cm) closer in `MI_PP_LookStylize_Toon`. |
 | Metal, emissive or very dark surfaces look wrong under the cel pass | The pass divides scene colour by GBuffer diffuse colour. Below albedo luminance 0.02, on unlit pixels, and on Toon BSDF pixels (`FadeParams.w` = 1) it passes the scene through untouched. |
-| Review mannequins or splats missing from a capture | `ULookSettings::ReviewSetup` must be set on the settings CDO before Simulate starts. Splats wait `SplatDelay` for surfaces to register and log `리뷰 스플랫 N/M`. A mannequin placed inside level geometry shows only its shadow: pick open floor with traces first. |
+| Two look captures differ although only the first one was meant to change | The **first capture of a Simulate session** comes back visibly different from a second capture of the same settings: Lumen and the shadow maps are still settling after `StartPIE`'s warmup. Take one throwaway frame before the sweep, or the whole settling error lands on whichever variant went first. With the throwaway the noise floor between two identical captures drops to ~0.7 mean channel delta. |
+| Review mannequins or splats missing from a capture | `ULookSettings::ReviewSetup` must be set on the settings CDO **immediately before** `StartPIE` - it is Transient, and written any earlier it is back to `None` by the time the world begins play, which captures an empty stage. Splats wait `SplatDelay` for surfaces to register and log `리뷰 스플랫 N/M`. A mannequin placed inside level geometry shows only its shadow: pick open floor with traces first. |
 
 ## Items (Gameplay Ability System)
 
