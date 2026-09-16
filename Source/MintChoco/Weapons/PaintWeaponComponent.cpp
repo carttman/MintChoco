@@ -5,6 +5,7 @@
 #include "Audio/AudioGameplayTags.h"
 #include "Audio/GameAudioSubsystem.h"
 #include "Components/AudioComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Game/GameGameState.h"
 #include "Game/TeamLook.h"
 #include "Game/Unit.h"
@@ -585,6 +586,24 @@ bool UPaintWeaponComponent::FireOnce()
 	FPaintFireContext Context;
 	BuildContext(Context, ViewOrigin, ViewDirection, ChargeFraction);
 	Context.bAuthority = HasAuthority();
+
+	// [임시 측정용] 탄이 실제로 나가는 높이(Muzzle)와 이펙트가 피는 높이(VisualMuzzle)를 발밑 기준으로
+	// 찍는다. 차지샷 낙하 계산에 쓸 총구 높이를 눈대중이 아니라 숫자로 정하려는 것이다.
+	// **값을 확인하고 나면 지운다.**
+	if (const APawn* const ProbePawn = Context.Instigator)
+	{
+		const ACharacter* const ProbeCharacter = Cast<ACharacter>(ProbePawn);
+		const float HalfHeight = ProbeCharacter && ProbeCharacter->GetCapsuleComponent()
+			? ProbeCharacter->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()
+			: 0.0f;
+		const float FeetZ = ProbePawn->GetActorLocation().Z - HalfHeight;
+		const FVector VisualMuzzleLocation = Context.VisualMuzzle.Get(Context.Muzzle.GetLocation());
+		UE_LOG(LogPaint, Log, TEXT("[MuzzleProbe] %s: 발밑 Z=%.1f | Muzzle +%.1f | VisualMuzzle +%.1f | 차이 %.1f"),
+			*GetNameSafe(Profile), FeetZ,
+			Context.Muzzle.GetLocation().Z - FeetZ,
+			VisualMuzzleLocation.Z - FeetZ,
+			Context.Muzzle.GetLocation().Z - VisualMuzzleLocation.Z);
+	}
 
 	// The seed is spent by the profile's attempt, not by its success; a pinned seed just stays.
 	const int32 Seed = NextSeed;
