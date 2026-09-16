@@ -29,8 +29,12 @@ before anything else.
   `TransitionAndCopyTexture`; both targets must share the pixel format
   (`UPaintSubsystem::CreatePaintBuffer`).
 - Paint thickness is `DisplacementScaling.Magnitude` in **world cm** (the overlay divides by
-  the primitive scale along the normal); keep `PaintMaxHeight` equal to it or shading and
-  silhouette disagree. It was 3 while the sample cubes were 3× scaled, so the old look was 9 cm.
+  the primitive scale along the normal), and it is the only knob: `UPaintableComponent` reads
+  it off the surface material and writes the shader's `PaintMaxHeight` from it. The two can
+  only disagree where no MID exists - the editor viewport, a material preview, the defaults a
+  new instance starts from - and `MintChoco.Paint.Materials.PaintHeight` guards those. A
+  `PaintMaxHeight` above the magnitude does not thicken anything; it only tilts the shading
+  normal past the silhouette, which reads as sparkle.
 - Pixel-frequency carriers through a layer stack: Anisotropy (1), Refraction (2, Break exposes
   RG only), PixelDepthOffset (1), Opacity (1), Tangent (3) — every look layer must pass each one
   through Break → Make. In use: Anisotropy / Refraction.rg / PixelDepthOffset = per-team signed
