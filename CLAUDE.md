@@ -10,8 +10,16 @@ Reference docs, read on demand rather than up front:
 - `docs/Traps.md` — symptom → check-first tables and system summaries: paint pipeline,
   rendering, items (GAS), balloon, match flow, screen fade, Steam sessions. Read when
   something looks wrong in PIE before forming a theory.
+- `docs/ChangeLog.md` — what each change attached to, what it replaced, and the values it
+  runs at now, grouped by system rather than by date. Read before touching weapons, paint
+  deposits or audio; append to it whenever a change lands.
 
 ## Working rules
+
+- Every change that actually ships — C++, data asset, or wiring — gets an entry in
+  `docs/ChangeLog.md`: what it is, where it attached, what it replaced, and its current
+  values. When an entry is superseded, **replace it** rather than appending; that file says
+  what is true now, not what happened when. Commits get one line each at the bottom.
 
 - After an editor crash: stop, report the crash log (`Saved/Crashes/*/MintChoco.log`, the
   `Assertion failed` line and the lines before it), and wait. Never keep working in a

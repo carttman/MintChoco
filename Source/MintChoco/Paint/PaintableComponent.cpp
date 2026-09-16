@@ -678,6 +678,34 @@ FPaintLocalStamp UPaintableComponent::ComputeLocalStamp(const FPaintSplat& Splat
 	return Stamp;
 }
 
+uint8 UPaintableComponent::GetPaintIdAt(const FVector& WorldPosition, const FVector& WorldNormal) const
+{
+	if (!TargetMesh)
+	{
+		return PaintIdNone;
+	}
+
+	// ComputeLocalStamp 과 같은 변환이다. 회전과 이동만 되돌리고 스케일은 남긴다.
+	const FTransform& MeshTransform = TargetMesh->GetComponentTransform();
+	const FVector LocalNormal = MeshTransform.InverseTransformVectorNoScale(WorldNormal);
+	const EPaintFaceDirection Direction = ClassifyPaintFaceDirection(LocalNormal);
+	if (!IsDirectionEnabled(Direction))
+	{
+		return PaintIdNone;
+	}
+
+	const FVector Local = MeshTransform.InverseTransformPositionNoScale(WorldPosition);
+	const uint8 Id = CellGrid.PaintIdAt(Local, Direction);
+	if (Id != PaintIdNone)
+	{
+		return Id;
+	}
+
+	// 표면 위의 점이 마침 복셀 경계에 걸리면 면이 없는 칸이 나온다. 표면 안쪽으로 조금 밀어
+	// 한 번 더 본다. 칠해지지 않은 바닥도 여기로 오지만, 답이 같으므로 해가 없다.
+	return CellGrid.PaintIdAt(Local - LocalNormal * (CellGrid.GetCellSize() * 0.25f), Direction);
+}
+
 FBox UPaintableComponent::GetWorldBounds() const
 {
 	return TargetMesh ? TargetMesh->Bounds.GetBox() : FBox(ForceInit);

@@ -294,6 +294,19 @@ private:
 
 	/** Records the hold locally, relays it to the machines that only watch, and drives the FX here. */
 	void SetCharging(bool bNewCharging);
+
+	/**
+	 * 충전하는 동안 잉크를 눈금마다 비우는 타이머를 건다.
+	 *
+	 * 방아쇠를 쥔 머신(예측)과 서버(진짜)에서만 돈다. 구경만 하는 머신은 복제된 탱크를 볼 뿐이라
+	 * 여기에 끼면 같은 잉크를 두 번 깎는다. 그래서 OnRep 을 타는 ApplyChargingVisuals 가 아니라
+	 * SetCharging 과 ServerSetCharging 에서 부른다.
+	 */
+	void StartChargeInk();
+	void StopChargeInk();
+
+	/** 눈금 하나. 잉크가 모자라면 그 자리에서 쏘고 멈춘다. */
+	void OnChargeInkTick();
 	void StartChargeFX();
 	void StopChargeFX();
 
@@ -387,6 +400,12 @@ private:
 	 * from the hold it saw start; the watchers have no press to measure, so theirs is an estimate.
 	 */
 	FTimerHandle ChargeReadyTimer;
+
+	/** 충전 중 잉크를 비우는 눈금. 방아쇠를 쥔 머신과 서버가 각자 하나씩 돌린다. */
+	FTimerHandle ChargeInkTimer;
+
+	/** 이번 충전에서 이미 낸 눈금 수. ChargeTime 안에 들어가는 수를 넘기면 더 내지 않는다. */
+	int32 ChargeInkTicksDone = 0;
 
 	/** World time the empty cue last played. Starts far in the past so the first refusal is heard. */
 	double LastEmptyCueTime = -UE_BIG_NUMBER;

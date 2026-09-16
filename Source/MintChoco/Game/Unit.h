@@ -258,6 +258,26 @@ protected:
 	TObjectPtr<UCameraComponent> FollowCamera;
 
 	/**
+	 * 올려다보고 내려다볼 수 있는 각도의 한계. 소유 클라이언트의 카메라 매니저에만 건다
+	 * (ApplyViewPitchLimits). 서버는 이미 클램프된 회전을 ServerMove로 받으므로 따로 걸지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera",
+		meta = (ClampMin = "-89.9", ClampMax = "0", ForceUnits = "deg"))
+	float ViewPitchMin = -45.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Camera",
+		meta = (ClampMin = "0", ClampMax = "89.9", ForceUnits = "deg"))
+	float ViewPitchMax = 60.0f;
+
+	/**
+	 * ViewPitchMin/Max를 이 폰을 조종하는 플레이어의 카메라 매니저로 옮긴다.
+	 *
+	 * SetupPlayerInputComponent에서 부른다. 그곳이 로컬 조종 폰이 확정되는 유일한 지점이고,
+	 * 리스폰하면 다시 불리므로 새 카메라 매니저에도 자동으로 걸린다.
+	 */
+	void ApplyViewPitchLimits();
+
+	/**
 	 * 카메라에 붙은 작은 구. 다른 유닛의 캡슐과 겹치는 동안 그 유닛을 반투명하게 만든다.
 	 * 로컬 플레이어의 폰에서만 충돌이 켜진다(NotifyControllerChanged). 캡슐과 메시가 Camera
 	 * 채널을 무시하므로 붐이 다른 플레이어에게 막히지 않고, 그 대신 이 구가 겹침을 알린다.
@@ -619,6 +639,7 @@ private:
 	/** 보드 주행 루프. 트레일과 같은 이유로 들고 있다가 보드가 사라질 때 직접 멈춘다. */
 	UPROPERTY(Transient)
 	TObjectPtr<UAudioComponent> BoardAudioComponent;
+
 
 	/**
 	 * 컨텍스트를 넣어준 서브시스템. EndPlay 시점에는 Controller가 이미 떨어져 나갔을

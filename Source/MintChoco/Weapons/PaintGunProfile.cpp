@@ -5,6 +5,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
+#include "TimerManager.h"
 
 #include "Paint/PaintLog.h"
 #include "Weapons/PaintProjectile.h"
@@ -185,9 +186,10 @@ bool UPaintGunProfile::Launch(UWorld& World, APawn* Instigator, const FPaintShot
 			? Shot.Seed
 			: static_cast<int32>(HashCombineFast(static_cast<uint32>(Shot.Seed), static_cast<uint32>(Pellet)));
 		const FTransform SpawnTransform(Directions[Pellet].Rotation(), Shot.Muzzle);
+		const float DropAfter = ComputePelletDropAfter(Pellet, Directions.Num());
 		APaintProjectile* const Projectile = Paintball->Launch(World, SpawnTransform, Instigator,
 			Directions[Pellet] * Scatter->MuzzleSpeed, Shot.PaintId, PelletSeed, bCosmetic,
-			ComputePelletDropAfter(Pellet, Directions.Num()), VisualOffset);
+			DropAfter, VisualOffset);
 		bLaunched |= Projectile != nullptr;
 
 		// 첫 탄에만 소리를 남긴다. 펠릿이 거의 동시에 닿아 같은 소리가 겹치기 때문이다.
@@ -195,6 +197,49 @@ bool UPaintGunProfile::Launch(UWorld& World, APawn* Instigator, const FPaintShot
 		{
 			Projectile->SetPlaysImpactSound(false);
 		}
+
+		ScheduleTrailingPainters(World, Instigator, Shot, Directions[Pellet], PelletSeed, DropAfter, bCosmetic);
 	}
 	return bLaunched;
+}
+
+void UPaintGunProfile::ScheduleTrailingPainters(UWorld& World, APawn* Instigator, const FPaintShot& Shot,
+	const FVector& Direction, int32 PelletSeed, float DropAfter, bool bCosmetic) const
+{
+	if (!PainterPaintball || PainterCount <= 0 || PainterDelay <= 0.0f || !Scatter)
+	{
+		return;
+	}
+
+	// 람다에 담는 것은 전부 값이거나 애셋 포인터다. 데이터 애셋은 레벨보다 오래 살지만 월드와
+	// 폰은 아니므로 그 둘만 약참조로 들고, 발사 전에 사라졌으면 조용히 접는다.
+	const TWeakObjectPtr<UWorld> WeakWorld(&World);
+	const TWeakObjectPtr<APawn> WeakInstigator(Instigator);
+	const UPaintballProfile* const Painter = PainterPaintball;
+	const FVector Muzzle(Shot.Muzzle);
+	const FVector Velocity = Direction * Scatter->MuzzleSpeed;
+	const FTransform SpawnTransform(Direction.Rotation(), Muzzle);
+	const uint8 ShotPaintId = Shot.PaintId;
+
+	for (int32 Step = 1; Step <= PainterCount; ++Step)
+	{
+		// 시드는 펠릿에서 갈라 나온다. 같은 사격을 다시 재생하면 같은 자국이 나온다.
+		const int32 PainterSeed = static_cast<int32>(
+			HashCombineFast(static_cast<uint32>(PelletSeed), static_cast<uint32>(0x9E37 + Step)));
+
+		// 핸들을 들고 있지 않는 이유: 한 번 쏘고 끝나는 예약이고, 취소할 일이 없다.
+		FTimerHandle Handle;
+		World.GetTimerManager().SetTimer(
+			Handle,
+			FTimerDelegate::CreateLambda(
+				[WeakWorld, WeakInstigator, Painter, SpawnTransform, Velocity, ShotPaintId, PainterSeed, DropAfter, bCosmetic]()
+				{
+					if (UWorld* const LiveWorld = WeakWorld.Get())
+					{
+						Painter->Launch(*LiveWorld, SpawnTransform, WeakInstigator.Get(), Velocity,
+							ShotPaintId, PainterSeed, bCosmetic, DropAfter);
+					}
+				}),
+			PainterDelay * static_cast<float>(Step), /*bLoop=*/false);
+	}
 }

@@ -5,6 +5,7 @@
 #include "Audio/AudioGameplayTags.h"
 #include "Audio/GameAudioSubsystem.h"
 #include "Components/AudioComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Game/GameGameState.h"
 #include "Game/TeamLook.h"
 #include "Game/Unit.h"
@@ -353,10 +354,75 @@ void UPaintWeaponComponent::SetCharging(bool bNewCharging)
 		ServerSetCharging(bNewCharging);
 	}
 
+	// 잉크는 방아쇠를 쥔 이 머신이 예측으로 깎는다. 서버 몫은 ServerSetCharging 이 따로 건다.
+	if (bNewCharging)
+	{
+		StartChargeInk();
+	}
+	else
+	{
+		StopChargeInk();
+	}
+
 	// The machine that set the value never gets its own OnRep, and a dedicated server draws nothing.
 	if (GetNetMode() != NM_DedicatedServer)
 	{
 		ApplyChargingVisuals(bNewCharging);
+	}
+}
+
+void UPaintWeaponComponent::StartChargeInk()
+{
+	UWorld* const World = GetWorld();
+	// 무료 사격 태그가 붙어 있으면 충전도 공짜다. 발사 비용을 면제하는 것과 같은 규칙이다.
+	if (!World || !Profile || Profile->FireMode != EPaintFireMode::Charged
+		|| Profile->ChargeInkPercentPerTick <= 0.0f || Profile->ChargeInkTickSeconds <= 0.0f
+		|| !Tank.IsValid() || IsShotFree())
+	{
+		return;
+	}
+
+	ChargeInkTicksDone = 0;
+	World->GetTimerManager().SetTimer(ChargeInkTimer, this, &UPaintWeaponComponent::OnChargeInkTick,
+		Profile->ChargeInkTickSeconds, /*bLoop=*/true);
+}
+
+void UPaintWeaponComponent::StopChargeInk()
+{
+	if (const UWorld* const World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ChargeInkTimer);
+	}
+	ChargeInkTicksDone = 0;
+}
+
+void UPaintWeaponComponent::OnChargeInkTick()
+{
+	if (!Profile || !Tank.IsValid())
+	{
+		StopChargeInk();
+		return;
+	}
+
+	if (!Tank->TryConsume(Profile->ChargeInkPercentPerTick * 0.01f))
+	{
+		// 잉크가 떨어졌다. 지금까지 충전한 만큼으로 바로 쏜다. 쏘는 것은 방아쇠를 쥔 머신뿐이고,
+		// 서버는 그 머신이 보낼 발사를 기다린다 - 서버에는 놓을 방아쇠가 없다.
+		StopChargeInk();
+		const APawn* const Pawn = GetOwnerPawn();
+		if (Pawn && Pawn->IsLocallyControlled())
+		{
+			ReleaseTrigger();
+		}
+		return;
+	}
+
+	// 다 찬 뒤로는 더 내지 않는다. 계속 쥐고 있어도 충전량은 1 에서 멈추기 때문이다.
+	++ChargeInkTicksDone;
+	const float TickSeconds = FMath::Max(Profile->ChargeInkTickSeconds, UE_SMALL_NUMBER);
+	if (ChargeInkTicksDone >= FMath::FloorToInt(GetEffectiveChargeTime() / TickSeconds))
+	{
+		StopChargeInk();
 	}
 }
 
@@ -370,6 +436,16 @@ void UPaintWeaponComponent::ServerSetCharging_Implementation(bool bNewCharging)
 	}
 
 	bCharging = bNewCharging;
+
+	// 서버의 탱크가 진짜다. 소유자는 자기 것을 예측으로 깎고 이쪽 결과로 교정된다.
+	if (bNewCharging)
+	{
+		StartChargeInk();
+	}
+	else
+	{
+		StopChargeInk();
+	}
 
 	// A listen server renders this pawn too, and OnRep never fires on the machine that assigned.
 	if (GetNetMode() != NM_DedicatedServer)

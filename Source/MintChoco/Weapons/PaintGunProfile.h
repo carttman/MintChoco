@@ -79,6 +79,29 @@ public:
 	float PelletDropLead = 300.0f;
 
 	/**
+	 * 펠릿 뒤를 따라가며 칠하기만 하는 탄. 비워 두면 추종탄이 없고, 지금까지처럼 펠릿 자신의
+	 * 궤적 도포만 남는다.
+	 *
+	 * 펠릿과 **같은 원점·같은 방향·같은 속도**로 PainterDelay 만큼씩 늦게 나가므로 앞선 펠릿의
+	 * 길을 그대로 따라간다. 꺾이는 시점(DropAfter)도 펠릿과 같은 값을 받는다.
+	 *
+	 * 보이지 않게 하는 것은 이쪽이 아니라 탄 프로필의 bHideMesh 가 맡는다: 안 보이는 탄이
+	 * 필요한 곳이 여기만이 아니기 때문이다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gun|Painter")
+	TObjectPtr<UPaintballProfile> PainterPaintball;
+
+	/** 펠릿 하나가 끌고 가는 추종탄 수. 0 이면 추종탄이 없다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gun|Painter",
+		meta = (ClampMin = "0", ClampMax = "8", EditCondition = "PainterPaintball != nullptr"))
+	int32 PainterCount = 0;
+
+	/** 추종탄 사이의 시간(초). 속도가 같으므로 이 값 × 속도가 곧 뒤처지는 거리다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Gun|Painter",
+		meta = (ClampMin = "0.005", ForceUnits = "s", EditCondition = "PainterPaintball != nullptr"))
+	float PainterDelay = 0.03f;
+
+	/**
 	 * 한 발의 산탄이 내는 착탄음을 첫 탄 하나로 줄인다.
 	 *
 	 * 펠릿이 거의 동시에 닿으므로 탄마다 울리면 같은 소리가 겹쳐 지저분해진다. 켜면 첫 탄만
@@ -99,6 +122,10 @@ private:
 
 	/** Scatters the shot and launches one ball per pellet. Returns true when at least one flew. */
 	bool Launch(UWorld& World, APawn* Instigator, const FPaintShot& Shot, bool bCosmetic) const;
+
+	/** 한 펠릿 뒤로 PainterCount 발을 PainterDelay 간격으로 예약한다. 서버·클라이언트 모두 각자 건다. */
+	void ScheduleTrailingPainters(UWorld& World, APawn* Instigator, const FPaintShot& Shot,
+		const FVector& Direction, int32 PelletSeed, float DropAfter, bool bCosmetic) const;
 
 	/**
 	 * 이 펠릿이 몇 초 직진한 뒤 꺾일지. 끄면 -1(프로필의 DropAfter를 그대로 쓴다)을 돌려준다.

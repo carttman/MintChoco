@@ -126,6 +126,18 @@ public:
 		return Mark(Stamp, PaintId, 0, FPaintLockGens(), CoreFraction);
 	}
 
+	/**
+	 * 한 점의 바닥이 누구 색인지. 위치는 이 격자의 프레임(스케일 적용 로컬), 방향은 그 면이
+	 * 향하는 로컬 방향이다. 격자 밖이거나 그 칸에 면이 없으면 `PaintIdNone`.
+	 *
+	 * `Mark`가 쓰는 것과 같은 칸을 읽는다. 그래서 스플랫 로그를 타고 모든 머신에서 같은
+	 * `Mark`가 도는 한, 이 질문의 답도 모든 머신에서 같다 - 이동 속도를 여기에 걸어도
+	 * 서버와 클라이언트가 어긋나지 않는 이유다.
+	 *
+	 * "안 칠해졌다"와 "여기엔 면이 없다"를 구분하지 않는다. 둘 다 `PaintIdNone`이다.
+	 */
+	uint8 PaintIdAt(const FVector& LocalPosition, EPaintFaceDirection Direction) const;
+
 	void ClearPaint();
 
 	/** Removes non-playable cells from BOTH the denominator and ownership totals. Call once before play. */

@@ -8,6 +8,7 @@
 #include "ChocolateFountain.generated.h"
 
 class AUnit;
+class UChocolateFountainProfile;
 class UParticleSystem;
 class UParticleSystemComponent;
 class USphereComponent;
@@ -35,6 +36,16 @@ public:
 
 	/** 서버 전용. SpawnActorDeferred와 FinishSpawning 사이에. Instigator(사용자)는 스폰 파라미터로 온다. */
 	void Init(int32 InTeam, uint8 InPaintId, float InRadius, float InLifetime);
+
+	/**
+	 * 서버 전용. FinishSpawning 뒤에. 발밑 도포를 프로필이 정한 횟수만큼 반복한다. 첫 번째는
+	 * 이 자리에서 바로, 나머지는 BurstInterval마다 한 번씩 직전보다 BurstGrowth배 넓게.
+	 *
+	 * 일정을 능력이 아니라 돔이 들고 있는 이유: 초콜릿 분수는 즉발(Duration 0)이라 능력 인스턴스가
+	 * 곧 끝나 타이머를 얹을 자리가 없다. 돔은 정확히 Lifetime 동안 살고 사라질 때 타이머를
+	 * 같이 걷으므로, 마지막 도포와 돔의 끝이 저절로 맞는다.
+	 */
+	void StartGroundBursts(const UChocolateFountainProfile& Profile);
 
 	/**
 	 * 돔이 통과시키는 유닛인지. 사용자 본인은 팀이 있든 없든 항상 통과하고, 그 밖에는 같은 팀만.
@@ -158,6 +169,27 @@ private:
 
 	/** 서버 전용. 생성 순간 안에 있는 상대를 통과 목록에 넣고 밀어낸다. */
 	void AdmitTrappedOpponent(AUnit& Unit);
+
+	/** 서버 전용. 다음 발밑 도포 하나를 뿌리고, 남았으면 다시 예약한다. */
+	void FireGroundBurst();
+
+	/**
+	 * 발밑 도포에 쓰는 프로필. 서버에만 있고 복제하지 않는다 — 도포를 뿌리는 것은 서버뿐이고,
+	 * 각 APaintBurst가 제 파라미터를 스스로 복제해 나른다.
+	 */
+	UPROPERTY(Transient)
+	TObjectPtr<const UChocolateFountainProfile> BurstProfile;
+
+	FTimerHandle GroundBurstTimer;
+
+	/** 지금까지 뿌린 도포 수. BurstProfile->BurstCount에 닿으면 멈춘다. */
+	int32 GroundBurstsDone = 0;
+
+	/** 다음 도포에 쓸 반경 배율. 한 번 뿌릴 때마다 BurstGrowth가 곱해진다. */
+	float GroundBurstScale = 1.0f;
+
+	/** 첫 도포 이후 흐른 시간. 마지막 도포를 수명 안으로 당길 때 본다. */
+	float GroundBurstElapsed = 0.0f;
 
 	/** 이 머신에서 Wall을 무시하게 해 둔 캡슐들. EndPlay에 되돌린다. */
 	UPROPERTY(Transient)

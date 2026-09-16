@@ -107,6 +107,10 @@ void APaintProjectile::Init(const UPaintballProfile* InProfile, uint8 InPaintId,
 	Sphere->SetSphereRadius(Profile->Radius);
 	ScaleMeshToRadius(Mesh, Profile->Radius);
 
+	// 감춘 공도 날고 부딪히고 칠한다. 끄는 것은 그림뿐이다. 풀에서 꺼낸 공이 지난 사격의
+	// 설정을 물려받지 않도록 매번 세운다.
+	Mesh->SetVisibility(!Profile->bHideMesh);
+
 	if (UMaterialInterface* const TeamMaterial = GetTeamMaterial(PaintId))
 	{
 		Mesh->SetMaterial(0, TeamMaterial);

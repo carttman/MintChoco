@@ -10,8 +10,10 @@
 #include "TimerManager.h"
 
 #include "Game/Unit.h"
+#include "Items/ChocolateFountainProfile.h"
 #include "MeshScale.h"
 #include "MintChoco.h"
+#include "Weapons/PaintBurst.h"
 #include "Weapons/PaintProjectile.h"
 
 namespace
@@ -75,6 +77,53 @@ void AChocolateFountain::Init(int32 InTeam, uint8 InPaintId, float InRadius, flo
 	PaintId = InPaintId;
 	Radius = InRadius;
 	Lifetime = InLifetime;
+}
+
+void AChocolateFountain::StartGroundBursts(const UChocolateFountainProfile& Profile)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	BurstProfile = &Profile;
+	GroundBurstsDone = 0;
+	GroundBurstScale = 1.0f;
+	GroundBurstElapsed = 0.0f;
+
+	// 첫 번째는 설치와 동시에. 나머지는 FireGroundBurst가 스스로 이어 예약한다.
+	FireGroundBurst();
+}
+
+void AChocolateFountain::FireGroundBurst()
+{
+	UWorld* const World = GetWorld();
+	if (!World || !BurstProfile)
+	{
+		return;
+	}
+
+	// 사용자 팀 색이라 돔 벽에 삼켜지지 않고 그대로 통과한다.
+	APaintBurst::Spawn(*World, GetActorLocation(), BurstProfile->MakeBurst(PaintId, FMath::Rand(), GroundBurstScale));
+	++GroundBurstsDone;
+	GroundBurstScale *= BurstProfile->BurstGrowth;
+
+	if (GroundBurstsDone >= BurstProfile->BurstCount)
+	{
+		return;
+	}
+
+	// 마지막 도포는 돔이 사라지는 순간과 겹친다(Lifetime = (BurstCount - 1) × BurstInterval이
+	// 맞춰진 값이다). 같은 프레임에 도는 두 타이머의 순서는 정해져 있지 않으므로, 수명에 걸리면
+	// 아예 안 뿌려질 수 있다. 그래서 남은 시간 안으로 살짝 당겨 마지막 한 번을 반드시 뿌린다.
+	constexpr float DeathMargin = 0.05f;
+	const float Remaining = Lifetime - GroundBurstElapsed - DeathMargin;
+	if (Remaining <= 0.0f)
+	{
+		return;
+	}
+	const float Delay = FMath::Min(BurstProfile->BurstInterval, Remaining);
+	GroundBurstElapsed += Delay;
+	World->GetTimerManager().SetTimer(GroundBurstTimer, this, &AChocolateFountain::FireGroundBurst, Delay, false);
 }
 
 bool AChocolateFountain::IsFriendly(const AUnit* Unit) const
@@ -145,6 +194,7 @@ void AChocolateFountain::EndPlay(const EEndPlayReason::Type Reason)
 	if (UWorld* const World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(BubbleFadeTimer);
+		World->GetTimerManager().ClearTimer(GroundBurstTimer);
 	}
 	for (int32 Index = IgnoringUnits.Num() - 1; Index >= 0; --Index)
 	{

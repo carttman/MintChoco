@@ -38,9 +38,41 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sniper")
 	FPaintDeposit Trail;
 
-	/** How far the ray reaches when nothing stops it. */
+	/** How far the ray reaches when nothing stops it, at a full charge. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sniper", meta = (ClampMin = "0", ForceUnits = "cm"))
 	float Range = 10000.0f;
+
+	/**
+	 * 충전이 이만큼 모자랄 때마다 사거리가 절반이 된다(초). 0 이면 충전량이 사거리를 바꾸지
+	 * 않고, 이 값을 넣지 않은 기존 프로필은 전과 같다.
+	 *
+	 * 0.5 로 두고 ChargeTime 을 1.5 로 두면 1.0초 충전이 절반, 0.5초 충전이 1/4 이 된다.
+	 * 줄어드는 것은 광선의 길이뿐이라 순차 발사의 발수도 따라 줄어든다 - 덜 충전한 샷은
+	 * 짧은 줄무늬를 남긴다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sniper", meta = (ClampMin = "0", ForceUnits = "s"))
+	float RangeHalvingSeconds = 0.0f;
+
+	/**
+	 * 만충으로 맞혔을 때의 스턴(초). Impact.StunDuration x 충전비율 대신 이 값을 쓴다. 0 이면
+	 * 만충도 다른 충전량과 같은 규칙을 따른다.
+	 *
+	 * 만충에서만 뛰게 하려는 것이다: Impact.StunDuration 을 ChargeTime 과 같게 두면 부분
+	 * 충전은 "충전한 초 = 스턴 초" 가 되고, 만충만 이 값으로 건너뛴다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sniper", meta = (ClampMin = "0", ForceUnits = "s"))
+	float FullChargeStunSeconds = 0.0f;
+
+	/**
+	 * 만충으로 보는 충전량. 1 을 정확히 요구하면 안 된다 - 충전량이 네트워크로 갈 때
+	 * 1/255 눈금으로 눌리므로, 한 프레임 차이로 254 가 되면 스턴이 3초에서 절반으로 뚝 떨어진다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sniper", meta = (ClampMin = "0.5", ClampMax = "1"))
+	float FullChargeThreshold = 0.99f;
+
+	/** 이 충전량에서 광선이 닿는 거리(cm). 만충이면 Range 그대로. */
+	UFUNCTION(BlueprintPure, Category = "Sniper")
+	float GetRangeFor(float ChargeFraction) const;
 
 	/**
 	 * Distance along the ray between two trail samples. Every sample that finds ground costs a

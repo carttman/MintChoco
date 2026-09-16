@@ -52,6 +52,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball", meta = (ClampMin = "1", ForceUnits = "cm"))
 	float Radius = 6.0f;
 
+	/**
+	 * 공을 눈에 보이지 않게 한다. 나머지는 전부 그대로다: 날고, 부딪히고, 칠하고, 복제된다.
+	 *
+	 * 보이는 탄 뒤를 따라가며 칠하기만 하는 탄에 쓴다. 한 발에 여러 개가 겹쳐 날면 화면이
+	 * 지저분해지므로, 실제로 보여 줄 것은 앞선 탄 하나로 두고 나머지는 이것으로 감춘다.
+	 * 메시만 끄므로 Radius 는 여전히 콜리전 크기로 살아 있다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball")
+	bool bHideMesh = false;
+
 	/** 0 flies straight, 1 drops like a thrown object. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Paintball", meta = (ClampMin = "0", ForceUnits = "x"))
 	float GravityScale = 0.5f;

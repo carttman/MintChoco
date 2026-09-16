@@ -370,6 +370,29 @@ int32 FPaintCellGrid::Mark(const FPaintLocalStamp& Stamp, uint8 PaintId, uint8 S
 	return Changed;
 }
 
+uint8 FPaintCellGrid::PaintIdAt(const FVector& LocalPosition, EPaintFaceDirection Direction) const
+{
+	if (!IsBuilt())
+	{
+		return PaintIdNone;
+	}
+
+	// VoxelOf 를 쓰지 않는다. 그쪽은 격자 안으로 잘라 넣으므로 바깥 점이 가장자리 칸의 색을
+	// 물려받는다. 여기서는 바깥이면 바깥이라고 답해야 한다.
+	const FVector Scaled = (LocalPosition - Origin) / CellSize;
+	const FIntVector Voxel(
+		FMath::FloorToInt(Scaled.X), FMath::FloorToInt(Scaled.Y), FMath::FloorToInt(Scaled.Z));
+	if (Voxel.X < 0 || Voxel.Y < 0 || Voxel.Z < 0
+		|| Voxel.X >= Dims.X || Voxel.Y >= Dims.Y || Voxel.Z >= Dims.Z)
+	{
+		return PaintIdNone;
+	}
+
+	// 면적이 0인 칸에는 표면이 없다. 칠할 수 없는 곳이므로 색을 물어도 답이 없다.
+	const int32 Cell = VoxelIndex(Voxel) * PaintFaceDirectionCount + static_cast<int32>(Direction);
+	return Areas[Cell] > 0.0f ? Ids[Cell] : PaintIdNone;
+}
+
 void FPaintCellGrid::ClearPaint()
 {
 	FMemory::Memzero(Totals);

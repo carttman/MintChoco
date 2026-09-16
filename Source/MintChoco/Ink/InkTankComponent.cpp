@@ -6,6 +6,8 @@
 #include "HAL/IConsoleManager.h"
 #include "Net/UnrealNetwork.h"
 
+#include "Game/UnitMovementComponent.h"
+
 #include "MintChoco.h"
 
 namespace
@@ -75,8 +77,17 @@ void UInkTankComponent::Refill(float Seconds)
 
 	if (Seconds > 0.0f && Ink < 1.0f)
 	{
-		ApplyInk(Ink + RefillPerSecond * Seconds);
+		ApplyInk(Ink + RefillPerSecond * GetRefillMultiplier() * Seconds);
 	}
+}
+
+float UInkTankComponent::GetRefillMultiplier() const
+{
+	// 주인이 없거나(테스트) 무브먼트가 없으면 배율이 없다. 그 경우 예전과 똑같이 찬다.
+	const AActor* const Owner = GetOwner();
+	const UUnitMovementComponent* const Move =
+		Owner ? Owner->FindComponentByClass<UUnitMovementComponent>() : nullptr;
+	return Move ? Move->GetInkRefillMultiplier() : 1.0f;
 }
 
 bool UInkTankComponent::TryConsume(float Cost)

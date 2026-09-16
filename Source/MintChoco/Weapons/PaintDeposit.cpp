@@ -58,14 +58,19 @@ bool FPaintDeposit::StrikeReceiver(const FHitResult& Hit, uint8 PaintId) const
 	return true;
 }
 
-bool FPaintDeposit::StrikeUnit(const FHitResult& Hit, uint8 PaintId, float Charge) const
+bool FPaintDeposit::StrikeUnitFor(const FHitResult& Hit, uint8 PaintId, float StunSeconds) const
 {
 	AUnit* const Unit = Cast<AUnit>(Hit.GetActor());
 	if (!Unit || Unit->GetPaintId() == PaintId)
 	{
 		return false;
 	}
-	return Unit->TryApplyStun(StunSecondsFor(Charge), StunSuperArmorDuration);
+	return Unit->TryApplyStun(StunSeconds, StunSuperArmorDuration);
+}
+
+bool FPaintDeposit::StrikeUnit(const FHitResult& Hit, uint8 PaintId, float Charge) const
+{
+	return StrikeUnitFor(Hit, PaintId, StunSecondsFor(Charge));
 }
 
 bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed, float Charge, uint8 StarGen, float BallRadius) const
