@@ -69,6 +69,11 @@ float FPaintRainPlan::Lifespan(const FPaintRainParams& Params)
 	return FMath::Max(Params.LeadInSeconds, 0.0f) + static_cast<float>(Params.RowCount) * Params.Interval + 2.0f;
 }
 
+FVector FPaintRainPlan::TelegraphPoint(const FVector& Ground, float Height)
+{
+	return Ground + FVector(0.0f, 0.0f, FMath::Max(Height, 0.0f));
+}
+
 FVector FPaintRainPlan::RowPoint(const FPaintRainParams& Params, int32 Row, int32 Column)
 {
 	const FVector2D Forward = Params.Direction.GetSafeNormal();
@@ -222,7 +227,8 @@ bool APaintRain::FindGroundAtRow(int32 Row, FVector& OutPoint) const
 		return false;
 	}
 
-	OutPoint = Hit.ImpactPoint;
+	// 지면에 딱 붙이면 이펙트의 바닥 카드가 지형과 공면이 되어 깜빡인다. 조금 띄운다.
+	OutPoint = FPaintRainPlan::TelegraphPoint(Hit.ImpactPoint, Params.TelegraphHeight);
 	return true;
 }
 

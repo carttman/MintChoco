@@ -72,6 +72,15 @@ struct MINTCHOCO_API FPaintRainParams
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rain", meta = (ClampMin = "1"))
 	int32 TelegraphRowStride = 1;
 
+	/**
+	 * 표식을 지면에서 이만큼 띄운다(cm). 0이면 지면에 딱 붙는다.
+	 *
+	 * 0으로 두면 이펙트의 바닥 카드가 지형과 공면이 되어 깜빡인다. 조준 미리보기가 같은 이유로
+	 * AimPreviewHeight를 두고 있고 기본값도 같다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rain", meta = (ClampMin = "0", ForceUnits = "cm"))
+	float TelegraphHeight = 5.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Rain")
 	TObjectPtr<const UPaintballProfile> Paintball;
 
@@ -108,6 +117,13 @@ struct MINTCHOCO_API FPaintRainPlan
 
 	/** 액터가 살아 있어야 하는 시간(초). 리드인 + 모든 행 + 마지막 탄이 떨어질 여유. */
 	static float Lifespan(const FPaintRainParams& Params);
+
+	/**
+	 * 지면 위 표식이 실제로 놓이는 자리. 지면과 같은 평면에 두면 이펙트의 바닥 카드가 지형과
+	 * 공면이 되어 깊이 판정이 매 프레임 뒤집히고, 그게 깜빡임으로 보인다. 그래서 Height만큼
+	 * 띄운다(조준 미리보기의 AimPreviewHeight와 같은 이유·같은 단위).
+	 */
+	static FVector TelegraphPoint(const FVector& Ground, float Height);
 };
 
 /**

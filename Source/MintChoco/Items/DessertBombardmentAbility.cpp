@@ -252,6 +252,7 @@ void UGA_DessertBombardment::OnItemActivated(AUnit& Unit, const UItemProfile& Pr
 	Params.LeadInSeconds = Fired->LeadInSeconds;
 	Params.TelegraphFX = Fired->TelegraphFX;
 	Params.TelegraphRowStride = Fired->TelegraphRowStride;
+	Params.TelegraphHeight = Fired->TelegraphHeight;
 	Params.Paintball = Fired->Paintball;
 	Params.PaintId = GetPaintId();
 	Params.Seed = FMath::Rand();

@@ -53,6 +53,31 @@ bool FPaintRainTelegraphIntervalTest::RunTest(const FString& Parameters)
 }
 
 /**
+ * 표식을 지면에서 띄운다. 지면과 같은 평면에 놓으면 이펙트의 바닥 카드가 지형과 공면이 되어
+ * 깊이 판정이 매 프레임 뒤집히고, 표식 하나하나가 깜빡인다. 실제로 그렇게 났던 버그다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPaintRainTelegraphPointTest,
+	"MintChoco.Items.Rain.TelegraphPoint",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FPaintRainTelegraphPointTest::RunTest(const FString& Parameters)
+{
+	const FVector Ground(300.0f, -50.0f, 120.0f);
+
+	const FVector Lifted = FPaintRainPlan::TelegraphPoint(Ground, 5.0f);
+	TestTrue(TEXT("지면과 같은 평면에 놓이지 않는다"), Lifted.Z > Ground.Z);
+	TestEqual(TEXT("띄운 만큼만 올라간다"), static_cast<float>(Lifted.Z), static_cast<float>(Ground.Z) + 5.0f, 1e-4f);
+	TestEqual(TEXT("수평 자리는 그대로"), static_cast<float>(Lifted.X), static_cast<float>(Ground.X), 1e-4f);
+	TestEqual(TEXT("수평 자리는 그대로(Y)"), static_cast<float>(Lifted.Y), static_cast<float>(Ground.Y), 1e-4f);
+
+	// 0은 "띄우지 않는다"는 뜻으로 그대로 둔다. 바닥 카드가 없는 이펙트라면 그게 맞을 수 있다.
+	TestTrue(TEXT("0이면 지면 그대로"), FPaintRainPlan::TelegraphPoint(Ground, 0.0f).Equals(Ground));
+
+	return true;
+}
+
+/**
  * 액터 수명. 리드인이 붙었으므로 그만큼 더 살아야 한다 — 예전 식대로면 리드인이 긴 폭격이
  * 행을 다 떨어뜨리기 전에 사라진다.
  */

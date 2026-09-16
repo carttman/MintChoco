@@ -126,6 +126,15 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment", meta = (ClampMin = "1"))
 	int32 TelegraphRowStride = 1;
 
+	/**
+	 * 표식을 지면에서 이만큼 띄운다(cm). 0이면 지면에 딱 붙는다.
+	 *
+	 * 0으로 두면 이펙트의 바닥 카드가 지형과 공면이 되어 깊이 판정이 매 프레임 뒤집히고, 표식
+	 * 하나하나가 깜빡인다. 위 AimPreviewHeight가 같은 이유로 있는 값이고 기본값도 같다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment", meta = (ClampMin = "0", ForceUnits = "cm"))
+	float TelegraphHeight = 5.0f;
+
 	/** 경계 상자의 최고점에서 이만큼 위에서 떨어진다(cm). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bombardment", meta = (ClampMin = "0", ForceUnits = "cm"))
 	float DropHeight = 300.0f;
