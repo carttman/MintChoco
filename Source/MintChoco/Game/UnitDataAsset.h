@@ -39,11 +39,10 @@ enum class EUnitAction : uint8
 	 */
 	Charge		UMETA(DisplayName = "충전"),
 	/**
-	 * 스턴에 걸려 있는 동안. 속도 부스트와 같이 **상태가 이어지는 내내** FX가 붙어 있다가
-	 * 스턴이 풀리면 걷어낸다. 지속 시간은 따로 정하지 않는다 — 스턴 태그가 살아 있는 만큼이
-	 * 곧 재생 시간이다. 몽타주와 애니메이션은 보지 않고 FX만 쓴다.
+	 * 기절. 스턴이 걸려 있는 동안 FX가 머리 위에 붙어 있다가 풀릴 때 꺼진다(대시 트레일과 같은 방식).
+	 * 몽타주와 Animation은 쓰지 않는다 — 기절 자세는 애님 그래프가 bIsStunned로 다룬다.
 	 */
-	Stun		UMETA(DisplayName = "스턴"),
+	Stun		UMETA(DisplayName = "기절"),
 };
 
 /**
