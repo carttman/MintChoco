@@ -159,6 +159,10 @@ public:
 	 * 중력이 걸리면 궤적이 아래로 휘어 표시된 착지점보다 앞에서 땅에 닿는다.
 	 */
 	virtual float GetGravityZ() const override;
+
+	/** 대시 중이면 DashJumpZVelocity로, 아니면 JumpZVelocity로 뛴다. */
+	virtual bool DoJump(bool bReplayingMoves, float DeltaTime) override;
+
 	virtual void UpdateFromCompressedFlags(uint8 Flags) override;
 	virtual FNetworkPredictionData_Client* GetPredictionData_Client() const override;
 	virtual void UpdateCharacterStateBeforeMovement(float DeltaSeconds) override;
@@ -314,6 +318,19 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash", meta = (ClampMin = "1.0"))
 	float DashSpeedMultiplier = 1.7f;
+
+	/**
+	 * 대시 중에 뛰면 JumpZVelocity 대신 이 값으로 뛴다. 0 이하면 분리하지 않고 JumpZVelocity를 쓴다.
+	 *
+	 * 지금은 JumpZVelocity와 같은 값이라 높이도 체공도 같고, 차이는 수평 속도뿐이다. 값을
+	 * 따로 둘 수 있게 열어 둔 자리다 — 낮추면 "멀리 가는 대신 높이 못 간다"가 된다.
+	 * 높이 = v² / 2g, 체공 = 2v / g이므로 중력 배율을 바꾸면 둘 다 다시 잡아야 한다.
+	 *
+	 * 압축 플래그를 새로 만들지 않는다: 대시 의도(bWantsToDash)가 이미 무브에 실려 오고 보정 후
+	 * 리플레이에서도 되살아나므로, 그 값을 보고 고르면 서버와 클라이언트가 같은 답을 낸다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dash", meta = (ClampMin = "0", ForceUnits = "cm/s"))
+	float DashJumpZVelocity = 660.0f;
 
 	/**
 	 * 보드(대시) 중 몸통이 카메라를 따라 도는 최대 각속도(도/초). 뒤처진 차이가 클 때 이 속도까지
