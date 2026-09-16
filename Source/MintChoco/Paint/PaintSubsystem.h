@@ -140,6 +140,16 @@ private:
 	/** Spawns the project's side-splat effect at the contact. Nothing on a dedicated server, which has no eyes. */
 	void SpawnSideSplatEffect(const FPaintSplat& Splat);
 
+	/** Hands the splat to every paintable surface within its extent, each once. */
+	void StampSurfaces(const FPaintSplat& Splat);
+
+	/**
+	 * Scores the splash a splat carries: its phantom landings, derived from the splat alone, mark
+	 * cells as score-only splats of their own. Every machine runs it on the same replicated splat,
+	 * so the grids agree without another byte on the wire.
+	 */
+	void ApplyPhantomLandings(const FPaintSplat& Splat);
+
 	TArray<TWeakObjectPtr<UPaintableComponent>> Paintables;
 
 	/** The settings' effect class once loaded; a project without one simply shows nothing. */

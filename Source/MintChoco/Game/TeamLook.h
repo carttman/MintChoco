@@ -27,7 +27,8 @@ struct FTeamLook
 /**
  * 팀 색의 단일 출처. UPaintSettings::TeamLookCollection(MPC_TeamLook)을 읽는다.
  * 머티리얼은 같은 컬렉션을 MF_TeamLook 으로 직접 읽으므로 화면(UI, 데칼, 이펙트)과
- * 셰이더가 같은 값을 쓴다. 컬렉션이 없으면 내장 기본값으로 두 팀을 구분한다.
+ * 셰이더가 같은 값을 쓴다. 컬렉션은 필수다: 못 읽으면 두 팀 다 중립 회색으로 나와
+ * 설정이 빠진 것이 화면에 바로 보인다.
  */
 namespace TeamLook
 {
@@ -42,7 +43,7 @@ namespace TeamLook
 	/** Slate 글자와 디버그 문자열용 sRGB. 팀이 아니면 Silver. */
 	MINTCHOCO_API FColor GetDisplayColor(int32 TeamId, const UWorld* World = nullptr);
 
-	/** 컬렉션을 직접 지정해 읽는다. nullptr 이면 내장 기본값. 테스트와 툴용. */
+	/** 컬렉션을 직접 지정해 읽는다. nullptr 이면 중립 회색. 테스트와 툴용. */
 	MINTCHOCO_API FTeamLook GetFrom(const UMaterialParameterCollection* Collection, int32 TeamId, const UWorld* World = nullptr);
 
 	/** MPC 항목 이름: "MintColor", "ChocoSubsurface", "MintSurface" ... 팀이 아니면 NAME_None. */
@@ -55,4 +56,7 @@ namespace TeamLook
 
 	/** 팀 색을 받는 나이아가라 시스템의 유저 파라미터: 착탄, 파열, 총구 화염, 차징 홀드. */
 	inline const FName NiagaraTintParameter(TEXT("User.TintColor"));
+
+	/** 팀 id 그대로. 머티리얼의 TeamId 에 바인딩해 색뿐 아니라 광택·SSS 까지 팀 룩을 쓰는 시스템(착탄 스플래시)이 읽는다. */
+	inline const FName NiagaraTeamIdParameter(TEXT("User.TeamId"));
 }

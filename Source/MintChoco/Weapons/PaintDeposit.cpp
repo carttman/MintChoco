@@ -7,6 +7,7 @@
 
 #include "Game/Unit.h"
 #include "Paint/PaintBrushProfile.h"
+#include "Paint/PaintSplashProfile.h"
 #include "Paint/PaintSplat.h"
 #include "Paint/PaintSubsystem.h"
 #include "Paint/PaintableComponent.h"
@@ -67,7 +68,7 @@ bool FPaintDeposit::StrikeUnit(const FHitResult& Hit, uint8 PaintId, float Charg
 	return Unit->TryApplyStun(StunSecondsFor(Charge), StunSuperArmorDuration);
 }
 
-bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed, float Charge, uint8 StarGen) const
+bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed, float Charge, uint8 StarGen, float BallRadius) const
 {
 	// A receiver is struck before the surface test: a balloon is not a paintable surface, yet the
 	// hit that bursts it is a hit all the same. A unit is not a surface either; it takes the stun.
@@ -82,6 +83,15 @@ bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector
 
 	FPaintSplat Splat = BuildSplat(Hit, IncidentVelocity, PaintId, Seed);
 	Splat.StarGen = StarGen;
+	if (Splash)
+	{
+		// The splash is expanded wherever the splat is applied, so the contact travels with it.
+		const double Speed = IncidentVelocity.Size();
+		Splat.Splash = Splash;
+		Splat.IncidentDir = Speed > UE_DOUBLE_KINDA_SMALL_NUMBER ? IncidentVelocity / Speed : -FVector(Hit.ImpactNormal);
+		Splat.IncidentSpeed = static_cast<uint16>(FMath::Clamp(FMath::RoundToInt32(Speed), 0, static_cast<int32>(MAX_uint16)));
+		Splat.BallRadius = static_cast<uint8>(FMath::Clamp(FMath::RoundToInt32(BallRadius), 0, static_cast<int32>(MAX_uint8)));
+	}
 	MarkTransience(Splat, Hit);
 	Paint->SubmitSplat(Splat);
 	return true;

@@ -10,13 +10,6 @@
 
 namespace
 {
-	// MPC_TeamLook 의 시드와 같은 값. 컬렉션이 없을 때(테스트, ini 누락)도 두 팀이 구분되게 한다.
-	const FTeamLook TeamLookDefaults[Teams::Count] = {
-		{FLinearColor(0.35f, 0.90f, 0.70f), FLinearColor(0.175f, 0.45f, 0.35f), 0.50f, 0.45f, 0.0f, 0.70f},
-		{FLinearColor(0.32f, 0.18f, 0.10f), FLinearColor(0.11f, 0.06f, 0.034f), 0.22f, 0.70f, 0.0f, 0.0f},
-	};
-	static_assert(Teams::Mint == 0 && Teams::Choco == 1 && Teams::Count == 2, "TeamLookDefaults[] is indexed by team id");
-
 	const FTeamLook NeutralLook = {FLinearColor(0.5f, 0.5f, 0.5f), FLinearColor(0.5f, 0.5f, 0.5f), 0.5f, 0.5f, 0.0f, 0.0f};
 
 	enum class ELookEntry : uint8 { Color, Subsurface, Surface, Count };
@@ -62,10 +55,10 @@ namespace
 		const TSoftObjectPtr<UMaterialParameterCollection>& Pointer = UPaintSettings::Get().TeamLookCollection;
 		const UMaterialParameterCollection* const Collection = Pointer.LoadSynchronous();
 		static bool bWarned = false;
-		if (!Collection && !Pointer.IsNull() && !bWarned)
+		if (!Collection && !bWarned)
 		{
 			bWarned = true;
-			UE_LOG(LogMintChoco, Warning, TEXT("TeamLookCollection %s 을 불러오지 못해 내장 팀 색을 쓴다."), *Pointer.ToString());
+			UE_LOG(LogMintChoco, Warning, TEXT("TeamLookCollection %s 을 불러오지 못해 두 팀이 중립 회색으로 나온다."), *Pointer.ToString());
 		}
 		return Collection;
 	}
@@ -77,12 +70,12 @@ FTeamLook TeamLook::GetFrom(const UMaterialParameterCollection* Collection, int3
 	{
 		return NeutralLook;
 	}
-	FTeamLook Look = TeamLookDefaults[TeamId];
 	if (!Collection)
 	{
-		return Look;
+		return NeutralLook;
 	}
 
+	FTeamLook Look = NeutralLook;
 	FLinearColor Value;
 	if (ReadVector(*Collection, World, ColorParameterName(TeamId), Value))
 	{

@@ -3,9 +3,13 @@
 #include "AssetRegistry/ARFilter.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialInterface.h"
 #include "Modules/ModuleManager.h"
 
 #include "Game/TeamTypes.h"
+#include "Paint/PaintBrushProfile.h"
+#include "Paint/PaintSplashProfile.h"
 #include "Weapons/PaintDeposit.h"
 #include "Weapons/PaintGunProfile.h"
 #include "Weapons/PaintProjectile.h"
@@ -93,6 +97,22 @@ bool FPaintProfileAssetTest::RunTest(const FString& Parameters)
 		}
 		TestTrue(*FString::Printf(TEXT("%s: Radius is positive"), *Name), Paintball->Radius > 0.0f);
 		CheckDeposit(Name, Paintball->Deposit);
+		// A splash that cannot mark or score is a landing that quietly does less than its profile says.
+		if (const UPaintSplashProfile* const Splash = Paintball->Deposit.Splash)
+		{
+			const UPaintBrushProfile* const Brush = Splash->DropletBrush;
+			TestNotNull(*FString::Printf(TEXT("%s: Splash.DropletBrush"), *Name), Brush);
+			TestNotNull(*FString::Printf(TEXT("%s: Splash.DropletBrush has a BrushMaterial"), *Name), Brush ? Brush->BrushMaterial.Get() : nullptr);
+			TestNotNull(*FString::Printf(TEXT("%s: a splashing ball has an ImpactFX to fly its droplets"), *Name), Paintball->ImpactFX.Get());
+			TestTrue(*FString::Printf(TEXT("%s: Splash.MaxDropletSpeed is positive"), *Name), Splash->MaxDropletSpeed > 0.0f);
+			TestTrue(*FString::Printf(TEXT("%s: Splash.MaxLifetime is positive"), *Name), Splash->MaxLifetime > 0.0f);
+			if (const UMaterialInterface* const Blob = Splash->BlobMaterial)
+			{
+				// A mesh renderer silently drops an override material without this flag.
+				const UMaterial* const Master = Blob->GetMaterial();
+				TestTrue(*FString::Printf(TEXT("%s: Splash.BlobMaterial is usable with Niagara mesh particles"), *Name), Master && Master->GetUsageByFlag(MATUSAGE_NiagaraMeshParticles));
+			}
+		}
 	}
 
 	for (const FAssetData& Data : Scatters)

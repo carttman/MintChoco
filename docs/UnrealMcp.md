@@ -96,6 +96,9 @@ Every item here cost real debugging time once. Read before any MCP write.
 - A nested USTRUCT writes in one call (`{"Deposit": {"BrushProfile": {"refPath": ...},
   "SplatVolume": 1}}`), but `get_properties` returns its members camelCased (`brushProfile`), so
   compare by value, not by key, when reading back.
+- An `FTransform` property writes as `{"Location": {...}, "Rotation": {"Pitch", "Yaw", "Roll"},
+  "Scale": {...}}`, the shape `get_properties` returns. The native `Rotation` quaternion /
+  `Translation` / `Scale3D` spelling returns true and silently lands an identity transform.
 - `get_properties` fails as a whole when any requested property is unreadable on that class;
   ask per class. It cannot read a UPROPERTY without an `Edit*`/`Visible*` specifier
   (`bCollected`, `HeldItem` were unreadable until `VisibleInstanceOnly`), and `set_properties`
@@ -158,6 +161,24 @@ Every item here cost real debugging time once. Read before any MCP write.
   `connect_expressions` by output name (`Color`, `Roughness`, …; slab F0 goes through
   `SubstrateMetalnessToDiffuseAlbedoF0`) → recompile → per-team MI `clear_parameters` +
   `set_scalar_parameter TeamId 0/1` → save.
+- `connect_to_output` cannot take `MP_PixelDepthOffset` (the Python enum has no entry 28:
+  "Cannot pythonize '28'"); every other root pin used so far works. `MakeMaterialAttributes` has no
+  Front Material pin in 5.8, so the material-attributes detour loses the Substrate tree. The PDO
+  wire is a developer drag (`M_PaintSplashBlob`: `Max` → Pixel Depth Offset, Apply, save).
+- A post-process material samples GBuffer data at pixel offsets under Substrate Blendable: wire one
+  SceneTexture node per id into a Custom input (an id whose input the code never reads is dead
+  stripped) and call `SceneTextureFetchFunc(Parameters, PPI_WorldNormal, float2(dx, dy))` in the
+  code (`M_PP_LookStylize`). Before the tonemapper, PostProcessInput0 arrives divided by
+  pre-exposure and the emissive output is multiplied back, so colour ratios are exposure-safe; an
+  `EyeAdaptation` node gives the exposure scale.
+- A `VectorParameter`'s default output is `RGB`; a Custom input that reads `.w` needs
+  `from_output_name: "RGBA"`. `DynamicParameter` outputs are `Param1..Param4`, `RGB`, `RGBA`; the
+  first wire into a freshly created Custom node input can fail and succeed on a retry.
+- Custom node HLSL: `ResolvedView.ViewForward` is available (view-depth PDO = `dot(hit - pixel,
+  ViewForward)`); `WorldPosition` / `CameraPositionWS` / `ParticlePositionWS` arrive as plain
+  float3; `#define` macros with statement blocks compile fine. Build a material as one
+  `ProgrammaticToolset` script (see the scratchpad builders) and read the `[AssetLog]` lines
+  right after; an appended Custom input logs "missing input N" failures until it is wired.
 
 ## Verifying
 
@@ -186,7 +207,10 @@ Every item here cost real debugging time once. Read before any MCP write.
   `/Game/<Path>/UEDPIE_0_<Map>.<Map>:PersistentLevel.<Actor>_C_0`.
 - `CaptureViewport` / `CaptureEditorImage` / `CaptureAssetImage` return base64 too large for
   the tool result; decode the saved result file with PowerShell (`ConvertFrom-Json` →
-  `[Convert]::FromBase64String`) and Read the PNG. `CaptureAssetImage` on a mesh is a quick way
+  `[Convert]::FromBase64String`) and Read the PNG. Inside a `ProgrammaticToolset` script
+  `CaptureViewport` needs `captureTransform: None` **and** `annotations: None` spelled out, or it
+  raises "needs a default value" - after a `StartPIE` in the same script, which leaves the
+  session running. Four Simulate captures plus a 10 s warmup per script have been reliable. `CaptureAssetImage` on a mesh is a quick way
   to make a placeholder icon texture (`TextureTools.import_file`).
 - While PIE runs, `AssetTools.save_assets` / `exists` / `is_dirty` fail with "Asset does not
   exist" even though compiles succeed. Stop PIE, then save. `is_dirty` takes `asset_path`,
@@ -204,6 +228,65 @@ it. Every `emitterRef` / `stackInputRef` needs all six fields (`system`, `emitte
 `GetEmitterTopology`, whose dump is enormous. Check `GetSystemCompileState` (`bHasErrors`) and
 `GetStackIssues`, then `save_assets`. `LiveCodingToolset.CompileLiveCoding` reports Live Coding
 disabled in this project, so C++ changes reach PIE only after an editor-target rebuild.
+
+Building a system from scratch (verified 2026-09-15 on `NS_PaintSplash`):
+
+- `CreateNiagaraSystem` needs a template; `/Niagara/DefaultAssets/DefaultSystem` arrives with a
+  `Fountain` emitter - remove it (`RemoveEmitter` takes `emitterToRemove`) and `AddEmitter` from
+  `/Niagara/DefaultAssets/Templates/Emitters/Minimal` (EmitterState, InitializeParticle,
+  ParticleState, one sprite renderer). `AddModule` / `AddSetParametersModule` return the new
+  module's `moduleName`; read module input names first with `GetModuleSchemaFromAsset`.
+- **Never put `Particles.Position` (or any Position-typed input) in a Set Parameters module with an
+  HLSL expression or a dynamic-input chain** (`AddVectorToPosition` fed by an expression crashed too):
+  the translator asserts `IsLWCType(Type) == false` (NiagaraHlslTranslator.cpp:5134) and the editor
+  dies on the next full compile, sometimes only on a different asset than the one that passed.
+  Spawn at the system origin and move the component from C++; `RemoveSetParameterEntry`
+  (`moduleRef`, `parameterName`) drops an existing entry.
+- An input hidden behind a static switch (`EmitterState` `Loop Behavior`, `InitializeParticle`
+  `Color`) or a false `VisibleCondition` (`Loop Duration`) is refused with a `LogScript` warning,
+  not an error - set the parent switch first and re-read.
+- Inside a `ProgrammaticToolset` script the tool results are dict-like objects whose `.get(key,
+  default)` raises on a missing key; `json.loads(json.dumps(result))` first.
+- The toolset cannot create scratch-pad modules or custom HLSL modules. Anything that needs a
+  data-interface call in particle code (writing a render target, reading a grid) is out of reach;
+  stock modules, links and rvalue expressions are the whole vocabulary.
+- A mesh renderer through `AddRenderer` (`/Script/Niagara.NiagaraMeshRendererProperties`) +
+  `SetRendererData` with PascalCase JSON: `{"Meshes": [{"Mesh": {"refPath": ".../Cube.Cube"},
+  "PivotOffset": {...}, "PivotOffsetSpace": "Mesh"}], "bOverrideMaterials": true,
+  "OverrideMaterials": [{"UserParamBinding": {"Parameter": {"Name": "User.BlobMaterial"}}}],
+  "bCastShadows": false}`. `SetEmitterData` takes `{"bLocalSpace": true}` the same way. An
+  object-typed user variable: type `/Script/Engine.MaterialInterface`, default
+  `NiagaraExt_VariableValue_Object {objectClass, object: "None"}`. `Particles.Scale` (Vector) and
+  `Particles.DynamicMaterialParameter` (Vector4) take links and expressions without the LWC trap.
+- **A mesh renderer whose scale can be zero silently kills the whole system**: with
+  `Particles.Scale` linked to a user vector whose default was (0,0,0), every emitter in
+  `NS_PaintSplash` stopped simulating (no sprites, no Export callbacks, nothing in the log even at
+  Verbose), although C++ set the scale right after spawning. Give such user vectors a (1,1,1)
+  default. `PivotOffset` in `Mesh` space and the `User.*` material binding were innocent; the
+  pivot lifts the instance transform, so `ParticlePositionWS` in the material arrives lifted too
+  (undo it with the transformed local Z: `Origin - AxisRaw * 50`).
+- Disabling an emitter's only renderer (`Droplets` keeps its sprite renderer off for debugging)
+  raises "dynamic bounds mode but only using Emitter sourced renderers" on the emitter
+  properties: give it fixed bounds with `SetEmitterData` `{"CalculateBoundsMode": "Fixed",
+  "FixedBounds": {"min": {...}, "max": {...}, "isValid": true}}`; `GetStackIssues` confirms
+  (it returns at once while the asset is open in an editor tab).
+- `AddUserVariables` replaces a variable's default when the name already exists - handy for a
+  quick preview, but restore the value afterwards. A Custom-node code change did reach the
+  PIE-created MID of `M_PaintSplashBlob` without an editor restart.
+- `NiagaraToolset_Component.SetSystem` refuses the system already assigned; swap to another
+  system and back to restart an editor-world instance. `LogsToolset.SetVerbosity` raises a
+  category (`LogNiagara` Verbose) at runtime, and `EditorAppToolset.CaptureEditorImage` grabs the
+  whole editor window (`returnValue.data`) for the Niagara preview.
+- `GetSystemCompileState` / `GetStackIssues` block the game thread and time out after 120 s whenever
+  the system has a pending compile and no asset editor is driving it (right after a load or a
+  duplicate). `EditorAppToolset.OpenEditorForAsset` on the system runs the compile within seconds
+  (`LogNiagara: Compiling System ... took`, `System successfully compiled.` in the log); after that
+  both queries return at once. `AssetTools.duplicate` of a compiled system needs the same treatment.
+- The `DefaultSystem` template ships `SystemState` with `Loop Behavior` Infinite, and the Minimal
+  emitter's `Life Cycle Mode` is System, so a burst effect never finishes and a pooled component
+  (`ENCPoolMethod::AutoRelease`) never returns nor fires `OnSystemFinished`. Set the system's
+  `Loop Behavior` to `ENiagara_EmitterStateOptions::NewEnumerator1` ("Once") and link
+  `Loop Duration` to the lifetime user parameter; `Inactive Response` Complete lets particles finish.
 
 ## Blueprints, data assets, textures
 
