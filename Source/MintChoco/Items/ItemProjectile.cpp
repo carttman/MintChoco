@@ -105,11 +105,11 @@ void AItemProjectile::BeginPlay()
 		}
 	}
 
-	SpawnAttachedFX(TrailFX);
-	SpawnAttachedFX(BodyFX);
+	SpawnAttachedFX(TrailFX, TrailFXScale);
+	SpawnAttachedFX(BodyFX, BodyFXScale);
 }
 
-void AItemProjectile::SpawnAttachedFX(UNiagaraSystem* FX)
+void AItemProjectile::SpawnAttachedFX(UNiagaraSystem* FX, float Scale)
 {
 	UWorld* const World = GetWorld();
 	if (!ShouldShowFX(World ? World->GetNetMode() : NM_DedicatedServer, FX))
@@ -124,8 +124,8 @@ void AItemProjectile::SpawnAttachedFX(UNiagaraSystem* FX)
 	// 떼어 놓아도 소유권은 그대로라 살릴 수 없다(대시 트레일은 유닛이 살아남아서 되는 것이다).
 	// 끊기는 자리에 버스트 FX가 터지므로 화면에서는 그게 이어받는다.
 	if (UNiagaraComponent* const Spawned = UNiagaraFunctionLibrary::SpawnSystemAttached(
-			FX, Mesh, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator,
-			EAttachLocation::KeepRelativeOffset, /*bAutoDestroy=*/true))
+			FX, Mesh, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator, FVector(Scale),
+			EAttachLocation::KeepRelativeOffset, /*bAutoDestroy=*/true, ENCPoolMethod::None))
 	{
 		Spawned->SetVariableLinearColor(TeamLook::NiagaraTintParameter, TeamLook::GetColor(GetPaintId(), World));
 	}
