@@ -20,6 +20,7 @@ FPaintBurstParams UHoneyBalloonProfile::MakeBurstParams(uint8 PaintId, int32 See
 	FPaintBurstParams Params = Burst;
 	Params.PaintId = PaintId;
 	Params.Seed = Seed;
+	Params.Sounds = Sounds;
 	return Params;
 }
 

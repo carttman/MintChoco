@@ -90,12 +90,20 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	TObjectPtr<UNiagaraSystem> TrailFX;
 
+	/** TrailFX가 뜨는 균일 배율. 1이 에셋 원래 크기다(BurstFXScale과 같은 뜻). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item", meta = (ClampMin = "0.01"))
+	float TrailFXScale = 1.0f;
+
 	/**
 	 * 공 자체에 얹히는 이펙트. 뒤로 끌리는 트레일과 달리 메시를 감싸고 같이 날아간다. 비워 두면
 	 * 없다. 트레일과 같은 자리(메시 원점)에 붙으므로 둘을 같이 켜도 어긋나지 않는다.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item")
 	TObjectPtr<UNiagaraSystem> BodyFX;
+
+	/** BodyFX가 뜨는 균일 배율. 1이 에셋 원래 크기다(BurstFXScale과 같은 뜻). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item", meta = (ClampMin = "0.01"))
+	float BodyFXScale = 1.0f;
 
 	/** 던진 팀. 초기 복제. */
 	UPROPERTY(VisibleInstanceOnly, Replicated, Category = "Item")
@@ -112,7 +120,7 @@ private:
 	 * 슬롯이 찼고 이 머신이 그리는 머신이면, 메시에 붙여 팀색을 넣어 띄운다. 그릴 필요가 없으면
 	 * 아무 일도 하지 않는다. 트레일과 바디가 같은 처리를 탄다.
 	 */
-	void SpawnAttachedFX(UNiagaraSystem* FX);
+	void SpawnAttachedFX(UNiagaraSystem* FX, float Scale);
 
 	UFUNCTION()
 	void OnSphereHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent,

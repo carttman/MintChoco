@@ -34,10 +34,7 @@ void AHoneyBalloonProjectile::OnDetonate()
 
 	const FVector Origin = GetActorLocation();
 
-	FPaintBurstParams Burst = Profile->Burst;
-	Burst.PaintId = GetPaintId();
-	Burst.Seed = FMath::Rand();
-	APaintBurst::Spawn(*World, Origin, Burst);
+	APaintBurst::Spawn(*World, Origin, Profile->MakeBurstParams(GetPaintId(), FMath::Rand()));
 
 	FItemAreaEffect::Apply(*World, Origin, Profile->StunRadius, GetTeam(), GetInstigatorUnit(), /*bKnockback=*/false);
 	UE_LOG(LogMintChoco, Verbose, TEXT("%s: 꿀풍선이 터졌다."), *GetNameSafe(GetInstigator()));
