@@ -59,6 +59,20 @@ public:
 	void UnregisterPaintable(UPaintableComponent* Paintable);
 
 	/**
+	 * Stamps one throwaway splat with every brush material that is loaded and puts one side splat
+	 * up, so the pipeline states the first shot needs already exist when it arrives.
+	 *
+	 * PSO precaching starts at a primitive component, and a brush never becomes one: it is drawn
+	 * through a canvas into a render target, a path no precache hook reaches. Drawing once is the
+	 * only way to have that state ready in advance. The side splat is here for a second reason -
+	 * its effect class is a soft reference, so without this the first transient splat pays for the
+	 * load as well.
+	 *
+	 * Meant for UWarmupSubsystem, which runs it behind the loading screen.
+	 */
+	void Prewarm();
+
+	/**
 	 * The authority's entry point for a new splat. A client cannot submit; it only draws what the
 	 * server sends. Routes to OnSplatSubmitted when bound, otherwise applies locally.
 	 */

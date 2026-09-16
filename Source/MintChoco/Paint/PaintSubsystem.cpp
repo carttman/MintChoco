@@ -2,6 +2,7 @@
 
 #include "Async/Async.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/Canvas.h"
 #include "Engine/StaticMeshActor.h"
 #include "EngineUtils.h"
 #include "Materials/MaterialInterface.h"
@@ -10,12 +11,15 @@
 #include "Engine/TextureRenderTarget2D.h"
 #include "Engine/World.h"
 #include "Kismet/KismetMaterialLibrary.h"
+#include "Kismet/KismetRenderingLibrary.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Tasks/Task.h"
+#include "UObject/UObjectIterator.h"
 
 #include "Audio/AudioGameplayTags.h"
 #include "Audio/GameAudioSubsystem.h"
 #include "Paint/PaintAtlasBaker.h"
+#include "Paint/PaintBrushProfile.h"
 #include "Paint/PaintLog.h"
 #include "Paint/PaintPlatformCoverage.h"
 #include "Paint/PaintSettings.h"
@@ -34,6 +38,12 @@ namespace
 	/** The two MPC_PaintStyle entries: Style packs the look, Style2 carries what did not fit. */
 	const FName StylePackedParameter(TEXT("Style"));
 	const FName StyleExtraParameter(TEXT("Style2"));
+
+	/** Side of the stamp Prewarm draws, in texels. Only the material decides the pipeline state; the area is irrelevant. */
+	const FVector2D PrewarmStampSize(4.0, 4.0);
+
+	/** Radius of the side splat Prewarm puts up, in world cm. Small enough that nobody can see it go by. */
+	constexpr float PrewarmSideSplatRadius = 1.0f;
 
 	void PaintStyleCommand(const TArray<FString>& Args, UWorld* World)
 	{
@@ -111,6 +121,82 @@ void UPaintSubsystem::UnregisterPaintable(UPaintableComponent* Paintable)
 	{
 		return !Entry.IsValid() || Entry.Get() == Paintable;
 	});
+}
+
+void UPaintSubsystem::Prewarm()
+{
+	UWorld* const World = GetWorld();
+	if (!World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	// The scratch buffers the surfaces here will ask for, allocated now rather than under the
+	// first shot. Sizes repeat across surfaces, so this is usually one or two buffers.
+	TSet<int32> Sizes;
+	for (const TWeakObjectPtr<UPaintableComponent>& Entry : Paintables)
+	{
+		const UPaintableComponent* const Paintable = Entry.Get();
+		const int32 Size = Paintable ? Paintable->GetIslandLayout().AtlasSize : 0;
+		if (Size > 0)
+		{
+			Sizes.Add(Size);
+		}
+	}
+	if (Sizes.IsEmpty())
+	{
+		// No surface has begun play. Every buffer shares one format, and the pipeline state
+		// follows the format rather than the size, so the smallest is enough to draw into.
+		Sizes.Add(UPaintSettings::Get().MinRenderTargetSize);
+	}
+
+	// Every size is allocated here; whichever one is left over serves to draw into.
+	UTextureRenderTarget2D* Scratch = nullptr;
+	for (const int32 Size : Sizes)
+	{
+		Scratch = GetScratchTarget(Size);
+	}
+	if (!Scratch)
+	{
+		return;
+	}
+
+	// Every brush loaded by now. One that arrives later - reached only through an item picked up
+	// mid-match - is missed, which is why the warmup preloads items before it gets here.
+	TSet<UMaterialInterface*> Brushes;
+	for (TObjectIterator<UPaintBrushProfile> It; It; ++It)
+	{
+		if (UMaterialInterface* const Brush = It->BrushMaterial)
+		{
+			Brushes.Add(Brush);
+		}
+	}
+
+	UCanvas* Canvas = nullptr;
+	FVector2D CanvasSize;
+	FDrawToRenderTargetContext Context;
+	UKismetRenderingLibrary::BeginDrawCanvasToRenderTarget(this, Scratch, Canvas, CanvasSize, Context);
+	if (Canvas)
+	{
+		for (UMaterialInterface* const Brush : Brushes)
+		{
+			Canvas->K2_DrawMaterial(Brush, FVector2D::ZeroVector, PrewarmStampSize, FVector2D::ZeroVector);
+		}
+	}
+	UKismetRenderingLibrary::EndDrawCanvasToRenderTarget(this, Context);
+
+	// A splat only copies the rectangles it drew out of the scratch, so these stamps could never
+	// reach a surface anyway; clearing saves anyone from having to work that out.
+	UKismetRenderingLibrary::ClearRenderTarget2D(this, Scratch, PaintIdNoneColor);
+
+	// The side splat carries the rest of the first-shot cost. One real spawn through the same
+	// path a transient splat takes, a centimetre wide, gone with its own life span.
+	FPaintSplat Splat;
+	Splat.Radius = PrewarmSideSplatRadius;
+	SpawnSideSplatEffect(Splat);
+
+	UE_LOG(LogPaint, Log, TEXT("paint prewarm: %d brushes stamped, %d scratch buffers, side splat %s."),
+		Brushes.Num(), Sizes.Num(), SideSplatEffectClass ? TEXT("up") : TEXT("unset"));
 }
 
 void UPaintSubsystem::SubmitSplat(const FPaintSplat& Splat)
