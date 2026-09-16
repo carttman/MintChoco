@@ -87,6 +87,15 @@ struct MINTCHOCO_API FPaintDeposit
 	 */
 	bool StrikeUnit(const FHitResult& Hit, uint8 PaintId, float Charge = 1.0f) const;
 
+	/**
+	 * 같은 일을 하되 스턴 길이를 StunDuration 에서 재지 않고 그대로 받는다.
+	 *
+	 * 충전량에 비례하지 않는 구간이 있는 무기를 위해서다 - 차지샷은 만충에서만 스턴이 두 배로
+	 * 뛰므로 그 한 점만 다른 초를 넘긴다. 슈퍼아머는 여전히 StunSuperArmorDuration 이다:
+	 * 그쪽은 충전량으로 깎지 않는다.
+	 */
+	bool StrikeUnitFor(const FHitResult& Hit, uint8 PaintId, float StunSeconds) const;
+
   	/** The hit actor owns a paint buffer. */
 	static bool IsPaintable(const FHitResult& Hit);
 

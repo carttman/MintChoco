@@ -46,6 +46,17 @@ void UPaintSniperProfile::LogUnsetReferences(const UObject* Owner) const
 		*GetNameSafe(Owner), *GetName());
 }
 
+float UPaintSniperProfile::GetRangeFor(float ChargeFraction) const
+{
+	if (RangeHalvingSeconds <= 0.0f)
+	{
+		return Range;
+	}
+	// 충전이 모자란 만큼을 초로 재고, 그 초를 반감기로 나눈 횟수만큼 절반씩 줄인다.
+	const float MissingSeconds = ChargeTime * (1.0f - FMath::Clamp(ChargeFraction, 0.0f, 1.0f));
+	return Range * FMath::Pow(2.0f, -MissingSeconds / RangeHalvingSeconds);
+}
+
 bool UPaintSniperProfile::Fire(const FPaintFireContext& Context, FPaintStrokeState& Stroke, FPaintShot& OutShot) const
 {
 	if (!Context.World)
@@ -60,7 +71,8 @@ bool UPaintSniperProfile::Fire(const FPaintFireContext& Context, FPaintStrokeSta
 	// ball is swallowed by the overlap event while a single-hit trace ignores touches and passes
 	// straight through. Multi reports the touch too, so the ray can stop at the same wall the ball
 	// would have died on. Blocking the wall instead would make balls bounce rather than be eaten.
-	const FVector TraceEnd = Context.ViewOrigin + Context.ViewDirection * Range;
+	// 덜 충전한 샷은 덜 나간다. 광선이 짧아지면 줄무늬도 순차 발사의 발수도 함께 줄어든다.
+	const FVector TraceEnd = Context.ViewOrigin + Context.ViewDirection * GetRangeFor(Context.ChargeFraction);
 	const FCollisionQueryParams Params(SCENE_QUERY_STAT(PaintSniper), /*bTraceComplex=*/false, Context.Instigator);
 	TArray<FHitResult> Hits;
 	Context.World->LineTraceMultiByChannel(Hits, Context.ViewOrigin, TraceEnd, PaintballChannel, Params);
@@ -122,8 +134,12 @@ bool UPaintSniperProfile::Fire(const FPaintFireContext& Context, FPaintStrokeSta
 
 	if (Victim)
 	{
-		// No paint on a pawn, but the impact's stun lands, scaled by how charged the shot was.
-		const bool bStunned = Impact.StrikeUnit(Hit, Context.PaintId, Context.ChargeFraction);
+		// No paint on a pawn, but the impact's stun lands, scaled by how charged the shot was -
+		// 만충만 예외로 따로 정한 초를 받는다. 그래서 만충에서만 스턴이 눈에 띄게 뛴다.
+		const bool bFullCharge = FullChargeStunSeconds > 0.0f && Context.ChargeFraction >= FullChargeThreshold;
+		const bool bStunned = bFullCharge
+			? Impact.StrikeUnitFor(Hit, Context.PaintId, FullChargeStunSeconds)
+			: Impact.StrikeUnit(Hit, Context.PaintId, Context.ChargeFraction);
 		UE_LOG(LogPaint, Log, TEXT("%s sniped %s (charge %.2f, %s)."), *GetNameSafe(Context.Instigator), *Victim->GetName(),
 			Context.ChargeFraction, bStunned ? TEXT("stunned") : TEXT("no stun"));
 	}

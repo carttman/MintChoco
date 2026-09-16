@@ -354,10 +354,75 @@ void UPaintWeaponComponent::SetCharging(bool bNewCharging)
 		ServerSetCharging(bNewCharging);
 	}
 
+	// 잉크는 방아쇠를 쥔 이 머신이 예측으로 깎는다. 서버 몫은 ServerSetCharging 이 따로 건다.
+	if (bNewCharging)
+	{
+		StartChargeInk();
+	}
+	else
+	{
+		StopChargeInk();
+	}
+
 	// The machine that set the value never gets its own OnRep, and a dedicated server draws nothing.
 	if (GetNetMode() != NM_DedicatedServer)
 	{
 		ApplyChargingVisuals(bNewCharging);
+	}
+}
+
+void UPaintWeaponComponent::StartChargeInk()
+{
+	UWorld* const World = GetWorld();
+	// 무료 사격 태그가 붙어 있으면 충전도 공짜다. 발사 비용을 면제하는 것과 같은 규칙이다.
+	if (!World || !Profile || Profile->FireMode != EPaintFireMode::Charged
+		|| Profile->ChargeInkPercentPerTick <= 0.0f || Profile->ChargeInkTickSeconds <= 0.0f
+		|| !Tank.IsValid() || IsShotFree())
+	{
+		return;
+	}
+
+	ChargeInkTicksDone = 0;
+	World->GetTimerManager().SetTimer(ChargeInkTimer, this, &UPaintWeaponComponent::OnChargeInkTick,
+		Profile->ChargeInkTickSeconds, /*bLoop=*/true);
+}
+
+void UPaintWeaponComponent::StopChargeInk()
+{
+	if (const UWorld* const World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ChargeInkTimer);
+	}
+	ChargeInkTicksDone = 0;
+}
+
+void UPaintWeaponComponent::OnChargeInkTick()
+{
+	if (!Profile || !Tank.IsValid())
+	{
+		StopChargeInk();
+		return;
+	}
+
+	if (!Tank->TryConsume(Profile->ChargeInkPercentPerTick * 0.01f))
+	{
+		// 잉크가 떨어졌다. 지금까지 충전한 만큼으로 바로 쏜다. 쏘는 것은 방아쇠를 쥔 머신뿐이고,
+		// 서버는 그 머신이 보낼 발사를 기다린다 - 서버에는 놓을 방아쇠가 없다.
+		StopChargeInk();
+		const APawn* const Pawn = GetOwnerPawn();
+		if (Pawn && Pawn->IsLocallyControlled())
+		{
+			ReleaseTrigger();
+		}
+		return;
+	}
+
+	// 다 찬 뒤로는 더 내지 않는다. 계속 쥐고 있어도 충전량은 1 에서 멈추기 때문이다.
+	++ChargeInkTicksDone;
+	const float TickSeconds = FMath::Max(Profile->ChargeInkTickSeconds, UE_SMALL_NUMBER);
+	if (ChargeInkTicksDone >= FMath::FloorToInt(GetEffectiveChargeTime() / TickSeconds))
+	{
+		StopChargeInk();
 	}
 }
 
@@ -371,6 +436,16 @@ void UPaintWeaponComponent::ServerSetCharging_Implementation(bool bNewCharging)
 	}
 
 	bCharging = bNewCharging;
+
+	// 서버의 탱크가 진짜다. 소유자는 자기 것을 예측으로 깎고 이쪽 결과로 교정된다.
+	if (bNewCharging)
+	{
+		StartChargeInk();
+	}
+	else
+	{
+		StopChargeInk();
+	}
 
 	// A listen server renders this pawn too, and OnRep never fires on the machine that assigned.
 	if (GetNetMode() != NM_DedicatedServer)
@@ -586,24 +661,6 @@ bool UPaintWeaponComponent::FireOnce()
 	FPaintFireContext Context;
 	BuildContext(Context, ViewOrigin, ViewDirection, ChargeFraction);
 	Context.bAuthority = HasAuthority();
-
-	// [임시 측정용] 탄이 실제로 나가는 높이(Muzzle)와 이펙트가 피는 높이(VisualMuzzle)를 발밑 기준으로
-	// 찍는다. 차지샷 낙하 계산에 쓸 총구 높이를 눈대중이 아니라 숫자로 정하려는 것이다.
-	// **값을 확인하고 나면 지운다.**
-	if (const APawn* const ProbePawn = Context.Instigator)
-	{
-		const ACharacter* const ProbeCharacter = Cast<ACharacter>(ProbePawn);
-		const float HalfHeight = ProbeCharacter && ProbeCharacter->GetCapsuleComponent()
-			? ProbeCharacter->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()
-			: 0.0f;
-		const float FeetZ = ProbePawn->GetActorLocation().Z - HalfHeight;
-		const FVector VisualMuzzleLocation = Context.VisualMuzzle.Get(Context.Muzzle.GetLocation());
-		UE_LOG(LogPaint, Log, TEXT("[MuzzleProbe] %s: 발밑 Z=%.1f | Muzzle +%.1f | VisualMuzzle +%.1f | 차이 %.1f"),
-			*GetNameSafe(Profile), FeetZ,
-			Context.Muzzle.GetLocation().Z - FeetZ,
-			VisualMuzzleLocation.Z - FeetZ,
-			Context.Muzzle.GetLocation().Z - VisualMuzzleLocation.Z);
-	}
 
 	// The seed is spent by the profile's attempt, not by its success; a pinned seed just stays.
 	const int32 Seed = NextSeed;

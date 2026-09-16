@@ -199,6 +199,26 @@ public:
 	float MinChargeToFire = 1.0f;
 
 	/**
+	 * Charged 방아쇠를 쥐고 있는 동안 ChargeInkTickSeconds 마다 비우는 잉크(전체 탱크의 %).
+	 *
+	 * 0 이면 충전이 공짜라, 이 값을 넣지 않은 기존 프로필은 전과 똑같다. 충전이 다 찬 뒤로는
+	 * 더 빠지지 않는다 - 눈금은 ChargeTime 안에 들어가는 수만큼만 돈다. 그래서 한 번의 충전이
+	 * 드는 잉크는 이 값 x floor(ChargeTime / ChargeInkTickSeconds) 이고, 발사 자체의
+	 * InkCostPercent 와는 따로 든다. 둘 다 켜면 두 번 낸다.
+	 *
+	 * 충전 중에 잉크가 바닥나면 방아쇠를 쥔 머신이 그 자리에서 쏜다. 놓을 때까지 공짜로 더
+	 * 충전되게 두면 탱크가 빈 쪽이 오히려 이득이기 때문이다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ink",
+		meta = (ClampMin = "0", ClampMax = "100", ForceUnits = "%", EditCondition = "FireMode == EPaintFireMode::Charged"))
+	float ChargeInkPercentPerTick = 0.0f;
+
+	/** 충전 중 잉크를 비우는 간격(초). 첫 눈금은 방아쇠를 쥐고 이만큼 뒤다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ink",
+		meta = (ClampMin = "0.05", ForceUnits = "s", EditCondition = "FireMode == EPaintFireMode::Charged"))
+	float ChargeInkTickSeconds = 0.5f;
+
+	/**
 	 * Played once per accepted shot, on every machine that renders the shooter. Attached to the
 	 * owner's muzzle socket so it follows the gun; unset plays nothing.
 	 */

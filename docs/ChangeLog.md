@@ -103,13 +103,115 @@ DA_Brush_Feet_T            ← DA_Brush_HeroLanding 복제. 두 무기의 FeetDe
 `MinAlignedStretch`가 1.5다. `Stretch`가 이보다 낮으면 스탬프가 진행 방향 정렬을 버리고
 시드로 무작위 회전한다. `MaxStretch`를 1.5 아래로 내리면 방향성이 사라진다.
 
-### 차지샷 볼리 간격
+### 차지샷 볼리 간격과 발수
 
-- **지금 값**: `DA_Weapon_Sniper_T.VolleySpacing` 300 → **100cm**.
-  폭탄 자국 폭이 187cm라 간격 100이면 겹쳐서 연속 띠가 된다. 첫 폭탄이 총구 100cm 앞이라
-  발밑부터 덮인다. 사거리 3800에서 37발, `MaxVolleyShots` 64에 안 걸린다.
-  전부 깔리는 데 37 × `VolleyInterval` 0.04 = 약 1.5초.
-- `bSkipTrailWhenVolleying`은 **true 그대로 뒀다**. 아래 [연출 보호 장치](#bskiptrailwhenvolleying-는-버그가-아니다) 참고.
+| | |
+|---|---|
+| 어디에 | `DA_Weapon_Sniper_T` |
+| 무엇을 | `VolleySpacing` 225 → **170cm**, `MaxVolleyShots` 16 → **14** |
+| 대체한 것 | 간격 100 → 225 → 170으로 두 번 바뀌었다. 지금 값이 170이다 |
+
+발수는 `clamp(floor((길이 − 간격×0.5) / 간격), 0, MaxVolleyShots)`이라 사거리 2500에서
+14발이 나온다. 상한 14는 그 자연수와 같게 맞춰 둔 것이다 — 사거리가 늘면 상한이 먼저 걸린다.
+
+간격 170을 고른 계산:
+
+- 자국 반경 = `DA_Brush_Bomb_T` BaseRadius 150 × √(splatVolume 1.35) = **175cm**
+- 줄무늬에서 가장 가는 지점(허리) = `√(반경² − (간격/2)²)`
+
+| 간격 | 발수 | 허리 | 덧칠 |
+|---|---|---|---|
+| 120 | 20 | 164cm (94%) | 2.9배 |
+| **170** | **14** | **153cm (87%)** | **2.1배** |
+| 210 | 11 | 144cm (82%) | 1.7배 |
+
+170이 줄무늬 폭을 눈에 띄게 줄이지 않으면서 덧칠만 30% 덜어낸다. 210부터는 가장자리가
+물결친다.
+
+`bSkipTrailWhenVolleying`은 **true 그대로 뒀다**. 아래 [연출 보호 장치](#bskiptrailwhenvolleying-는-버그가-아니다) 참고.
+
+### 차지샷 — 충전이 잉크·사거리·스턴을 정한다
+
+충전을 세 군데에 연결했다. 세 가지 모두 **만충이 기준값이고 덜 충전하면 깎인다.**
+
+| | |
+|---|---|
+| 어디에 | `UPaintWeaponProfile`, `UPaintSniperProfile`, `FPaintDeposit` (C++) + `DA_Weapon_Sniper_T` |
+| 대체한 것 | 충전이 공짜였고, 사거리가 충전량과 무관했고, 스턴만 충전비율로 깎였다 |
+
+**충전 시간** `ChargeTime` 3 → **1.5초**, `MinChargeToFire` 0.3 → **0.333**
+(= 0.5초. 그 아래로는 발사 자체가 안 된다).
+
+**충전 중 잉크** — `UPaintWeaponProfile`에 새 값 두 개:
+
+| 값 | 지금 | 뜻 |
+|---|---|---|
+| `ChargeInkPercentPerTick` | **10** | 눈금마다 비우는 잉크(탱크 전체의 %) |
+| `ChargeInkTickSeconds` | **0.5** | 눈금 간격. 첫 눈금은 누르고 0.5초 뒤 |
+
+0이 기본이라 이 값을 넣지 않은 프로필은 전과 똑같다. 눈금은 `ChargeTime` 안에 들어가는
+수(1.5 ÷ 0.5 = **3회**)까지만 돌아, 만충 한 발이 **30%**다. 계속 쥐고 있어도 더 안 빠진다.
+발사 자체의 `InkCostPercent`는 4 → **0**으로 내렸다 — 안 그러면 34%가 된다.
+
+충전 중에 잉크가 바닥나면 **방아쇠를 쥔 머신이 그 자리에서 쏜다**(`OnChargeInkTick` →
+`ReleaseTrigger`). 안 그러면 탱크가 빈 쪽이 공짜로 만충까지 갈 수 있어 오히려 이득이 된다.
+
+잉크를 깎는 곳은 **방아쇠를 쥔 머신(예측)과 서버(진짜) 둘뿐이다.** `SetCharging`과
+`ServerSetCharging`에서 각각 타이머를 건다. 구경만 하는 머신이 타는 `OnRep_Charging` →
+`ApplyChargingVisuals`에는 **넣으면 안 된다** — 같은 잉크를 두 번 깎는다.
+
+**충전량 → 사거리** — `UPaintSniperProfile.RangeHalvingSeconds` **0.5초**.
+
+```
+사거리 = Range × 2^(−모자란 초 / RangeHalvingSeconds),  모자란 초 = ChargeTime × (1 − 충전비율)
+```
+
+| 충전 | 사거리 |
+|---|---|
+| 1.5초(만충) | 2500cm |
+| 1.0초 | 1250cm (1/2) |
+| 0.5초 | 625cm (1/4) |
+
+0이면 충전량이 사거리를 안 바꾸므로 기존 프로필은 전과 같다. 줄어드는 것은 광선의 길이뿐이라
+**볼리 발수도 같이 준다** — 덜 충전한 샷은 짧은 줄무늬를 남긴다.
+
+**충전량 → 스턴** — 만충만 두 배로 뛴다.
+
+| 값 | 지금 | |
+|---|---|---|
+| `Impact.StunDuration` | **1.5** | `ChargeTime`과 같게 둔다. 그래야 부분 충전에서 "충전한 초 = 스턴 초" |
+| `FullChargeStunSeconds` | **3.0** | 만충일 때만 이 초를 그대로 쓴다 |
+| `FullChargeThreshold` | **0.99** | 만충으로 볼 충전량 |
+| `Impact.StunSuperArmorDuration` | **3** | 충전량과 무관하게 고정 |
+
+부분 구간은 코드가 이미 `StunDuration × 충전비율`이라 손댈 것이 없었다. 어긋나는 것은 만충
+한 점뿐이므로 거기서만 다른 초를 넘긴다 — `FPaintDeposit::StrikeUnitFor(Hit, PaintId, 초)`가
+새로 생긴 함수다. 기존 `StrikeUnit`은 그것을 `StunSecondsFor(Charge)`로 부르는 껍데기가 됐다.
+
+**`FullChargeThreshold`를 1.0으로 두면 안 된다.** 충전량이 네트워크로 갈 때
+`FPaintShot::Charge` uint8(0~255)로 눌린다. 한 프레임 차이로 254가 되면 스턴이 3초에서
+1.49초로 뚝 떨어진다. 0.99면 252 이상이 전부 만충이다.
+
+슈퍼아머는 **9번 값 하나로 끝났다.** 코드가 슈퍼아머를 충전량으로 깎은 적이 없기 때문이다
+(`StunSecondsFor`는 스턴만 곱한다). 자세한 동작은 아래
+[슈퍼아머](#슈퍼아머는-스턴이-끝나는-알림에-물려-있다) 참고.
+
+### 샷건 궤적이 들쭉날쭉했던 이유 = 높이
+
+| | |
+|---|---|
+| 어디에 | `DA_Paintball_Heavy_Trail_T`, `DA_Paintball_Fan_Painter_T` (**양쪽 다**) |
+| 무엇을 | `TrailRadius` 250 → **700cm** |
+| 대체한 것 | 250cm. 탄이 그보다 높으면 아래 광선이 바닥에 안 닿았다 |
+
+궤적 도포는 비행 경로에서 `TrailRadius`만큼 광선을 뻗어 표면을 찾는다. 탄이 나가는 높이가
+발밑 기준 **약 204cm**라, 수평 사격은 250cm 안에 겨우 들어오고 **위를 보고 쏘거나 점프·보드·
+단차**에서는 전부 빗나갔다. "어떨 때는 칠해지고 어떨 때는 처음 5발만 칠해진다"가 이것이다.
+
+204cm의 근거: 캡슐 반높이 99 + `CameraBoom.TargetOffset.Z` 45 + `SocketOffset.Z` 60.
+
+`bTrailFirstRayDown`이 이미 한 줄기를 항상 아래로 보내고 있었지만, 그 줄기의 **길이**가
+모자랐던 것이라 따로 고쳐야 했다.
 
 ### 샷건 연사 (`DA_Weapon_Fan_T.FireMode`)
 
@@ -188,6 +290,30 @@ BP_Unit.SecondaryWeapon.Profile = DA_Weapon_Sniper_T   (차지샷)
 
 캐릭터 메시에 **머리 전용 소켓은 없다.** `SKM_Character_Mint`의 커스텀 소켓은 `Board`, `InkBottle`,
 `Gun`뿐이라 `head` **본**에 직접 붙였다. 높이는 `FXOffset`으로 맞춘다.
+
+### 슈퍼아머는 스턴이 끝나는 알림에 물려 있다
+
+조사만 한 것이라 **바꾼 코드는 없다.** 스턴 값을 만지기 전에 읽을 것.
+
+`AUnit::TryApplyStun(StunSeconds, SuperArmorSeconds)` 하나가 전부다:
+
+- 이미 **스턴 중이거나 슈퍼아머 중이면 거부**한다. 그래서 샷건 펠릿 5발이 겹쳐 맞아도
+  첫 발만 스턴을 건다
+- 슈퍼아머는 타이머가 아니라 **스턴 GE가 제거되는 알림**(`OnGameplayEffectRemoved_Info`)에
+  물려 시작한다. 스턴이 어떤 이유로 일찍 풀려도 이어진다
+- 슈퍼아머는 밀어내기(Knockback)도 막는다
+- 스턴에 걸리면 방아쇠가 풀린다 — 충전 중이었으면 **부분 발사도 없이** 그냥 날아간다
+- 슈퍼아머 길이는 **충전 비율로 안 깎인다**. `StunSecondsFor`는 스턴만 곱한다
+
+스턴 값이 사는 곳은 둘이다:
+
+| 어디 | 무엇이 읽나 | 지금 값 |
+|---|---|---|
+| `FPaintDeposit.StunDuration` / `.StunSuperArmorDuration` | 무기 적중. 탄·무기 애셋마다 따로 | 샷건 0.5 / 2초, 차지샷 1.5(만충 3.0) / 3초 |
+| `UItemSettings` | 광역 아이템 — 꿀풍선·히어로랜딩·꿀벌이 **공용 하나**를 본다 | 스턴 2초 / 슈퍼아머 4초 |
+
+**광역 아이템은 그대로 둔다.** 아이템마다 다른 값을 주려면 이 둘을 `UItemProfile`로 내려야
+하는데 지금 구조로는 불가능하다.
 
 ### 테스트용 스턴 큐브 (`ATestStunZone`) — 버릴 것
 
@@ -284,6 +410,31 @@ Lvl_Stage 의 TestStunZone_0     액터 인스턴스
 
 압축 플래그를 새로 만들지 않았다: 대시 의도(`bWantsToDash`)가 이미 무브에 실려 오고 보정 후
 리플레이에서도 되살아나므로, 그 값을 보고 고르면 서버와 클라이언트가 같은 답을 낸다.
+
+### 보드 속도 (`DashSpeedMultiplier`)
+
+| | |
+|---|---|
+| 어디에 | `BP_Unit` → `CharMoveComp` |
+| 무엇을 | `DashSpeedMultiplier` 1.7 → **2.0** |
+| 대체한 것 | 1.7 |
+
+`MaxWalkSpeed` 1000이 미도색 걷기다. 그래서 미도색 보드가 정확히 2000이 된다.
+바닥 색에 따른 배율은 아직 안 들어갔다 — 아래 [아직 안 한 것](#아직-안-한-것) 참고.
+
+---
+
+## 경기 진행
+
+### 경기 시간 (`MatchDuration`)
+
+| | |
+|---|---|
+| 어디에 | `BP_GameMode` CDO |
+| 무엇을 | `MatchDuration` 90 → **180초** |
+| 대체한 것 | 90초 |
+
+`CountdownDuration` 0, `ItemSpawnInterval` 3은 그대로다.
 
 ---
 
@@ -456,6 +607,31 @@ t=3s   2.74배     여기서 끝, 돔도 같이 사라진다
 
 ---
 
+## 맵 — 풍선
+
+### 파열 탄 교체 (`DA_Paintball_BalloonBurst`)
+
+| | |
+|---|---|
+| 어디에 | `Lvl_Stage`의 `BP_Balloon` **9개 전부** (인스턴스 값이다) |
+| 무엇을 | `BurstPaintball` `DA_Paintball_Heavy` → **`DA_Paintball_BalloonBurst`**, `BurstCount` 24 → **8** |
+| 대체한 것 | 자국이 너무 작아 24발을 뿌려도 티가 안 났다 |
+
+`DA_Paintball_BalloonBurst`는 **`DA_Paintball_Bomb`(디저트 폭격 탄)의 복사본**이다. 원본을
+공유하면 풍선을 만질 때마다 폭격이 같이 움직인다.
+
+| | 브러시 | volume | 자국 반경 |
+|---|---|---|---|
+| 전 (`DA_Paintball_Heavy`) | `DA_Brush_Mop` (Base 40) | 1.6 | **50.6cm** |
+| 후 (`DA_Paintball_BalloonBurst`) | `DA_Brush_Bomb` (Base 150) | 3.0 | **260cm** |
+
+반경이 5배, 넓이가 26배다. 그래서 발수를 24 → 8로 줄여도 칠해지는 양은 훨씬 늘어난다.
+
+**CDO만 고치면 안 된다.** 레벨에 놓인 9개가 각자 값을 들고 있다. `BurstSpeed` 200,
+`MaxHealth` 20은 그대로다.
+
+---
+
 ## 아이템 — 연출
 
 ### 꿀벌에 따라붙는 해골 (`BP_Bee.BodyFX`)
@@ -599,12 +775,20 @@ git diff --name-status <머지전_내커밋> HEAD -- Content/Maps Content/LevelP
 | `BP_JumpPad.velocity.Z` — CDO와 **레벨 인스턴스 8개 전부** | **1750** (되돌아가면 1100) |
 | `Lvl_Stage`의 `BP_ItemSpawnPoint` **11개** | `SpawnMode` **Standalone**, `RespawnDelay` **10초** (되돌아가면 Shared / 3초) |
 | `Lvl_Stage`의 `TestStunZone` | **버렸다.** 59215e2 머지에서 사라진 것을 그대로 두기로 했다 |
-| `BP_Unit` → `CharMoveComp` | `GravityScale` 2.0, `JumpZVelocity` 660, `DashJumpZVelocity` 660, `AirControl` 0.15 |
+| `BP_Unit` → `CharMoveComp` | `GravityScale` 2.0, `JumpZVelocity` 660, `DashJumpZVelocity` 660, `AirControl` 0.15, `MaxWalkSpeed` 1000, `DashSpeedMultiplier` **2.0**, `SpeedBoostMultiplier` 1.5 |
+| `BP_Unit` → `InkTank` | `RefillPerSecond` 0.15, `RefillDelayAfterSpend` 0.5 |
+| `BP_GameMode` | `MatchDuration` **180**, `CountdownDuration` 0, `ItemSpawnInterval` 3 |
+| `Lvl_Stage`의 `BP_Balloon` **9개 전부** | `BurstPaintball` **`DA_Paintball_BalloonBurst`**, `BurstCount` **8**, `BurstSpeed` 200, `MaxHealth` 20 |
 | `DA_Item_ChocolateFountain` | `Lifetime` 3, `BurstCount` 4, `BurstInterval` 1.0, `BurstGrowth` 1.4 |
 | `BP_ItemPickup` | `PillarTemplate` = `NS_ItemPillar`, `PillarSeconds` 0, `BoxSparkleTemplate` = `NS_ItemBoxSparkle`, `BoxSparkleHeight` 60 |
 | `BP_Unit` 카메라 | `ViewPitchMin` **-45**, `ViewPitchMax` **45** |
 | `BP_Unit` 무기 | `PaintWeapon.Profile` = `DA_Weapon_Fan_T`, `SecondaryWeapon.Profile` = `DA_Weapon_Sniper_T` |
-| `DA_Weapon_Fan_T` | `FireMode` **Automatic**, `ShotsPerSecond` 4 |
+| `DA_Weapon_Fan_T` | `FireMode` **Automatic**, `ShotsPerSecond` 4, `InkCostPercent` 5, 추종탄 3발 / 0.03초 |
+| `DA_Paintball_Heavy_Trail_T` | `TrailRadius` **700**, `TrailSpacing` 40, `MaxTrailSplats` 64, `DropAfter` 0.1, `DropGravityScale` 4, `bTrailFirstRayDown` true, 스턴 **0.5** / 슈퍼아머 **2** |
+| `DA_Paintball_Fan_Painter_T` | `TrailRadius` **700**, `bHideMesh` true, `TrailSpacing` 60, `MaxTrailSplats` 24, hitPower·stunDuration 0 |
+| `DA_Weapon_Sniper_T` | `ChargeTime` **1.5**, `MinChargeToFire` **0.333**, `InkCostPercent` **0**, `ChargeInkPercentPerTick` **10** / `ChargeInkTickSeconds` **0.5**, `Range` **2500**, `RangeHalvingSeconds` **0.5**, `VolleySpacing` **170**, `MaxVolleyShots` **14**, `VolleySpeed` 1800, `VolleyDropLead` 270 |
+| `DA_Weapon_Sniper_T.Impact` | hitPower 100, `StunDuration` **1.5**, `StunSuperArmorDuration` **3**, `FullChargeStunSeconds` **3.0**, `FullChargeThreshold` **0.99** |
+| `DA_Paintball_SniperVolley_T` | `DropGravityScale` 18, `bHideMesh` **false**(보이게 두기로 함) |
 | `BP_Bee` | `TrailFX` = `NS_ArrowTrail_Magic`(main 것), `BodyFX` = `NS_BeeSkull` |
 | `UnitMovementComponent.h` | `DoJump` 선언과 `DashJumpZVelocity`가 있어야 한다(`.cpp`가 쓴다) |
 
@@ -754,3 +938,17 @@ QA에 합치면서 세 파일을 4일 전 상태로 되돌렸다. 되돌아간 �
   직접 만들어야 한다.
 - `_Test` 사본을 원본으로 되돌릴지 결정. 되돌린다면 `_T`의 값을 원본에 옮기고 `BP_Unit`의
   두 줄을 원래대로 돌리면 된다.
+- **바닥 색이 속도와 잉크 회복을 정하는 것** (밸런스 3단계, 아직 안 들어감). 이동 예측을
+  건드리는 유일한 작업이라 1·2단계를 PIE로 거른 뒤에 얹는다.
+  - 없는 것부터 만들어야 한다: **"이 지점의 바닥이 누구 색인가"를 묻는 API가 프로젝트에 없다.**
+    `FPaintCellGrid`에 쓰기(`Mark`)와 전체 집계(`GetFraction`)만 있고 점 조회가 없다.
+    격자가 복셀 배열(`Ids`)이고 `VoxelIndex()`가 이미 있어서 어렵지는 않다.
+  - 배율은 속도와 잉크가 **같은 것**을 쓴다: `FloorMul` = 내 색 1.5 / 미도색 1.0 / 상대 색 0.5,
+    `DashMul` = 상대 색이면 1.0 아니면 2.0, 스피드스타는 바닥을 무시하고 내 색으로 친 뒤 ×1.5
+  - 발밑 색은 0.1초마다 캐시한다. **틱이 아니라 무브 시각 기준**이어야 서버·클라이언트가
+    안 어긋난다
+  - `RefillPerSecond`를 0.15 → 0.10으로 내리면 기획표의 네 칸이 전부 맞는다
+    (내 색 걷기 15%/s, 미도색 걷기 10%/s, 상대색 5%/s, 가속은 각각 두 배)
+  - 예측 안전성은 확인했다: `ApplySplat`이 스플랫 로그를 타고 모든 머신에서 돌아
+    `CellGrid.Mark`가 서버·클라이언트에서 같이 일어난다. 격자가 같으므로 고무줄이 안 생긴다
+  - **보드를 탈 때 잉크가 빨리 차는 코드도 없다.** `Refill`은 상수 하나를 곱할 뿐이다
