@@ -458,20 +458,27 @@ t=3s   2.74배     여기서 끝, 돔도 같이 사라진다
 
 ## 아이템 — 연출
 
-### 꿀벌에 따라붙는 해골 (`BP_Bee.SkullFX`)
+### 꿀벌에 따라붙는 해골 (`BP_Bee.BodyFX`)
 
 | | |
 |---|---|
-| 어디에 | `BP_Bee`에 `UNiagaraComponent SkullFX`, 루트(`Sphere`) 밑 |
-| 무엇을 | 꿀벌이 나는 동안 해골 반짝임이 몸 주위를 따라다닌다 |
-| 대체한 것 | 없음(새 기능) |
-| 값 | `NS_BeeSkull`, 상대 위치 0, 스케일 1, `bAutoActivate` 켬 |
+| 어디에 | `BP_Bee`의 `BodyFX`(= `AItemProjectile::BodyFX`) |
+| 무엇을 | 꿀벌이 나는 동안 해골 반짝임이 몸을 감싸고 같이 날아간다 |
+| 대체한 것 | 없음. 비어 있던 슬롯이다 |
+| 값 | `BodyFX` = `NS_BeeSkull`, `BodyFXScale` 1 |
 
-**C++을 건드리지 않았다.** 벌은 서버가 조종하고 위치가 복제되므로, 컴포넌트로 달아 두면
-모든 머신에서 알아서 따라간다. RPC도 태그도 필요 없다.
+**컴포넌트를 새로 달지 않는다.** `AItemProjectile`에 이미 이펙트 슬롯이 둘 있다:
+`TrailFX`(뒤로 끌리는 꼬리)와 `BodyFX`(공을 감싸고 같이 나는 것). 해골은 뒤쪽이다.
+둘 다 `Mesh`의 같은 자리에 붙으므로 함께 켜도 어긋나지 않는다.
 
-**`Body`가 아니라 루트에 붙인 이유.** `Body`는 상대 스케일이 3이라 거기 붙이면 해골도 세 배가
-되고, 스켈레탈 메시라 날갯짓을 따라 흔들린다. 루트(`Sphere`, 반경 30cm)가 벌의 위치 그 자체다.
+**`TrailFX`는 main 것이다** — `NS_ArrowTrail_Magic`, 스케일 1. 꿀벌 트레일은 main이 따로
+붙였고 이쪽은 그 위에 얹힌다. 건드리지 말 것.
+
+처음에는 `SkullFX`라는 `UNiagaraComponent`를 루트에 직접 달았는데, main 머지에서 `BP_Bee`가
+충돌해 main 쪽이 통째로 채택되며 사라졌다. 다시 달면서 컴포넌트 대신 이 슬롯을 쓴 이유:
+**`BodyFX`는 클래스 디폴트라 모든 머신이 갖고 있고**(프로필은 서버만 받는다), 복제 액터의
+메시 보간을 그대로 타므로 클라이언트에서도 공과 같이 움직인다. 컴포넌트를 새로 달면
+`BP_Bee`가 또 충돌했을 때 같은 일이 반복된다.
 
 #### `NS_BeeSkull` — `NS_Sparkling_Skull`의 복제본
 
@@ -590,18 +597,18 @@ git diff --name-status <머지전_내커밋> HEAD -- Content/Maps Content/LevelP
 | 어디 | 있어야 할 값 |
 |---|---|
 | `BP_JumpPad.velocity.Z` — CDO와 **레벨 인스턴스 8개 전부** | **1750** (되돌아가면 1100) |
-| `Lvl_Stage`의 `BP_ItemSpawnPoint` 9개 | `SpawnMode` **Standalone**, `RespawnDelay` **10초** (되돌아가면 Shared / 3초) |
-| `Lvl_Stage`의 `TestStunZone` | 있어야 한다. (0, 0, 409.5), 반경 400 |
+| `Lvl_Stage`의 `BP_ItemSpawnPoint` **11개** | `SpawnMode` **Standalone**, `RespawnDelay` **10초** (되돌아가면 Shared / 3초) |
+| `Lvl_Stage`의 `TestStunZone` | **버렸다.** 59215e2 머지에서 사라진 것을 그대로 두기로 했다 |
 | `BP_Unit` → `CharMoveComp` | `GravityScale` 2.0, `JumpZVelocity` 660, `DashJumpZVelocity` 660, `AirControl` 0.15 |
 | `DA_Item_ChocolateFountain` | `Lifetime` 3, `BurstCount` 4, `BurstInterval` 1.0, `BurstGrowth` 1.4 |
 | `BP_ItemPickup` | `PillarTemplate` = `NS_ItemPillar`, `PillarSeconds` 0, `BoxSparkleTemplate` = `NS_ItemBoxSparkle`, `BoxSparkleHeight` 60 |
 | `BP_Unit` 카메라 | `ViewPitchMin` **-45**, `ViewPitchMax` **45** |
 | `BP_Unit` 무기 | `PaintWeapon.Profile` = `DA_Weapon_Fan_T`, `SecondaryWeapon.Profile` = `DA_Weapon_Sniper_T` |
 | `DA_Weapon_Fan_T` | `FireMode` **Automatic**, `ShotsPerSecond` 4 |
-| `BP_Bee` | `SkullFX` 컴포넌트가 루트(`Sphere`) 밑에, `NS_BeeSkull` |
+| `BP_Bee` | `TrailFX` = `NS_ArrowTrail_Magic`(main 것), `BodyFX` = `NS_BeeSkull` |
 | `UnitMovementComponent.h` | `DoJump` 선언과 `DashJumpZVelocity`가 있어야 한다(`.cpp`가 쓴다) |
 
-### 실제로 있었던 다섯 건
+### 실제로 있었던 여섯 건
 
 | 무엇 | 언제 | 어떻게 드러났나 |
 |---|---|---|
@@ -610,6 +617,20 @@ git diff --name-status <머지전_내커밋> HEAD -- Content/Maps Content/LevelP
 | `UnitAnimInstance`의 `bIsAiming` / `bWeaponPoseHeld` | `fefb995` main → QA | 무기 자세가 안 나옴 |
 | `UUnitMovementComponent::DoJump` 선언 | `384e270` main → QA | **컴파일 에러** |
 | 점프대 속도 · 아이템 스폰 모드 · 스턴 큐브 | `bdd682a` Sound → QA | 큐브가 사라진 것으로 발견 |
+| 시야각 45 · 꿀벌 해골 · 아이템 스폰 모드 · 스턴 큐브 | `59215e2` main → QA | 충돌을 전부 main 쪽으로 풀어서 |
+
+`59215e2`는 **충돌 파일이 10개**였고 그중 `.uasset`/`.umap` 5개가 main 쪽으로 통째로 갔다.
+C++ 5개는 정상적으로 합쳐졌다(양쪽 변경이 다 들어옴). 바이너리 애셋은 섞을 수 없으므로
+**충돌하면 반드시 한쪽이 통째로 죽는다** — 이것이 이 목록이 계속 늘어나는 이유다.
+
+충돌한 파일만 뽑는 법:
+
+```bash
+BASE=$(git merge-base <내쪽> <상대쪽>)
+comm -12 <(git diff --name-only $BASE <내쪽> | sort) <(git diff --name-only $BASE <상대쪽> | sort)
+```
+
+여기에 걸린 `.uasset`만 하나씩 열어 값을 확인하면 된다. 전체 diff를 보는 것보다 훨씬 빠르다.
 
 ---
 
