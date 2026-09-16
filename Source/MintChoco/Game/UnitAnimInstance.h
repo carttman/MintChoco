@@ -27,6 +27,20 @@ struct MINTCHOCO_API FUnitAnimMath
 	 * HoldSeconds가 0 이하면 항상 거짓.
 	 */
 	static bool IsFireHoldActive(double Now, double LastFiredTime, float HoldSeconds);
+
+	/**
+	 * 요가 한 프레임 동안 돈 속도(도/초). 오른쪽으로 돌면(요 증가) 양수다. 경계(±180, 0/360)를 넘거나
+	 * 값이 360을 넘게 쌓여 있어도 짧은 쪽으로 잰다. DeltaSeconds가 0이면 0.
+	 */
+	static float YawRateDegrees(double PreviousYaw, double CurrentYaw, float DeltaSeconds);
+
+	/**
+	 * 보드 기울기(도). 도는 자전거나 보드가 기우는 각 atan(v·ω/g)을 따른다: 빨리 달리며 급하게 돌수록
+	 * 크게, 느리거나 완만하게 돌면 적게 기운다. 멈춰서 돌면 0이다. 오른쪽으로 돌면(요 증가) 오른쪽(+),
+	 * 곧 회전 안쪽으로 기운다. LeanGravity(cm/s²)가 클수록 덜 기울고, 결과는 ±|MaxDegrees|로 자른다.
+	 * MaxDegrees가 음수면 방향을 뒤집는다. LeanGravity가 0 이하면 0.
+	 */
+	static float BoardLeanFromTurn(float GroundSpeed, float YawRateDegreesPerSecond, float LeanGravity, float MaxDegrees);
 };
 
 /**
@@ -102,6 +116,15 @@ protected:
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Unit|State")
 	bool bDashAnimationActive = false;
+
+	/**
+	 * 보드 기울기(도). 양수면 오른쪽으로 기운다. 보드 동작 중에만 보이는 몸이 도는 속도와 이동 속도만큼
+	 * 회전 안쪽으로 기울고(FUnitAnimMath::BoardLeanFromTurn), 돌지 않거나 보드에서 내리면 0으로
+	 * 돌아온다. 이 값으로 유닛이 메시를 굴린다(AUnit::SetMeshLean).
+	 * 애님 그래프가 따로 쓸 일은 없지만 디버깅용으로 읽을 수 있게 둔다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|Dash")
+	float BoardLean = 0.0f;
 
 	/**
 	 * 히어로 랜딩 단계. None이면 평소.
@@ -221,6 +244,24 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning")
 	FString DashStatePrefix = TEXT("Dash");
 
+	/**
+	 * 보드 동작 중 최대 기울기(도). 캐릭터의 앞 축을 중심으로 메시를 굴린다. 기우는 방향이 반대로
+	 * 보이면 부호를 바꾼다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning", meta = (ClampMin = "-45", ClampMax = "45", ForceUnits = "deg"))
+	float BoardLeanMaxDegrees = 25.0f;
+
+	/**
+	 * 보드 기울기 식 atan(속도 × 각속도 / 이 값)에서 중력 자리(cm/s²). 클수록 덜 기운다. 기본값이면 대시
+	 * 속도(1700 cm/s)로 90도/초 돌 때 약 15도, 30도/초면 약 5도 기운다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning", meta = (ClampMin = "1"))
+	float BoardLeanGravity = 10000.0f;
+
+	/** 보드 기울기가 목표로 따라가는 속도(FInterpTo). 클수록 빨리 기운다. 0이면 보간 없이 바로 기운다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning", meta = (ClampMin = "0"))
+	float BoardLeanInterpSpeed = 8.0f;
+
 private:
 	/** 소유 폰. 유닛이 아니면 이동·공중 값만 채우고 상태는 기본값으로 둔다. */
 	UPROPERTY(Transient)
@@ -228,6 +269,13 @@ private:
 
 	/** 첫 업데이트에서는 보간 없이 맞춘다(0에서 미끄러져 올라오지 않게). */
 	bool bAimPitchInitialized = false;
+
+	/** 지난 프레임에 보인 몸의 요(도)와 그 값이 유효한지. 보드 기울기의 회전 속도를 잰다. */
+	double LastBodyYaw = 0.0;
+	bool bBodyYawInitialized = false;
+
+	/** 보이는 몸의 요(도). 메시 월드 회전에서 기준 회전을 걷어 낸 값이다. 모든 머신에서 같은 식으로 잰다. */
+	double GetBodyYaw(const AUnit& InUnit) const;
 
 	/** 두 무기의 OnFired에서. 이 머신의 월드 시각을 기록한다. */
 	UFUNCTION()

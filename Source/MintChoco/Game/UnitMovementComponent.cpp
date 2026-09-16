@@ -10,6 +10,7 @@
 #include "Engine/World.h"
 #include "Game/Unit.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/Controller.h"
 #include "Items/ItemGameplayTags.h"
 #include "Items/ItemProfile.h"
 #include "Items/ItemSlotComponent.h"
@@ -31,9 +32,82 @@ UUnitMovementComponent::UUnitMovementComponent()
 
 void UUnitMovementComponent::PhysicsRotation(float DeltaTime)
 {
-	if (!ShouldFaceControlRotation()) return;
+	if (!ShouldFaceControlRotation())
+	{
+		BoardYawRate = 0.0f;
+		return;
+	}
 
+	// 보드(대시) 중에는 등각속도 대신 보드 제어기로 돈다. 대시가 끝난 뒤에도 몸이 아직 따라가는 중이면
+	// 제어기가 끝까지 데려간다: 그 순간 720도/초로 확 꺾이지 않게.
+	const AController* const Controller = CharacterOwner ? CharacterOwner->GetController() : nullptr;
+	if (HasValidData() && Controller)
+	{
+		const double CurrentYaw = UpdatedComponent->GetComponentRotation().Yaw;
+		const double TargetYaw = Controller->GetDesiredRotation().Yaw;
+		const bool bCatchingUp = BoardYawRate != 0.0f && FMath::Abs(FRotator::NormalizeAxis(TargetYaw - CurrentYaw)) > 1.0;
+		if (bWantsToDash || bCatchingUp)
+		{
+			// 보정 뒤 무브를 재생할 때는 돌리지 않는다. 각속도 상태가 두 번 쌓이고, 회전은 서버가 보정하지
+			// 않는 값이라 다음 프레임부터 그대로 이어진다.
+			if (CharacterOwner->bClientUpdating)
+			{
+				return;
+			}
+
+			const double NewYaw = MakeBoardTurn().Step(CurrentYaw, TargetYaw, BoardYawRate, DeltaTime);
+			MoveUpdatedComponent(FVector::ZeroVector, FRotator(0.0f, NewYaw, 0.0f), /*bSweep=*/false);
+			return;
+		}
+	}
+
+	BoardYawRate = 0.0f;
 	Super::PhysicsRotation(DeltaTime);
+}
+
+FBoardTurn UUnitMovementComponent::MakeBoardTurn() const
+{
+	FBoardTurn Turn;
+	Turn.MaxYawRate = BoardMaxYawRate;
+	Turn.MinYawRate = BoardMinYawRate;
+	Turn.ConvergeRate = BoardConvergeRate;
+	Turn.AccelInterpSpeed = BoardYawAccelInterpSpeed;
+	return Turn;
+}
+
+double FBoardTurn::Step(double CurrentYaw, double TargetYaw, float& InOutYawRate, float DeltaTime) const
+{
+	const float Error = static_cast<float>(FRotator::NormalizeAxis(TargetYaw - CurrentYaw));
+	if (DeltaTime <= 0.0f)
+	{
+		return FRotator::NormalizeAxis(CurrentYaw);
+	}
+
+	// 이미 맞춰져 있다. 남은 각속도로 지나쳐 나가지 않게 멈춘다.
+	constexpr float ArrivalToleranceDegrees = 0.01f;
+	if (FMath::Abs(Error) <= ArrivalToleranceDegrees)
+	{
+		InOutYawRate = 0.0f;
+		return FRotator::NormalizeAxis(TargetYaw);
+	}
+
+	// 목표 각속도: 차이에 비례하되 최소와 최대 사이. 최소가 최대보다 크면 최대가 이긴다.
+	const float MaxRate = FMath::Max(MaxYawRate, 0.0f);
+	const float MinRate = FMath::Clamp(MinYawRate, 0.0f, MaxRate);
+	const float Desired = FMath::Sign(Error) * FMath::Clamp(FMath::Abs(Error) * FMath::Max(ConvergeRate, 0.0f), MinRate, MaxRate);
+
+	// 각속도는 목표 각속도로 부드럽게 다가간다. 차이가 생긴 순간 곧바로 최대로 튀지 않는다.
+	InOutYawRate = AccelInterpSpeed > 0.0f ? FMath::FInterpTo(InOutYawRate, Desired, DeltaTime, AccelInterpSpeed) : Desired;
+
+	// 같은 방향으로 남은 차이를 넘어서면 목표에 맞춘다. 각속도는 실제로 돈 만큼으로 줄여, 천천히 도는
+	// 카메라를 따라갈 때 다음 스텝이 끊기지 않게 한다.
+	const float Delta = InOutYawRate * DeltaTime;
+	if (Delta * Error > 0.0f && FMath::Abs(Delta) >= FMath::Abs(Error))
+	{
+		InOutYawRate = Error / DeltaTime;
+		return FRotator::NormalizeAxis(TargetYaw);
+	}
+	return FRotator::NormalizeAxis(CurrentYaw + Delta);
 }
 
 bool UUnitMovementComponent::ShouldFaceControlRotation() const
@@ -43,7 +117,7 @@ bool UUnitMovementComponent::ShouldFaceControlRotation() const
 	return !Acceleration.IsNearlyZero() || IsAimHeld();
 }
 
-// 스턴·히어로 랜딩이면 0, 부스트 중이면 고정 속도, 대시 중이면 기본 속도에 배율을 곱한 값, 아니면 기본 속도.
+// 스턴·히어로 랜딩이면 0. 아니면 기본 속도에 부스트 배율과 대시 배율을 켜진 만큼 곱한 값.
 float UUnitMovementComponent::GetMaxSpeed() const
 {
 	// 최고 속도 0: CalcVelocity는 MaxSpeed로 나누지 않으므로 안전하고, 제동이 몇 프레임 안에
@@ -54,14 +128,18 @@ float UUnitMovementComponent::GetMaxSpeed() const
 		return 0.0f;
 	}
 
+	// 부스트와 대시는 둘 다 기본 속도에 곱해진다. 부스트 중에 대시하면 둘을 모두 곱하므로 부스트가
+	// 대시보다 느려지는 일이 없다. 두 플래그는 압축 플래그로 서버에 가므로 양쪽이 같은 값을 낸다.
+	float Speed = Super::GetMaxSpeed();
 	if (bWantsSpeedBoost)
 	{
-		return SpeedBoostSpeed;
+		Speed *= SpeedBoostMultiplier;
 	}
-
-	const float BaseSpeed = Super::GetMaxSpeed();
-
-	return bWantsToDash ? BaseSpeed * DashSpeedMultiplier : BaseSpeed;
+	if (bWantsToDash)
+	{
+		Speed *= DashSpeedMultiplier;
+	}
+	return Speed;
 }
 
 FVector UUnitMovementComponent::ConstrainInputAcceleration(const FVector& InputAcceleration) const

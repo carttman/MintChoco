@@ -256,6 +256,12 @@ private:
 	void SpendShot();
 	void BuildContext(FPaintFireContext& OutContext, const FVector& ViewOrigin, const FVector& ViewDirection, float ChargeFraction) const;
 
+	/**
+	 * 프로필의 FeetDeposit을 사수 발밑에 찍는다. 권한 쪽에서 한 발이 수락된 뒤에만 부른다.
+	 * 브러시가 없으면 조용히 돌아가므로 이 값을 쓰지 않는 프로필에는 비용이 없다.
+	 */
+	void PaintUnderOwner(const FPaintFireContext& Context) const;
+
 	/** The gun's muzzle socket, or the hand, or a point in front of the view: where the shot looks like it leaves. */
 	FTransform ComputeVisualMuzzle(const FVector& ViewOrigin, const FVector& ViewDirection) const;
 

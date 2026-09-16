@@ -71,7 +71,12 @@ class MINTCHOCO_API UGE_Stunned : public UItemGameplayEffect
 	GENERATED_BODY()
 };
 
-/** 슈퍼아머. 스턴이 끝나는 순간 AUnit이 이어서 건다. */
+/**
+ * 슈퍼아머. 스턴이 끝나는 순간 AUnit이 이어서 건다.
+ *
+ * 아이템이 효과 동안 주는 슈퍼아머(스피드 스타, UItemProfile::GrantsSuperArmor)는 이 GE를 쓰지 않고
+ * 그 아이템의 GE에 같은 태그로 실린다. 둘이 겹치면 태그 수가 쌓여 둘 다 끝나야 풀린다.
+ */
 UCLASS()
 class MINTCHOCO_API UGE_SuperArmor : public UItemGameplayEffect
 {

@@ -75,9 +75,9 @@ void ULobbyWidget::RefreshUI()
 	}
 
 	// Show GameConfig Button
-	if (UKismetSystemLibrary::IsServer(this))
-		Btn_GameConfig->SetVisibility(ESlateVisibility::Visible);
-	else
+	// if (UKismetSystemLibrary::IsServer(this))
+	// 	Btn_GameConfig->SetVisibility(ESlateVisibility::Visible);
+	// else
 		Btn_GameConfig->SetVisibility(ESlateVisibility::Hidden);
 }
 

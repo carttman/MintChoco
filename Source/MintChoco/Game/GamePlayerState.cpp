@@ -7,6 +7,7 @@
 #include "Game/GameGameState.h"
 #include "Game/Unit.h"
 #include "GameFramework/PlayerController.h"
+#include "Lobby/Contents/LobbyPlayerState.h"
 #include "MintChoco.h"
 #include "Net/UnrealNetwork.h"
 #include "Screen/ScreenFadeSubsystem.h"
@@ -100,5 +101,25 @@ void AGamePlayerState::OnRep_Team()
 	if (AUnit* Unit = Cast<AUnit>(GetPawn()))
 	{
 		Unit->ApplyTeamToWeapon();
+	}
+}
+
+void AGamePlayerState::CopyProperties(APlayerState* PlayerState)
+{
+	Super::CopyProperties(PlayerState);
+
+	// 게임 -> 로비. 로비 PlayerState의 Ready는 건드리지 않는다: 돌아온 플레이어는 다시 준비를 눌러야 한다.
+	if (ALobbyPlayerState* const Lobby = Cast<ALobbyPlayerState>(PlayerState))
+	{
+		Lobby->Team = Team;
+		Lobby->Nickname = Nickname;
+		return;
+	}
+
+	// 게임 -> 게임(맵 재시작). bReady는 새 맵에서 다시 판정한다.
+	if (AGamePlayerState* const Game = Cast<AGamePlayerState>(PlayerState))
+	{
+		Game->Team = Team;
+		Game->Nickname = Nickname;
 	}
 }

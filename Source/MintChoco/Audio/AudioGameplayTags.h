@@ -31,6 +31,12 @@ namespace AudioTags
 	//~ 유닛
 
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_Unit_Dash);
+
+	/**
+	 * 보드를 타고 달리는 동안의 루프. 보드가 보이기 시작할 때 켜고 사라질 때 끈다.
+	 * 대시 키가 아니라 보드 표시(AUnit::SetBoardShown)를 따르므로 눈에 보이는 것과 항상 맞는다.
+	 */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_Unit_Board_Loop);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_Unit_Land);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_Unit_Footstep);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_Unit_Stun_Begin);

@@ -38,6 +38,11 @@ enum class EUnitAction : uint8
 	 * 방아쇠를 놓는 순간 걷어낸다. 발사 동작(Fire)과 같은 슬롯에 두면 자연스럽게 이어진다.
 	 */
 	Charge		UMETA(DisplayName = "충전"),
+	/**
+	 * 기절. 스턴이 걸려 있는 동안 FX가 머리 위에 붙어 있다가 풀릴 때 꺼진다(대시 트레일과 같은 방식).
+	 * 몽타주와 Animation은 쓰지 않는다 — 기절 자세는 애님 그래프가 bIsStunned로 다룬다.
+	 */
+	Stun		UMETA(DisplayName = "기절"),
 };
 
 /**

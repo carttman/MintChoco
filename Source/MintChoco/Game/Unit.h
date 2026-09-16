@@ -20,6 +20,7 @@ class UItemSlotComponent;
 class UMaterialInterface;
 class UPaintWeaponComponent;
 class USphereComponent;
+class UAudioComponent;
 class UNiagaraComponent;
 class USpringArmComponent;
 class UStaticMeshComponent;
@@ -186,6 +187,16 @@ public:
 	 * 보드가 나오지 않는다. 카메라 페이드는 UpdateBoardVisibility가 따로 합친다.
 	 */
 	void SetBoardShown(bool bShown);
+
+	/**
+	 * 메시를 캐릭터의 앞 축을 중심으로 굴린다(도). 양수면 오른쪽으로 기운다. 0이면 블루프린트가 놓은
+	 * 원래 자세로 돌아간다. 애님 인스턴스가 보드 동작 중 몸이 도는 속도와 이동 속도만큼 매 프레임 넣는다
+	 * (UUnitAnimInstance::BoardLean).
+	 *
+	 * 연출이라 복제하지 않는다. 머신마다 자기가 보는 몸의 요 회전과 속도에서 같은 값을 낸다. 캡슐과 카메라는
+	 * 그대로이고, 메시에 붙은 것(보드, 총, 잉크병, 외곽선)만 함께 기운다.
+	 */
+	void SetMeshLean(float RollDegrees);
 
 	/**
 	 * 히어로 랜딩 단계. 애님 블루프린트가 이 값으로 준비·시작 자세를 고른다.
@@ -386,6 +397,12 @@ private:
 	void PlayFeedbackMontage(const struct FUnitActionFeedback& Feedback);
 
 	/**
+	 * 기절 이펙트(EUnitAction::Stun)를 머리 위에 켜고 끈다. 스턴 태그가 서고 내릴 때
+	 * 모든 머신에서 불린다. 지속되는 이펙트라 대시 트레일처럼 컴포넌트를 직접 들고 있는다.
+	 */
+	void UpdateStunEffects(bool bStunned);
+
+	/**
 	 * 차지샷 충전이 시작·종료될 때. 무기가 알려 준다(UPaintWeaponComponent::OnChargingChanged).
 	 *
 	 * 충전 중에는 총이 계속 들려 있어야 한다. 총은 캐릭터 메시의 Gun 소켓에 붙어 있어서,
@@ -420,11 +437,24 @@ private:
 	/** 대시 동작이 돌고 있고 카메라 페이드가 아닐 때만 보드가 보인다. */
 	void UpdateBoardVisibility();
 
+	/**
+	 * 보드 표시에 맞춰 주행 루프를 켜고 끈다. 카메라 페이드는 보지 않는다: 페이드는 그림만
+	 * 감추는 것이고 보드는 여전히 달리고 있으므로 소리는 이어져야 한다.
+	 */
+	void UpdateBoardLoopSound();
+
 	/** 발사 연출이 요구하는 총의 상태. 실제로 보이는지는 카메라 페이드까지 봐야 안다. */
 	bool bGunVisible = false;
 
 	/** 애님 인스턴스가 세우는 보드 상태. 실제로 보이는지는 카메라 페이드까지 봐야 안다. */
 	bool bBoardShown = false;
+
+	/** 기울이기 전 메시의 기준 회전(캡슐 대비). 처음 기울일 때 한 번 잡는다. */
+	FQuat MeshRestRotation = FQuat::Identity;
+	bool bMeshRestCaptured = false;
+
+	/** 지금 메시에 걸린 기울기(도). 같은 값이면 트랜스폼을 다시 쓰지 않는다. */
+	float MeshLeanDegrees = 0.0f;
 
 	/** 총을 숨기는 타이머. 발사마다 다시 걸려 마지막 한 발에서만 만료된다. */
 	FTimerHandle GunHideTimer;
@@ -490,6 +520,14 @@ private:
 	/** 지속되는 트레일이라 시작할 때 만들고 끝날 때 직접 꺼야 한다. */
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> DashTrailComponent;
+
+	/** 기절 중 머리 위에 떠 있는 이펙트. 트레일과 같은 이유로 들고 있다가 스턴이 풀릴 때 끈다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> StunFXComponent;
+
+	/** 보드 주행 루프. 트레일과 같은 이유로 들고 있다가 보드가 사라질 때 직접 멈춘다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> BoardAudioComponent;
 
 	/**
 	 * 컨텍스트를 넣어준 서브시스템. EndPlay 시점에는 Controller가 이미 떨어져 나갔을
