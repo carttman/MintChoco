@@ -170,9 +170,13 @@ DA_Brush_Feet_T            ← DA_Brush_HeroLanding 복제. 두 무기의 FeetDe
 **테스트용이라 지우기 쉽게 만들었다.** 지울 때는 이 둘만 지우면 끝이다:
 
 ```
-Source/MintChoco/Sandbox/          폴더째 (TestStunZone.h / .cpp)
-Lvl_Stage 의 TestStunZone_Center   액터 인스턴스
+Source/MintChoco/Sandbox/       폴더째 (TestStunZone.h / .cpp)
+Lvl_Stage 의 TestStunZone_0     액터 인스턴스
 ```
+
+> `bdd682a`(Sound → QA) 머지가 `Lvl_Stage`를 옛 판으로 덮으면서 이 액터가 한 번 사라졌다.
+> 다시 놓으면서 이름이 `TestStunZone_Center`에서 `TestStunZone_0`으로 바뀌었다(엔진이 붙인 이름).
+> 값과 위치는 같다. 위의 [머지 후 확인 목록](#머지-후-확인-목록)을 볼 것.
 
 그러려고 아래를 전부 피했다 — 기존 파일 수정 **0줄**, 새 게임플레이 태그 없음, 새 열거형 값 없음,
 설정 항목 없음, `/Game`에 새 에셋 없음, 공용 데이터 에셋 참조 없음. 외형은 엔진 기본
@@ -416,6 +420,58 @@ t=3s   2.74배     여기서 끝, 돔도 같이 사라진다
 
 ---
 
+## 머지 후 확인 목록
+
+**이 저장소에서 머지가 코드와 값을 떨어뜨린 사고가 다섯 번 있었다.** 머지 직후 아래를 확인한다.
+
+### 왜 생기나
+
+| 종류 | 왜 | 드러나는가 |
+|---|---|---|
+| `.uasset` / `.umap` | **바이너리라 git이 줄 단위로 합치지 못하고 한쪽을 통째로 고른다.** 옛 조상에서 갈라진 브랜치가 같은 파일을 건드리면 그쪽이 이긴다 | **안 드러난다.** PIE에서 값이 되돌아간 것으로만 안다 |
+| C++ | 머지가 한쪽 hunk를 버린다. 선언만 사라지고 정의가 남기도 한다 | 운이 좋으면 컴파일 에러 |
+
+`git log -S`로는 안 잡힌다 — 머지가 떨어뜨린 코드는 `-S`의 기본 히스토리 단순화에서 빠진다.
+`git log -- <경로>`도 마찬가지다: 머지가 채택하지 않은 쪽의 커밋은 그 파일 이력에 안 나온다.
+
+### 검사
+
+```bash
+# 1. 되돌아간 파일 찾기 (머지 전 내 커밋 ↔ 머지 결과)
+git diff --name-status <머지전_내커밋> HEAD -- Content/Maps Content/LevelPrototyping Content/Blueprints Content/Game/Data
+
+# 2. C++ 은 빌드가 잡아 준다. 반드시 머지 직후 리빌드할 것
+"C:/Program Files/Epic Games/UE_5.8/Engine/Build/BatchFiles/Build.bat" MintChocoEditor Win64 Development -Project="D:\GitHub\MintChoco\MintChoco.uproject" -WaitMutex -FromMsBuild
+```
+
+**리빌드 없이 에디터를 띄우면 안 된다.** 새 C++ 클래스가 DLL에 없어 그것을 부모로 삼는 애셋이
+로드에 실패하고(`Failed to load Class /Script/MintChoco.X as Parent for ...`),
+**그 상태로 저장하면 끊긴 연결이 디스크에 굳는다.**
+
+### 지금 맞는 값 (되돌아갔는지 볼 기준)
+
+| 어디 | 있어야 할 값 |
+|---|---|
+| `BP_JumpPad.velocity.Z` — CDO와 **레벨 인스턴스 8개 전부** | **1750** (되돌아가면 1100) |
+| `Lvl_Stage`의 `BP_ItemSpawnPoint` 9개 | `SpawnMode` **Standalone**, `RespawnDelay` **10초** (되돌아가면 Shared / 3초) |
+| `Lvl_Stage`의 `TestStunZone` | 있어야 한다. (0, 0, 409.5), 반경 400 |
+| `BP_Unit` → `CharMoveComp` | `GravityScale` 2.0, `JumpZVelocity` 660, `DashJumpZVelocity` 660, `AirControl` 0.15 |
+| `DA_Item_ChocolateFountain` | `Lifetime` 3, `BurstCount` 4, `BurstInterval` 1.0, `BurstGrowth` 1.4 |
+| `BP_ItemPickup` | `PillarTemplate` = `NS_ItemPillar`, `PillarSeconds` 5 |
+| `UnitMovementComponent.h` | `DoJump` 선언과 `DashJumpZVelocity`가 있어야 한다(`.cpp`가 쓴다) |
+
+### 실제로 있었던 다섯 건
+
+| 무엇 | 언제 | 어떻게 드러났나 |
+|---|---|---|
+| `DA_Unit_Mint/Choco`, `ABP_Unit` | 09-11 갈래 머지 | PIE에서 캐릭터가 안 보임 |
+| `AUnit::ApplyViewPitchLimits` | `b69ecd3f` game-effect 병합 | 시야 상하 제한이 없어짐 |
+| `UnitAnimInstance`의 `bIsAiming` / `bWeaponPoseHeld` | `fefb995` main → QA | 무기 자세가 안 나옴 |
+| `UUnitMovementComponent::DoJump` 선언 | `384e270` main → QA | **컴파일 에러** |
+| 점프대 속도 · 아이템 스폰 모드 · 스턴 큐브 | `bdd682a` Sound → QA | 큐브가 사라진 것으로 발견 |
+
+---
+
 ## 이번에 알아낸 함정
 
 `docs/Traps.md`와 `docs/UnrealMcp.md`에 아직 없는 것들이다.
@@ -502,6 +558,11 @@ No automation tests matched '...'   ← 이름이 틀렸다는 뜻
 | `7cab709` | 밸런스 수정 및 사운드 수정 1차 |
 | `875b8ac` | `main` → `QA` 머지 |
 | `2f20001` | 밸런스 수정 2차 (펠릿 계단 낙하) |
+| `eeb79a7` / `64cd5c0` | 스턴 이펙트 추가, 수정 + 테스트용 스턴 큐브 |
+| `8e26ae8` | 시야 피치 복구, 초콜릿 분수, 점프 밸런스, 아이템 스폰 주기 + 빛 기둥 |
+| `81f3848` | 아이템 파괴 연출·획득 연출 되돌리기 |
+| `384e270` | `main` → `QA` 머지. **`DoJump` 선언이 떨어져 나갔다** |
+| `bdd682a` | `Sound` → `QA` 머지. **점프대·스폰 모드·스턴 큐브가 되돌아갔다** |
 
 ### `4b641c7`에서 있었던 일 — 되풀이하면 안 되는 것
 
