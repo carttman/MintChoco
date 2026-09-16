@@ -17,6 +17,35 @@
 
 ## 무기 — 페인트 도포
 
+### 버스트 탄이 지면에 박힌 채 태어나던 문제 (`FPaintBurstParams::OriginLift`)
+
+| | |
+|---|---|
+| 어디에 | `FPaintBurstParams::OriginLift`, `APaintBurst::GetLaunchOrigin`(신규) |
+| 무엇을 | 탄이 태어나는 자리를 원점에서 띄운다. **실제 값은 `OriginLift`와 `탄 반경 + 10cm` 중 큰 쪽** |
+| 대체한 것 | 지면에서 터지는 도포가 날아가 보지도 못하고 그 자리에서 전부 터지던 것 |
+
+**증상.** 초콜릿 분수는 돔의 절반밖에 안 칠해지고, 히어로 랜딩은 충전량을 아무리 올려도
+칠해지는 넓이가 그대로였다. 둘 다 "탄이 안 날아간다"가 아니라 "**탄이 태어나자마자 터진다**"가
+원인이었다.
+
+| | 버스트 원점 | 탄 충돌 구 반경 | 지면을 파고든 깊이 |
+|---|---|---|---|
+| 초콜릿 분수 | `Unit 위치 − HalfHeight` = **지면 0cm** | 25cm | 25cm |
+| 히어로 랜딩 | `Unit 위치 − (HalfHeight − 20)` = **20cm** | 50cm | 30cm |
+
+전부 중앙에서 터지니 분수는 260cm 자국이 겹친 덩어리(≈돔의 반), 히어로 랜딩은 400cm 자국
+하나(≈기존 범위)로 보였다. **속도·반경을 아무리 바꿔도 안 변한 이유가 이것이다.**
+
+**바닥값을 코드가 보장한다.** `OriginLift`를 0으로 두어도 `탄 반경 + 10cm`는 확보되므로 같은
+버그가 다시 나지 않는다. 꿀풍선·꿀벌은 공중(투사체 명중 지점)에서 터져 원래 이 문제가 없었고,
+몇십 cm 올라가도 눈에 띄지 않는다.
+
+띄운 만큼 흩뿌림 탄이 더 멀리 날아간다(45도에서 대략 5~10%). 도포가 조금 넓어지는 쪽이라
+맞추지 않고 둔다.
+
+---
+
 ### 발밑 도포 (`FeetDeposit`)
 
 한 발이 나갈 때마다 사수 발밑을 칠한다.
@@ -794,25 +823,34 @@ UPaintSubsystem::GetPaintIdUnder(위치, 깊이)        히트가 없는 곳에�
 
 ## 아이템 — 꿀풍선
 
-### 파열 자국 5배, 던지는 속도 2배, 스턴 반경 (`DA_Item_HoneyBalloon`)
+### 파열 자국 5배, 던지는 속도 2배, 스턴 반경, 그리고 타원 잡기
 
 | | |
 |---|---|
-| 어디에 | `DA_Item_HoneyBalloon`과 그 전용 탄 `DA_Paintball_HoneyBalloon` (참조는 이 아이템 하나뿐) |
-| 무엇을 | 탄의 브러시 `DA_Brush_HoneyBalloon` → **`DA_Brush_Bomb`**, `SplatVolume` 3 → **8.4**, `ThrowSpeed` 3000 → **6000**, `StunRadius` 300 → **600** |
-| 대체한 것 | 자국이 87cm라 12발을 뿌려도 바닥에 티가 안 났다 |
+| 어디에 | `DA_Item_HoneyBalloon`, 전용 탄 `DA_Paintball_HoneyBalloon`, 새 브러시 `DA_Brush_HoneyBalloonBurst` |
+| 무엇을 | 탄 브러시 → **`DA_Brush_HoneyBalloonBurst`**(신규), `SplatVolume` 3 → **8.4**, `Burst.MinPitch` 0 → **35**, `ThrowSpeed` 3000 → **6000**, `StunRadius` 300 → **600** |
+| 대체한 것 | 자국이 87cm라 12발을 뿌려도 티가 안 났고, 키운 뒤에는 **거대한 타원**으로 늘어졌다 |
 
-| | 브러시 | volume | 자국 반경 |
-|---|---|---|---|
-| 전 | `DA_Brush_HoneyBalloon` (Base 50) | 3.0 | **87cm** |
-| 후 | `DA_Brush_Bomb` (Base 150) | 8.4 | **435cm** (정확히 5.0배) |
+| | 브러시 | volume | 자국 반경 | `MaxStretch` |
+|---|---|---|---|---|
+| 처음 | `DA_Brush_HoneyBalloon` (Base 50, 캡 150) | 3.0 | **87cm** | 4 |
+| 키운 뒤 | `DA_Brush_Bomb` (Base 150, 캡 600) | 8.4 | **435cm** | **4** ← 타원의 원인 |
+| 지금 | **`DA_Brush_HoneyBalloonBurst`** (Bomb 복사본) | 8.4 | **435cm** | **1.5** |
 
-`GravityScale`은 1 그대로, `Burst.Speed`도 500 그대로다 — **흩어지는 범위(사거리 255cm)는
-건드리지 않고 자국 크기만 키웠다.** 브러시를 바꿨으니 `MaxRadius`가 150 → 600이 되어 캡에
-걸리지 않는다.
+**왜 타원이 됐나.** 브러시는 스치듯 맞은 자국을 진행 방향으로 `1/cos(입사각)`만큼 늘이고
+그 상한이 `MaxStretch`다. `DA_Brush_Bomb`은 4라, 반경 435cm 자국의 **긴 축이 최대 17m**까지
+간다. 게다가 `Burst.MinPitch`가 0이라 상당수가 거의 수평으로 날아가 스치듯 박혔다.
 
-`StunRadius` 600은 **히어로 랜딩의 착지 판정과 같은 값**이다(만충 기준). 꿀풍선은 충전이
-없으므로 배율 없이 600 고정이다.
+**고친 방법.** `MaxStretch`만 1.5로 낮춘 전용 브러시를 만들고 `MinPitch`를 35로 올려 더
+가파르게 떨어지게 했다. **착탄 범위(사거리 255cm)와 자국 크기는 그대로**라 칠해지는 넓이는
+비슷하고 모양만 둥글어진다.
+
+**`DA_Brush_Bomb`을 고치면 안 된다.** `DA_Paintball_Bomb`(폭격), `DA_Paintball_BalloonBurst`
+(맵 풍선), `DA_Paintball_BeeBurst`, `DA_Item_Bee.TrailDeposit`(꿀벌 궤적),
+`DA_Paintball_ChocolateFountain`, `DA_Paintball_SniperVolley` 까지 **일곱이 공유**한다.
+
+`GravityScale`은 1 그대로, `Burst.Speed`도 500 그대로다. `StunRadius` 600은 **히어로 랜딩의
+착지 판정과 같은 값**이다(만충 기준). 꿀풍선은 충전이 없으므로 배율 없이 600 고정이다.
 
 ---
 
@@ -857,14 +895,13 @@ volume 1.35, `VolleySpacing` 170). 파열 290cm는 꿀풍선 435cm의 정확히 
 | | |
 |---|---|
 | 어디에 | `USweetSpinnerProfile`(필드 2개 + 순수 함수 2개), `UGA_SweetSpinner::HandleVolley`, `DA_Item_SweetSpinner`, `DA_Scatter_Spinner`, `DA_Paintball_SweetSpiner` |
-| 무엇을 | `CoverRadius` **400cm**, `SweepCycles` **3**, `MuzzleSpeed` 600 → **640**, 탄 `SplatVolume` 3 → **5.76** |
+| 무엇을 | `CoverRadius` **500cm**, `SweepCycles` **3**, `VolleyInterval` 0.02 → **0.015**, `MuzzleSpeed` 600 → **700**, 탄 `SplatVolume` 3 → **9.0** |
 | 대체한 것 | 발수가 아니라 **모든 탄이 같은 거리에 떨어지는 것**이 원인이었다 |
 
-**왜 적게 칠해졌나.** `PitchDeg` 60 고정 + 총구 속도 600 고정이라 사거리
-`v²·sin(2θ)/980`이 모든 발에 같았다 — 반경 **318cm 고리 한 줄**에만 떨어진다. 발사 구간
-1.5초에 `VolleyInterval` 0.02로 **75발**이 나가는데, 고리 둘레 1,998cm에 지름 174cm 자국
-75개면 **6.5배 덧칠**이고 고리 안팎은 한 방울도 닿지 않았다. 발수를 늘려도 같은 고리를 더
-덧칠할 뿐이다.
+**왜 적게 칠해졌나.** `PitchDeg` 60 고정 + 총구 속도 고정이라 사거리
+`v²·sin(2θ)/980`이 모든 발에 같았다 — 반경 **318cm 고리 한 줄**에만 떨어진다. 고리 둘레
+1,998cm에 지름 174cm 자국 75개면 **6.5배 덧칠**이고 고리 안팎은 한 방울도 닿지 않았다.
+발수를 늘려도 같은 고리를 더 덧칠할 뿐이다.
 
 **고친 방법.** `CoverRadius`가 0보다 크면 발마다 목표 거리를 정하고
 (`SweetSpinner::VolleyRangeCm`, 0↔반경 삼각파를 √로 편 것) 그 거리에 닿는 피치를 역산한다
@@ -873,11 +910,14 @@ volume 1.35, `VolleySpacing` 170). 파열 290cm는 꿀풍선 435cm의 정확히 
 
 - 피치는 두 해 중 **높은 쪽**을 쓴다. 거리 0이 수평(무한히 날아감)이 아니라 90도(발밑)가
   되어야 스피너가 제자리에서 뿌리는 모양이 된다. 기존 `PitchDeg` 60도 318cm의 높은 해였다.
-- `MuzzleSpeed`를 640으로 올린 이유: 최대 사거리가 `v²/980`이라 600에서는 **367cm**밖에 안 돼
-  `CoverRadius` 400에 못 미친다. 640이면 418cm다.
-- 자국을 120cm(`50 × √5.76`, 브러시 캡 150)로 키운 근거: 0.5초당 25발이 반경 400 원판
-  (502,655 cm²)을 덮으려면 자국 넓이의 합이 넉넉히 두 배는 돼야 한다. 25 × π × 120² =
-  1,130,973 cm² → **2.25배**.
+- `MuzzleSpeed` 700의 근거: 최대 사거리가 `v²/980`이라 **정확히 500cm**다. 600이면 367cm,
+  640이면 418cm라 `CoverRadius` 500에 못 미친다. **반경을 늘리려면 이 값을 같이 올려야 한다.**
+- 자국 150cm(`50 × √9`)는 브러시 `MaxRadius` 150에 딱 맞춘 값이다.
+- 커버 계산: 발사 구간 1.5초 / 간격 0.015 = **100발**, 0.5초당 33발.
+  33 × π × 150² ÷ (π × 500²) = **3.0배**. (지난 값 400 반경 · 자국 120 · 75발에서는 1.44배였다.)
+
+⚠️ 스피너가 쓰는 브러시는 이름이 **`DA_Brush_HoneyBalloon`** 이다. 꿀풍선은 이제 이 브러시를
+쓰지 않으며 참조가 이 탄 하나뿐이다 — 이름만 보고 만지면 엉뚱한 아이템이 바뀐다.
 
 `CoverRadius` 0이면 예전 동작 그대로라, 이 값을 넣지 않은 에셋은 전과 같다.
 
@@ -885,33 +925,48 @@ volume 1.35, `VolleySpacing` 170). 파열 290cm는 꿀풍선 435cm의 정확히 
 
 ## 아이템 — 히어로 랜딩
 
-### 칠하는 반경을 보이는 원에서 역산한다 (`PaintRadiusScale`)
+### 착지 지점에서 원형으로 흩뿌린다 (`PaintRadiusScale`)
 
 | | |
 |---|---|
-| 어디에 | `UHeroLandingProfile::PaintRadiusScale`, `UGA_HeroLanding::HandleLanded`, `DA_Item_HeroLanding` |
-| 무엇을 | `PaintRadiusScale` **2.0**, `Burst.Count` 1 → **24**, `MinPitch` 0 → **5**, `MaxPitch` 0 → **85** |
+| 어디에 | `UHeroLandingProfile::PaintRadiusScale`, `UGA_HeroLanding::HandleLanded`, `DA_Item_HeroLanding`, `DA_Paintball_HeroLanding` |
+| 무엇을 | `PaintRadiusScale` **2.0**, `Burst.Count` 1 → **24**, `Burst.OriginLift` **80cm**, 탄 `GravityScale` 0.25 → **2.0** |
 | 대체한 것 | 보이는 원은 300~600cm인데 칠은 **충전과 무관하게 400cm 고정**이었다 |
 
-**왜 어긋났나.** 칠하는 것이 탄 **한 발**이었고, 그 자국 반경이 `DA_Brush_HeroLanding`의
-`MaxRadius` 400에 걸려 있었다(`BaseRadius 400 × √3 = 693`이 400으로 잘린다). 충전 배율은
-`Speed`와 `Count`에만 걸리는데 발이 하나라 `Count`도 1에서 안 움직이고, `Speed`는 자국
-크기와 무관하다. 그래서 충전을 얼마나 하든 칠은 같았다.
+**두 가지가 겹쳐 있었다.**
 
-**고친 방법.** `PaintRadiusScale`이 0보다 크면 속도를 반경에서 역산한다:
-`Burst.Speed = PaintBurst::SpeedForRange(StunRadius × 충전배율 × PaintRadiusScale, 탄중력)`.
-보이는 원(`StunRadius × 충전배율`)과 **같은 값에서 나오므로 둘이 따로 놀 수 없다.**
+1. 칠하는 것이 탄 **한 발**이었고 그 자국이 `DA_Brush_HeroLanding`의 `MaxRadius` 400에 걸려
+   있었다(`BaseRadius 400 × √3 = 693`이 400으로 잘린다). 충전 배율은 `Speed`와 `Count`에만
+   걸리는데 발이 하나라 `Count`도 안 움직이고 `Speed`는 자국 크기와 무관하다.
+2. 속도를 반경에서 역산하도록 고친 뒤에도 그대로였다. **탄이 날아가질 못했기 때문이다** —
+   버스트 원점이 발밑 +20cm인데 탄의 충돌 구 반경이 50cm라, 구가 지면을 30cm 파고든 채
+   태어나 그 자리에서 터졌다. 초콜릿 분수와 같은 원인이다(→ `무기 — 페인트 도포`의
+   `버스트 탄이 지면에 박힌 채 태어나던 문제`).
 
-| 충전 | 보이는 원 | 칠하는 반경 |
-|---|---|---|
-| 만충 | 600cm | **1200cm** |
-| 최소(0.5) | 300cm | **600cm** |
+**고친 방법.** `PaintRadiusScale`이 0보다 크면 착지 지점을 가운데로 두고 **원판 안에
+흩뿌린다**(초콜릿 분수와 같은 `ScatterRadius` 모드). 착탄점을 직접 정하므로 자국 크기에
+묻히지 않고 충전량이 그대로 눈에 보인다.
 
-탄 수를 24로 올린 것은 반경이 두 배가 되면 넓이가 네 배라서다. 400cm 자국 24발이면 반경
-1200 원판 대비 2.67배로, 빈 곳 없이 덮인다. `MinPitch` 5 / `MaxPitch` 85는 사거리를
-`0.17R ~ R`로 벌려 가운데도 닿게 한 것이다(피치가 곧 사거리를 정한다).
+```
+Burst.ScatterRadius = StunRadius × 충전배율 × PaintRadiusScale
+```
 
-`PaintRadiusScale` 0이면 예전 동작(`Speed × √배율`)이다.
+| 충전 | 보이는 원 | 칠하는 반경 | 탄 수 |
+|---|---|---|---|
+| 만충 (1.0) | 600cm | **1200cm** | 24 |
+| 최소 (0.5) | 300cm | **600cm** | 12 |
+
+보이는 원과 **같은 값에서 나오므로 둘이 따로 놀 수 없다.**
+
+- 탄 수 24의 근거: 반경이 두 배면 넓이는 네 배다. 400cm 자국 24발이면 반경 1200 원판 대비
+  **2.67배**로 빈 곳 없이 덮인다.
+- `GravityScale`을 2.0으로 올린 이유: 0.25면 반경 1200까지 날아가는 데 **3.1초**가 걸린다.
+  2.0이면 1.1초다. 체공은 `√(반경/중력)`에 비례한다.
+- `DA_Brush_HeroLanding`은 `MaxStretch` **1**이라 스치듯 맞아도 자국이 늘어나지 않는다 —
+  원형이 유지되는 것은 이 덕이다.
+
+`Burst.Speed`와 `MinPitch`/`MaxPitch`는 흩뿌림에서 쓰이지 않는다(에셋에는 남아 있다).
+`PaintRadiusScale` 0이면 예전 동작(사방으로 던지고 `Speed × √배율`)이다.
 
 ---
 
@@ -922,7 +977,7 @@ volume 1.35, `VolleySpacing` 170). 파열 290cm는 꿀풍선 435cm의 정확히 
 | | |
 |---|---|
 | 어디에 | `FPaintBurstParams::ScatterRadius`와 `APaintBurst::BurstScatter`(새 함수), `UChocolateFountainProfile`(필드 3개 + `RadiusScaleForBurst`), `AChocolateFountain::FireGroundBurst`, `DA_Item_ChocolateFountain`, `DA_Paintball_ChocolateFountain` |
-| 무엇을 | `bScatterBursts` **참**, `BurstCount` 4 → **7**, `BurstInterval` 1.0 → **0.5**, `Burst.Count` 3 → **5**, `ScatterEndRadiusScale` **1.2**, `ScatterCountStep` **1**, 탄의 브러시 → **`DA_Brush_Bomb`**(자국 **260cm**), `GravityScale` 1 → **2.0** |
+| 무엇을 | `bScatterBursts` **참**, `BurstCount` 4 → **7**, `BurstInterval` 1.0 → **0.5**, `Burst.Count` 3 → **5**, `Burst.OriginLift` **80cm**, `ScatterEndRadiusScale` **1.2**, `ScatterCountStep` **1**, 탄의 브러시 → **`DA_Brush_Bomb`**(자국 **260cm**), `GravityScale` 1 → **2.0** |
 | 대체한 것 | 자국 반경이 **900cm**(돔과 같다)라 3발이면 돔 바닥이 통째로 한 번에 칠해졌다 — "분수"가 아니라 원 하나를 찍는 것이었다 |
 
 **`APaintBurst`에 흩뿌림 모드를 넣었다.** `ScatterRadius`가 0보다 크면 방사상 대신 그 반경의
@@ -945,6 +1000,10 @@ volume 1.35, `VolleySpacing` 170). 파열 290cm는 꿀풍선 435cm의 정확히 
 | 4 | 2.00s | 1020cm | 9 |
 | 5 | 2.50s | 1050cm | 10 |
 | 6 | **2.95s** | **1080cm** | **11** |
+
+**탄을 80cm 띄운다.** 돔은 사용자 발밑(지면)에 서고 도포도 그 자리에서 나가므로, 반경 25cm인 탄의
+충돌 구가 지면을 파고든 채 태어나 그 자리에서 터졌다 — 그래서 돔의 절반밖에 안 칠해졌다.
+자세한 것은 `무기 — 페인트 도포`의 `버스트 탄이 지면에 박힌 채 태어나던 문제`에 있다.
 
 마지막이 3.00s가 아니라 2.95s인 것은 `FireGroundBurst`의 `DeathMargin` 때문이다 — 수명과 같은
 프레임에 걸리면 타이머 순서에 따라 아예 안 뿌려질 수 있어 살짝 당긴다. 총 56발.
@@ -1065,12 +1124,12 @@ git diff --name-status <머지전_내커밋> HEAD -- Content/Maps Content/LevelP
 | `BP_Unit` → `CharMoveComp` 바닥 배율 | `OwnFloorMultiplier` 1.5, `EnemyFloorMultiplier` 0.5, `EnemyFloorDashMultiplier` 1.0 |
 | `BP_GameMode` | `MatchDuration` **180**, `CountdownDuration` 0, `ItemSpawnInterval` 3 |
 | `Lvl_Stage`의 `BP_Balloon` **9개 전부** | `BurstPaintball` **`DA_Paintball_BalloonBurst`**, `BurstCount` **16**, `BurstSpeed` **600**, `MaxHealth` 20, `RespawnDelay` 10 |
-| `DA_Item_ChocolateFountain` | `Lifetime` 3, `Radius` 900, `bScatterBursts` **true**, `BurstCount` **7**, `BurstInterval` **0.5**, `Burst.Count` **5**, `ScatterEndRadiusScale` **1.2**, `ScatterCountStep` **1** |
+| `DA_Item_ChocolateFountain` | `Lifetime` 3, `Radius` 900, `bScatterBursts` **true**, `BurstCount` **7**, `BurstInterval` **0.5**, `Burst.Count` **5**, `Burst.OriginLift` **80**, `ScatterEndRadiusScale` **1.2**, `ScatterCountStep` **1** |
 | `DA_Paintball_BalloonBurst` | `GravityScale` **2.25**, 브러시 `DA_Brush_Bomb` volume 3 (자국 260cm) |
-| `DA_Item_HoneyBalloon` | `ThrowSpeed` **6000**, `StunRadius` **600**, 탄 브러시 **`DA_Brush_Bomb`** volume **8.4** (자국 **435cm**) |
+| `DA_Item_HoneyBalloon` | `ThrowSpeed` **6000**, `StunRadius` **600**, `Burst.MinPitch` **35**, 탄 브러시 **`DA_Brush_HoneyBalloonBurst`**(신규, `MaxStretch` **1.5**) volume **8.4** (자국 **435cm**) |
 | `DA_Item_Bee` | 궤적 브러시 **`DA_Brush_Bomb`** volume **1.35** (174cm), `MarkSpacing` **170**, 파열탄 **`DA_Paintball_BeeBurst`**(290cm), `StunRadius` 250, `Health` 100 |
-| `DA_Item_SweetSpinner` | `CoverRadius` **400**, `SweepCycles` **3**, `Turns` 4, `VolleyInterval` 0.02 / `DA_Scatter_Spinner.MuzzleSpeed` **640** / `DA_Paintball_SweetSpiner` volume **5.76**(120cm) |
-| `DA_Item_HeroLanding` | `PaintRadiusScale` **2.0**, `StunRadius` 600, `MinChargeScale` 0.5, `Burst.Count` **24**, `MinPitch` **5** / `MaxPitch` **85** |
+| `DA_Item_SweetSpinner` | `CoverRadius` **500**, `SweepCycles` **3**, `Turns` 4, `VolleyInterval` **0.015**(100발) / `DA_Scatter_Spinner.MuzzleSpeed` **700** / `DA_Paintball_SweetSpiner` volume **9.0**(150cm, 브러시는 `DA_Brush_HoneyBalloon`) |
+| `DA_Item_HeroLanding` | `PaintRadiusScale` **2.0**(흔뿌림), `StunRadius` 600, `MinChargeScale` 0.5, `Burst.Count` **24**, `Burst.OriginLift` **80** / `DA_Paintball_HeroLanding.GravityScale` **2.0** |
 | `BP_ItemPickup` | `PillarTemplate` = `NS_ItemPillar`, `PillarSeconds` 0, `BoxSparkleTemplate` = `NS_ItemBoxSparkle`, `BoxSparkleHeight` 60 |
 | `BP_Unit` 카메라 | `ViewPitchMin` **-45**, `ViewPitchMax` **45** |
 | `BP_Unit` 무기 | `PaintWeapon.Profile` = `DA_Weapon_Fan_T`, `SecondaryWeapon.Profile` = `DA_Weapon_Sniper_T` |

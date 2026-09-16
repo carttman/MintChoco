@@ -77,6 +77,19 @@ struct MINTCHOCO_API FPaintBurstParams
 	float ScatterRadius = 0.0f;
 
 	/**
+	 * 탄이 태어나는 자리를 원점에서 이만큼 올린다(cm).
+	 *
+	 * **실제로 쓰이는 값은 이것과 (탄 반경 + 10cm) 중 큰 쪽이다.** 탄의 충돌 구가 지면을 파고든
+	 * 채 태어나면 날아가 보지도 못하고 그 자리에서 터지는데, 지면에서 터지는 도포(초콜릿 분수는
+	 * 원점이 발밑, 히어로 랜딩은 발밑 +20cm)가 실제로 그랬다. 그래서 0으로 두어도 안전하다.
+	 *
+	 * 흩뿌림에서는 띄운 만큼 탄이 더 멀리 날아간다(45도에서 대략 5~10%). 도포가 조금 넓어지는
+	 * 쪽이라 맞추지 않고 둔다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Burst", meta = (ClampMin = "0", ForceUnits = "cm"))
+	float OriginLift = 0.0f;
+
+	/**
 	 * 터진 자리에서 한 번 재생하는 연출. 비어 있으면 아무것도 하지 않으므로, 값을 넣지 않은
 	 * 아이템(히어로 랜딩, 꿀벌)은 그대로다.
 	 *
@@ -140,6 +153,9 @@ private:
 
 	/** 원판 안 무작위 지점마다 그 거리에 닿는 속도로 하나씩. Params.ScatterRadius가 정한다. */
 	void BurstScatter(bool bCosmetic);
+
+	/** 탄이 태어나는 자리. 지면에 박힌 채 생기지 않도록 탄 반경만큼은 반드시 띄운다. */
+	FVector GetLaunchOrigin() const;
 
 	/** 데디케이티드 서버가 아니면 BurstFX를 그 자리에 한 번 띄운다. */
 	void SpawnBurstFX();

@@ -126,6 +126,14 @@ void APaintBurst::Burst()
 	}
 }
 
+FVector APaintBurst::GetLaunchOrigin() const
+{
+	// 탄의 충돌 구가 지면을 파고든 채 태어나면 날아가 보지도 못하고 그 자리에서 터진다.
+	// 초콜릿 분수(원점이 발밑)와 히어로 랜딩(발밑 +20cm에 반경 50cm 탄)이 실제로 그랬다.
+	const float Floor = Params.Paintball ? Params.Paintball->Radius + 10.0f : 0.0f;
+	return GetActorLocation() + FVector(0.0f, 0.0f, FMath::Max(Params.OriginLift, Floor));
+}
+
 void APaintBurst::BurstRadial(bool bCosmetic)
 {
 	UWorld* const World = GetWorld();
@@ -133,7 +141,7 @@ void APaintBurst::BurstRadial(bool bCosmetic)
 	TArray<FVector> Directions;
 	PaintBurst::ComputeDirections(Params.Seed, Params.Count, Params.MinPitch, Params.MaxPitch, Directions);
 
-	const FVector Origin = GetActorLocation();
+	const FVector Origin = GetLaunchOrigin();
 	for (int32 Index = 0; Index < Directions.Num(); ++Index)
 	{
 		const int32 BallSeed = static_cast<int32>(HashCombineFast(static_cast<uint32>(Params.Seed), static_cast<uint32>(Index)));
@@ -149,7 +157,7 @@ void APaintBurst::BurstScatter(bool bCosmetic)
 	TArray<FVector2D> Offsets;
 	PaintBurst::ComputeScatterOffsets(Params.Seed, Params.Count, Params.ScatterRadius, Offsets);
 
-	const FVector Origin = GetActorLocation();
+	const FVector Origin = GetLaunchOrigin();
 	const float Gravity = Params.Paintball->GravityScale;
 	for (int32 Index = 0; Index < Offsets.Num(); ++Index)
 	{

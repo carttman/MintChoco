@@ -14,7 +14,6 @@
 #include "Items/LandingMarker.h"
 #include "MintChoco.h"
 #include "Weapons/PaintBurst.h"
-#include "Weapons/PaintballProfile.h"
 
 UGA_HeroLanding::UGA_HeroLanding()
 {
@@ -184,12 +183,15 @@ void UGA_HeroLanding::HandleLanded()
 		FPaintBurstParams Burst = Landing->Burst;
 		Burst.PaintId = GetPaintId();
 		Burst.Seed = FMath::Rand();
-		if (Landing->PaintRadiusScale > 0.0f && Burst.Paintball)
+		if (Landing->PaintRadiusScale > 0.0f)
 		{
-			// 보이는 원은 StunRadius × Scale이다. 칠은 그 PaintRadiusScale 배까지 닿아야 하므로
-			// 반경을 그대로 속도로 역산한다 — 손으로 환산하면 둘이 따로 논다.
-			Burst.Speed = PaintBurst::SpeedForRange(
-				Landing->StunRadius * Scale * Landing->PaintRadiusScale, Burst.Paintball->GravityScale);
+			// 착지 지점을 가운데로 두고 원판 안에 흩뿌린다(초콜릿 분수와 같은 모드). 보이는 원이
+			// StunRadius × Scale이므로 칠은 그 PaintRadiusScale 배까지 닿는다 — 같은 값에서
+			// 나오니 둘이 따로 놀 수 없다.
+			//
+			// 속도를 역산해 사방으로 던지던 예전 방식은 반경이 탄 하나의 자국 크기에 묻혔다.
+			// 흩뿌림은 착탄점을 직접 정하므로 충전량이 그대로 눈에 보인다.
+			Burst.ScatterRadius = Landing->StunRadius * Scale * Landing->PaintRadiusScale;
 		}
 		else
 		{
