@@ -39,6 +39,32 @@ namespace
 	const FName StylePackedParameter(TEXT("Style"));
 	const FName StyleExtraParameter(TEXT("Style2"));
 
+	/**
+	 * The style the collection was authored with, unpacked the way SetLookStyle packs it - the two
+	 * are the same layout read in opposite directions, so they are kept in sight of each other.
+	 * False when the project has no style collection, which leaves the style at its struct defaults.
+	 */
+	bool ReadStyleDefaults(FPaintLookStyle& OutStyle)
+	{
+		const UMaterialParameterCollection* const Collection = UPaintSettings::Get().StyleCollection.LoadSynchronous();
+		if (!Collection)
+		{
+			return false;
+		}
+		if (const FCollectionVectorParameter* const Packed = Collection->GetVectorParameterByName(StylePackedParameter))
+		{
+			OutStyle.CoatScale = Packed->DefaultValue.R;
+			OutStyle.FuzzScale = Packed->DefaultValue.G;
+			OutStyle.RoughnessBias = Packed->DefaultValue.B;
+			OutStyle.Flow = Packed->DefaultValue.A;
+		}
+		if (const FCollectionVectorParameter* const Extra = Collection->GetVectorParameterByName(StyleExtraParameter))
+		{
+			OutStyle.NormalStrength = Extra->DefaultValue.R;
+		}
+		return true;
+	}
+
 	/** Side of the stamp Prewarm draws, in texels. Only the material decides the pipeline state; the area is irrelevant. */
 	const FVector2D PrewarmStampSize(4.0, 4.0);
 
@@ -72,8 +98,23 @@ namespace
 
 	FAutoConsoleCommandWithWorldAndArgs GPaintStyleCommand(
 		TEXT("mc.Paint.Style"),
-		TEXT("페인트 표면의 룭 스칼라를 바꿄다: <coat 0..1> <fuzz 0..2> <rough 0..1> <flow 0..1> [normal 0..1]. 인자를 생략하면 현재 값만 찍는다."),
+		TEXT("페인트 표면의 룩 스칼라를 바꾼다: <coat 0..1> <fuzz 0..2> <rough 0..1> <flow 0..1> [normal 0..1]. 인자를 생략하면 현재 값만 찍는다."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&PaintStyleCommand));
+}
+
+void UPaintSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+
+	// Every paint material already reads the collection's authored defaults, so the mirror has to
+	// start there. Left at the struct's own defaults it disagrees with what is on screen from the
+	// first frame, and mc.Paint.Style seeds from the mirror: naming one axis would then write the
+	// struct's value over the other four, silently, on the first call of a session.
+	if (!ReadStyleDefaults(LookStyle))
+	{
+		UE_LOG(LogPaint, Verbose,
+			TEXT("no style collection yet; the look style stays at its built-in defaults."));
+	}
 }
 
 void UPaintSubsystem::OnWorldBeginPlay(UWorld& InWorld)
@@ -403,7 +444,7 @@ void UPaintSubsystem::SetLookStyle(const FPaintLookStyle& Style)
 	UMaterialParameterCollection* const Collection = UPaintSettings::Get().StyleCollection.LoadSynchronous();
 	if (!Collection)
 	{
-		UE_LOG(LogPaint, Warning, TEXT("StyleCollectionÇ74 Åc6Åb4 ¸ed Âa4Î7c·7c¹7c Äe0 ¬f3Ç74 Åc6²e4."));
+		UE_LOG(LogPaint, Warning, TEXT("the look style reached nothing: Project Settings > Game > Paint > Style Collection is unset."));
 		return;
 	}
 	UWorld* const World = GetWorld();

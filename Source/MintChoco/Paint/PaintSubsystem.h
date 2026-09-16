@@ -151,6 +151,8 @@ public:
 	FPaintSplatSubmitted OnSplatSubmitted;
 
 protected:
+	/** Seeds LookStyle from the style collection, so the mirror starts where the shaders already are. */
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
 

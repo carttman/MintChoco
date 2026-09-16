@@ -10,6 +10,8 @@
 #include "Modules/ModuleManager.h"
 
 #include "Paint/PaintSettings.h"
+#include "Paint/PaintSubsystem.h"
+#include "Tests/TestWorld.h"
 
 #if WITH_EDITOR && WITH_DEV_AUTOMATION_TESTS
 
@@ -25,6 +27,10 @@ namespace
 	 * scalar so the intent is visible to whoever opens the asset, and inherited by its instances.
 	 */
 	const FName ExemptParam(TEXT("PaintStyleExempt"));
+
+	/** The two MPC_PaintStyle entries, spelled as UPaintSubsystem::SetLookStyle spells them. */
+	const FName StylePackedParameter(TEXT("Style"));
+	const FName StyleExtraParameter(TEXT("Style2"));
 
 	/**
 	 * Every material that reaches the team look function, master or instance, by climbing the
@@ -265,6 +271,53 @@ bool FPaintLookStyleCollectionTest::RunTest(const FString& Parameters)
 			*FString::Printf(TEXT("%s: a paint material reads it"), *Entry.ParameterName.ToString()),
 			Read.Contains(Entry.ParameterName));
 	}
+	return true;
+}
+
+/**
+ * The style mirror starts where the shaders already are. UPaintSubsystem keeps a copy of the style
+ * so mc.Paint.Style can change one axis and leave the rest alone; seeded from the struct's own
+ * defaults rather than the collection's, that very first partial command writes the struct over
+ * the asset - name only the coat and fuzz 1.3, bias 0.12 and flow 0.33 go with it, silently.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FPaintLookStyleSeedTest,
+	"MintChoco.Paint.Style.Seed",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ProductFilter)
+
+bool FPaintLookStyleSeedTest::RunTest(const FString& Parameters)
+{
+	const UMaterialParameterCollection* const Collection = UPaintSettings::Get().StyleCollection.LoadSynchronous();
+	if (!TestNotNull(TEXT("PaintSettings.StyleCollection loads"), Collection))
+	{
+		return false;
+	}
+	const FCollectionVectorParameter* const Packed = Collection->GetVectorParameterByName(StylePackedParameter);
+	const FCollectionVectorParameter* const Extra = Collection->GetVectorParameterByName(StyleExtraParameter);
+	if (!TestNotNull(TEXT("Style entry"), Packed) || !TestNotNull(TEXT("Style2 entry"), Extra))
+	{
+		return false;
+	}
+
+	UWorld* const World = MintChocoTest::MakeWorld();
+	if (!TestNotNull(TEXT("test world"), World))
+	{
+		return false;
+	}
+	if (const UPaintSubsystem* const Paint = World->GetSubsystem<UPaintSubsystem>())
+	{
+		const FPaintLookStyle& Style = Paint->GetLookStyle();
+		TestEqual(TEXT("CoatScale seeded from the collection"), Style.CoatScale, Packed->DefaultValue.R);
+		TestEqual(TEXT("FuzzScale seeded from the collection"), Style.FuzzScale, Packed->DefaultValue.G);
+		TestEqual(TEXT("RoughnessBias seeded from the collection"), Style.RoughnessBias, Packed->DefaultValue.B);
+		TestEqual(TEXT("Flow seeded from the collection"), Style.Flow, Packed->DefaultValue.A);
+		TestEqual(TEXT("NormalStrength seeded from the collection"), Style.NormalStrength, Extra->DefaultValue.R);
+	}
+	else
+	{
+		AddError(TEXT("the test world has no paint subsystem"));
+	}
+	MintChocoTest::DestroyWorld(World);
 	return true;
 }
 
