@@ -111,6 +111,32 @@ DA_Brush_Feet_T            ← DA_Brush_HeroLanding 복제. 두 무기의 FeetDe
   전부 깔리는 데 37 × `VolleyInterval` 0.04 = 약 1.5초.
 - `bSkipTrailWhenVolleying`은 **true 그대로 뒀다**. 아래 [연출 보호 장치](#bskiptrailwhenvolleying-는-버그가-아니다) 참고.
 
+### 샷건 연사 (`DA_Weapon_Fan_T.FireMode`)
+
+| | |
+|---|---|
+| 어디에 | **`DA_Weapon_Fan_T`** (`_Test` 사본). `BP_Unit.PaintWeapon.Profile`이 가리키는 그 애셋 |
+| 무엇을 | `FireMode` `Single` → **`Automatic`**. 방아쇠를 누르고 있으면 계속 나간다 |
+| 대체한 것 | 한 번 누를 때 한 발 |
+| 값 | `ShotsPerSecond` **4** (0.25초 간격), 그대로 둠 |
+
+**`DA_Weapon_Shotgun`이 아니다.** 이름 때문에 거기부터 고쳤다가 인게임에서 아무 변화가 없었다.
+그 애셋은 아무도 안 쓴다 — 지금 캐릭터가 드는 총은 `_Test` 사본 쪽이다. 되돌려서 `Single`로 뒀다.
+무기 값을 만질 때는 이름으로 고르지 말고 `BP_Unit`의 두 컴포넌트에서 거꾸로 따라갈 것:
+
+```
+BP_Unit.PaintWeapon.Profile     = DA_Weapon_Fan_T      (주무기, 샷건)
+BP_Unit.SecondaryWeapon.Profile = DA_Weapon_Sniper_T   (차지샷)
+```
+
+코드는 손대지 않았다. `UPaintWeaponProfile::RepeatsWhileHeld()`가 `Automatic`과 `Continuous`를
+묶어 보고, `PaintWeaponComponent`가 그걸로 유지 발사를 정한다.
+
+`ShotsPerSecond`는 **`Single`일 때도 이미 읽히고 있었다** — 연타 제한의 하한이었다. 그래서
+`Automatic`으로 바꿔도 간격이 달라지지 않고, 누르고 있을 때 저절로 반복되는 것만 바뀐다.
+
+잉크는 한 발에 `InkCostPercent` 5%다. 계속 누르면 초당 20%, 탱크가 5초면 빈다.
+
 ---
 
 ## 유닛 — 상태 연출
@@ -328,9 +354,14 @@ t=3s   2.74배     여기서 끝, 돔도 같이 사라진다
 | | |
 |---|---|
 | 어디에 | `AItemPickup`에 `UNiagaraComponent Pillar` + `PillarTemplate` + `PillarSeconds` |
-| 무엇을 | 픽업이 **활성이 되는 순간** 켜고 `PillarSeconds` 뒤에 끈다. 누가 가져가면 즉시 끈다 |
+| 무엇을 | 픽업이 **활성이 되는 순간** 켜고 누가 가져갈 때까지 계속 선다 |
 | 대체한 것 | 없음(새 기능) |
-| 값 | `PillarSeconds` 5초, `BP_ItemPickup.PillarTemplate` = `NS_ItemPillar` |
+| 값 | `PillarSeconds` **0초**, `BP_ItemPickup.PillarTemplate` = `NS_ItemPillar` |
+
+`PillarSeconds`가 5초였을 때는 상자가 그대로 있는데 표시만 먼저 꺼져, 멀리서 보면 아이템이
+이미 없어진 것처럼 보였다. **0으로 두면 타이머를 아예 걸지 않는다**(`StartPillar`가
+`if (PillarSeconds > 0.0f)`로 거른다). 끄는 것은 `OnRep_Collected`의 `StopPillar()`뿐이라
+먹는 순간에 맞춰 사라진다. 코드는 그대로고 값만 바꿨다.
 
 기존 `Laser`와 **다른 것이다**: `Laser`는 나타나기 *전* 예고(`Announced` 상태),
 기둥은 나타난 *뒤* 표시(`Active` 상태)다.
@@ -364,6 +395,64 @@ t=3s   2.74배     여기서 끝, 돔도 같이 사라진다
 
 메시는 **둘 다 납작한 원반이다.** 기둥처럼 보이는 것은 `Bands`가 0.75초 동안 솟으면서
 쌓이는 착시이지 세로로 긴 메시가 아니다.
+
+### 상자 반짝임 (`AItemPickup::BoxSparkle`)
+
+| | |
+|---|---|
+| 어디에 | `AItemPickup`에 `UNiagaraComponent BoxSparkle` + `BoxSparkleTemplate` + `BoxSparkleHeight` |
+| 무엇을 | 픽업이 활성이 되는 순간 켜고 누가 가져갈 때 끈다. 시간 제한이 없다 |
+| 대체한 것 | 없음(새 기능) |
+| 값 | `BoxSparkleHeight` 60cm, `BP_ItemPickup.BoxSparkleTemplate` = `NS_ItemBoxSparkle` |
+
+기둥과 완전히 같은 규칙으로 돈다: `bAutoActivate` 꺼 두고 `StartBoxSparkle`이 직접 켜며,
+`bBoxSparkleStarted`로 한 번만 켜고, 데디케이티드 서버에서는 켜지 않는다. 다른 점은 **끌 시각을
+예약하지 않는다**는 것뿐이다.
+
+높이 60cm는 상자 메시(`BP_ItemPickup:Mesh`, `SM_Egg`)의 Z 오프셋과 같다. 상자는 위아래로
+흔들리지만(`BobAmplitude` 10cm) 반짝임은 제자리에 둔다 — 메시에 붙이면 반짝임까지 같이 출렁인다.
+
+#### `NS_ItemBoxSparkle` — `NS_Sparkling`의 복제본
+
+원본(`FreeParticle_SoftTofu` 팩)은 데모 맵이 참조하므로 손대지 않고 복제해서 고쳤다.
+
+| | 원본 | 지금 | 왜 |
+|---|---|---|---|
+| `bFixedBounds` | false | **true**, ±120cm | 아래 참고 |
+| `User.Sphere Radius` | 133cm | 90cm | 트리거 반경 80cm를 살짝 감싸게 |
+| `User.Lifetime Min` | 3.19초 | 0.8초 | 원본이 Min > Max로 뒤집혀 있었다 |
+| `User.Lifetime Max` | 1.78초 | 1.4초 | 같은 이유 |
+| `User.Uniform Sprite Size Min` | 35.6 | 110 | 원본 크기로는 상자 옆에서 티가 안 난다 |
+| `User.Uniform Sprite Size Max` | 56.4 | 180 | 같은 이유 |
+| `User.SpawnRate` | 44.1 | 35 | 커진 만큼 수를 줄여 지저분해지지 않게 |
+
+**GPU 전용 나이아가라는 `bFixedBounds` 없이는 통째로 안 그려진다.** 이 시스템은 이미터가
+`HangingParticulates` 하나뿐이고 그것이 GPU 시뮬이다. GPU 이미터는 바운드를 스스로 돌려주지
+못해서, 고정 바운드가 없으면 프러스텀 컬링에 걸려 화면에서 사라진다. `NS_ItemPillar`가 멀쩡한
+이유가 이걸 뒷받침한다 — 거기엔 CPU 이미터(`Bands`, `Glow_Base`)가 있어 걔들이 바운드를
+만들어 주고, 덕분에 GPU인 `Spores`도 같이 그려진다.
+
+이미터의 `Loop Behavior`는 `Infinite`다. 끄기 전까지 계속 돈다.
+
+`User.Color`는 원본 그대로 (555, 255, 55)다. 1을 한참 넘는 HDR 값이라 블룸이 셀 수 있다.
+
+**크기와 밝기가 같이 맥동한다.** `ScaleSpriteSize.Scale Factor`와 `ScaleColor.Scale RGB`가
+둘 다 `Abs(Sine(Emitter.Age, Period))`를 쓰고, `Period`는 스폰할 때 입자마다
+`User.Sparkling_Speed_Min`~`Max`(0.16~0.64초) 중에서 뽑힌다. 그래서 각 입자가 제 속도로
+반짝인다. 순간적으로 0에 가까워지는 입자가 늘 섞여 있으므로, 한 장의 스크린샷으로 밝기를
+판단하면 안 된다.
+
+### ★ 새 native UPROPERTY의 기본값은 블루프린트를 **컴파일**해야 인스턴스에 간다
+
+`BoxSparkleTemplate`을 MCP(`ObjectTools.set_properties`)로 CDO에 써 넣고 저장했더니
+`Default__BP_ItemPickup_C`를 다시 읽으면 값이 보이고 애셋 레지스트리에도 의존이 잡히는데,
+**런타임에 스폰된 인스턴스에서는 계속 `None`이었다.** 그래서 `StartBoxSparkle`이 템플릿 가드에
+걸려 아무것도 안 켰다. 같은 자리의 `PillarTemplate`(사람이 BP 에디터에서 넣은 값)은 멀쩡히 왔다.
+
+`BlueprintTools.compile_blueprint`를 한 번 부르자 바로 인스턴스까지 값이 갔다.
+
+**C++에 새 UPROPERTY를 추가하고 MCP로 그 기본값을 넣었으면, 저장만 하지 말고 블루프린트를
+컴파일할 것.** 확인은 CDO가 아니라 PIE로 스폰된 인스턴스에서 한다.
 
 ---
 
@@ -469,7 +558,7 @@ git diff --name-status <머지전_내커밋> HEAD -- Content/Maps Content/LevelP
 | `Lvl_Stage`의 `TestStunZone` | 있어야 한다. (0, 0, 409.5), 반경 400 |
 | `BP_Unit` → `CharMoveComp` | `GravityScale` 2.0, `JumpZVelocity` 660, `DashJumpZVelocity` 660, `AirControl` 0.15 |
 | `DA_Item_ChocolateFountain` | `Lifetime` 3, `BurstCount` 4, `BurstInterval` 1.0, `BurstGrowth` 1.4 |
-| `BP_ItemPickup` | `PillarTemplate` = `NS_ItemPillar`, `PillarSeconds` 5 |
+| `BP_ItemPickup` | `PillarTemplate` = `NS_ItemPillar`, `PillarSeconds` 0, `BoxSparkleTemplate` = `NS_ItemBoxSparkle`, `BoxSparkleHeight` 60 |
 | `UnitMovementComponent.h` | `DoJump` 선언과 `DashJumpZVelocity`가 있어야 한다(`.cpp`가 쓴다) |
 
 ### 실제로 있었던 다섯 건

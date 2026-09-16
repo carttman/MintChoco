@@ -78,6 +78,14 @@ AItemPickup::AItemPickup()
 	Pillar->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Pillar->SetGenerateOverlapEvents(false);
 
+	// 반짝임도 기둥과 같은 규칙이다: StartBoxSparkle이 직접 켠다.
+	BoxSparkle = CreateDefaultSubobject<UNiagaraComponent>(TEXT("BoxSparkle"));
+	BoxSparkle->SetupAttachment(RootComponent);
+	BoxSparkle->bAutoActivate = false;
+	BoxSparkle->SetAutoDestroy(false);
+	BoxSparkle->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BoxSparkle->SetGenerateOverlapEvents(false);
+
 	// 스크린 공간이라 카메라를 따로 보지 않아도 늘 정면이고 글자 크기가 거리와 무관하다.
 	Label = CreateDefaultSubobject<UWidgetComponent>(TEXT("Label"));
 	Label->SetupAttachment(RootComponent);
@@ -212,6 +220,7 @@ void AItemPickup::OnRep_Collected()
 	{
 		// 숨기면 자식도 같이 안 보이지만, 예약된 타이머까지 걷으려면 여기서 직접 끈다.
 		StopPillar();
+		StopBoxSparkle();
 		SetActorHiddenInGame(true);
 		// 서버는 OnTriggerBeginOverlap이 직접 부르고 클라이언트는 복제로 온다: 머신마다 한 번.
 		UGameAudioSubsystem::PlayAt(this, AudioTags::Audio_Item_Pickup, GetActorLocation(), Profile ? Profile->Sounds.Get() : nullptr);
@@ -280,6 +289,7 @@ void AItemPickup::ApplyState()
 	if (bActive)
 	{
 		StartPillar();
+		StartBoxSparkle();
 	}
 
 	BP_OnStateChanged(State);
@@ -313,6 +323,30 @@ void AItemPickup::StopPillar()
 	{
 		// DeactivateImmediate가 아니다. 스폰만 멈추고 떠 있는 입자는 제 수명대로 옅어진다.
 		Pillar->Deactivate();
+	}
+}
+
+void AItemPickup::StartBoxSparkle()
+{
+	const UWorld* const World = GetWorld();
+	if (bBoxSparkleStarted || !BoxSparkle || !BoxSparkleTemplate || !World || World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	bBoxSparkleStarted = true;
+
+	// 상자 메시는 흔들리지만 반짝임은 제자리에 둔다. 메시를 따라 붙이면 반짝임까지 같이 출렁인다.
+	BoxSparkle->SetRelativeLocation(FVector(0.0f, 0.0f, BoxSparkleHeight));
+	BoxSparkle->SetAsset(BoxSparkleTemplate);
+	BoxSparkle->Activate(true);
+}
+
+void AItemPickup::StopBoxSparkle()
+{
+	if (BoxSparkle)
+	{
+		// 기둥과 같다: 스폰만 멈추고 떠 있는 입자는 제 수명대로 옅어진다.
+		BoxSparkle->Deactivate();
 	}
 }
 

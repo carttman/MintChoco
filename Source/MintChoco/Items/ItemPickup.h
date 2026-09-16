@@ -118,6 +118,23 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Pillar", meta = (ClampMin = "0", ForceUnits = "s"))
 	float PillarSeconds = 5.0f;
 
+	/**
+	 * 상자 둘레에서 계속 도는 반짝임. 아이템이 나오는 순간 켜지고 누가 가져갈 때 꺼진다.
+	 *
+	 * 기둥과 달리 시간 제한이 없다: 상자가 거기 있는 동안 내내 돈다. 연출뿐이라
+	 * 데디케이티드 서버에서는 켜지 않는다.
+	 */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Sparkle")
+	TObjectPtr<UNiagaraComponent> BoxSparkle;
+
+	/** 반짝임 이펙트. 비어 있으면 반짝임 없이 상자만 나온다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Sparkle")
+	TObjectPtr<UNiagaraSystem> BoxSparkleTemplate;
+
+	/** 반짝임이 도는 높이(cm). 상자 메시(Z +60)를 감싸게 맞춘다. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Sparkle", meta = (ForceUnits = "cm"))
+	float BoxSparkleHeight = 60.0f;
+
 	/** 아이템 위에 뜨는 디버그 이름표(스크린 공간). PIE에서 bShowLabel이 켜져 있고 활성 상태일 때만 보인다. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Item|Label")
 	TObjectPtr<UWidgetComponent> Label;
@@ -176,6 +193,12 @@ private:
 	/** 기둥을 끈다. PillarSeconds가 지났거나 누가 가져갔을 때. */
 	void StopPillar();
 
+	/** 상자 둘레의 반짝임을 켠다. 그릴 머신에서만, 활성이 되는 순간 한 번. */
+	void StartBoxSparkle();
+
+	/** 반짝임을 끈다. 누가 가져갔을 때. */
+	void StopBoxSparkle();
+
 	UFUNCTION()
 	void OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
 		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
@@ -188,6 +211,9 @@ private:
 
 	/** 기둥을 이미 한 번 켰는지. ApplyState는 여러 번 불리므로(BeginPlay, OnRep) 여기서 거른다. */
 	bool bPillarStarted = false;
+
+	/** 반짝임을 이미 한 번 켰는지. 기둥과 같은 이유. */
+	bool bBoxSparkleStarted = false;
 
 	/** 연출 시계(초)와 BP가 정한 메시의 기준 상대 트랜스폼. BeginPlay에서 읽는다. */
 	float MotionTime = 0.0f;
