@@ -7,7 +7,9 @@
 #include "Engine/World.h"
 #include "Game/GameGameMode.h"
 #include "Game/GamePlayerState.h"
+#include "Game/MatchResultSubsystem.h"
 #include "Game/PaintBar.h"
+#include "Game/UnitDataAsset.h"
 #include "GameFramework/PlayerController.h"
 #include "Game/TeamLook.h"
 #include "Game/TeamTypes.h"
@@ -86,11 +88,14 @@ void AGameGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(AGameGameState, KnockoutEndServerTime);
 	DOREPLIFETIME(AGameGameState, KnockoutTeam);
 	DOREPLIFETIME(AGameGameState, bEndedByKnockout);
+	DOREPLIFETIME(AGameGameState, TeamUnitData);
 }
 
 bool AGameGameState::AllowsPlayerInput(EMatchPhase Phase)
 {
-	return Phase == EMatchPhase::Playing || Phase == EMatchPhase::Ended;
+	// Ended 에서도 묶는다. 경기가 끝나면 결과 연출이 화면을 가져가므로 그 사이 움직일 수 있으면
+	// 아이템 효과가 계속 돌고, 페이드 직전에 폰이 엉뚱한 곳에 서 있게 된다.
+	return Phase == EMatchPhase::Playing;
 }
 
 bool AGameGameState::IsPlayerInputAllowed(const UWorld* World)
@@ -222,6 +227,20 @@ void AGameGameState::SetMatchResult(int32 InWinningTeam)
 	HandleMatchEnded();
 }
 
+UUnitDataAsset* AGameGameState::FindTeamUnitData(int32 Team) const
+{
+	return TeamUnitData.IsValidIndex(Team) ? TeamUnitData[Team].Get() : nullptr;
+}
+
+void AGameGameState::SetTeamUnitData(const TArray<TObjectPtr<UUnitDataAsset>>& InTeamUnitData)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	TeamUnitData = InTeamUnitData;
+}
+
 FText AGameGameState::GetMatchResultText() const
 {
 	return MakeMatchResultText(bMatchEnded, WinningTeam);
@@ -285,6 +304,12 @@ void AGameGameState::HandleMatchEnded()
 		: WinningTeam == LocalTeam ? AudioTags::Audio_Match_End_Win
 		: AudioTags::Audio_Match_End_Lose;
 	UGameAudioSubsystem::Play2D(this, Result);
+
+	// 연출에 필요한 값은 이미 복제됐다. 각 머신이 자기 화면에서 같은 그림을 만든다.
+	if (UMatchResultSubsystem* const Sequence = UMatchResultSubsystem::Get(this))
+	{
+		Sequence->BeginSequence();
+	}
 
 	BP_OnMatchEnded(WinningTeam);
 }

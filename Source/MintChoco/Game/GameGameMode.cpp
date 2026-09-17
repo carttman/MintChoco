@@ -5,6 +5,7 @@
 
 #include "EngineUtils.h"
 #include "Game/GameGameState.h"
+#include "Game/MatchResultSubsystem.h"
 #include "Game/GamePlayerState.h"
 #include "Game/TeamPlayerStart.h"
 #include "Game/Unit.h"
@@ -44,6 +45,9 @@ void AGameGameMode::StartPlay()
 		StartItemSpawning();
 		return;
 	}
+
+	// 결과 연출이 클라이언트에서도 양 팀 메시를 세워야 한다. 게임 모드는 서버에만 있으므로 복제 경로에 올린다.
+	State->SetTeamUnitData(TeamUnitData);
 
 	// 전원 준비 → 카운트다운 → 경기. HUD는 경기 전에도 한 판의 길이를 보여준다.
 	State->SetMatchDuration(MatchDuration);
@@ -336,13 +340,15 @@ void AGameGameMode::FinishMatch(int32 Winner)
 
 	State->SetMatchResult(Winner);
 
-	if (ReturnToLobbyDelay > 0.0f)
+	// 결과 연출이 다 끝난 뒤에 떠난다. 연출 길이는 연출이 정하므로 여기서 숫자를 따로 적지 않는다.
+	const float Delay = ReturnToLobbyDelay + UMatchResultSubsystem::GetTotalSeconds();
+	if (Delay > 0.0f)
 	{
-		GetWorldTimerManager().SetTimer(ReturnToLobbyTimer, this, &AGameGameMode::ReturnToLobby, ReturnToLobbyDelay, false);
+		GetWorldTimerManager().SetTimer(ReturnToLobbyTimer, this, &AGameGameMode::ReturnToLobby, Delay, false);
 
-		// 결과창의 카운트다운이 읽는 값. 타이머와 같은 순간을 가리켜야 숫자가 0이 되는 때와
+		// 결과 UI 의 카운트다운이 읽는 값. 타이머와 같은 순간을 가리켜야 숫자가 0이 되는 때와
 		// 실제로 떠나는 때가 맞는다.
-		State->SetReturnToLobbyTime(State->GetServerWorldTimeSeconds() + ReturnToLobbyDelay);
+		State->SetReturnToLobbyTime(State->GetServerWorldTimeSeconds() + Delay);
 	}
 }
 

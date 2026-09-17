@@ -114,6 +114,16 @@ public:
 	void FadeOut(float Duration = 0.0f);
 
 	/**
+	 * 이 머신만 다시 밝아진다. Duration 0 이하면 설정값.
+	 *
+	 * 트래블이 걸려 있으면 아무것도 하지 않는다: 열어 봐야 곧 맵이 넘어가 깜빡일 뿐이다. 맵 로드가
+	 * 끝나 여는 것은 이 함수가 아니라 준비 대기(HandlePostLoadMap)가 알아서 한다. 이 문은 트래블
+	 * 없이 화면만 덮었다 여는 연출(경기 결과)을 위한 것이다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Screen Fade")
+	void FadeIn(float Duration = 0.0f);
+
+	/**
 	 * "아직 로딩 중" 표시를 건다. 같은 소유자·이름으로 여러 번 걸면 그만큼 풀어야 한다.
 	 * 소유자가 사라지면(월드가 바뀌면) 홀드도 자동으로 무효가 되므로 새 맵에 새어 나가지 않는다.
 	 */
@@ -139,10 +149,16 @@ private:
 	void HideCover();
 	void ApplyOpacity();
 
+	/** 이번 페이드에 쓰는 시간. 부르는 쪽이 정한 값이 없으면 설정값. */
+	float GetFadeDuration() const;
+
 	/** 어두워진 뒤 실제로 떠난다. */
 	void PerformQueuedTravel();
 
 	FScreenFadeState State;
+
+	/** FadeOut/FadeIn 이 들려 보낸 시간. 0 이면 설정값을 쓴다. 화면이 다 열리면 지운다. */
+	float DurationOverride = 0.0f;
 
 	struct FHold
 	{

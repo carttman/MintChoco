@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 
+#include "Game/TeamTypes.h"
+
 #include "PaintBar.generated.h"
 
 /**
@@ -60,6 +62,16 @@ struct MINTCHOCO_API FPaintBarPreview
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint Bar", meta = (ClampMin = "4", ForceUnits = "s", EditCondition = "bEnabled && bLoopDemo"))
 	float DemoPeriod = 20.0f;
+
+	/**
+	 * KO 마무리(이긴 쪽 게이지를 더 밀고 진 쪽 액체를 탁하게)를 이 팀이 이긴 것처럼 바로 건다.
+	 * 판정선을 넘긴 채 버티는 시계를 기다리지 않는다. Teams::None 이면 걸지 않는다.
+	 *
+	 * 결과 연출은 최종 비율이 판정선 밖이어도 같은 마무리를 써야 하므로 이 문이 필요하다. 경기 중에는
+	 * 쓰이지 않는다 - 그때는 AGameGameState 가 판정한 값이 그대로 온다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint Bar", meta = (ClampMin = "-1", ClampMax = "6", EditCondition = "bEnabled && !bLoopDemo"))
+	int32 ForcedKnockoutTeam = Teams::None;
 };
 
 /** 게이지가 채운 길이. 각자 자기 끝에서 잰 비율이고 둘의 합은 1을 넘지 않는다. */

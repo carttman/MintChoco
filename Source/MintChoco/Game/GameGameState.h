@@ -10,6 +10,8 @@
 
 #include "GameGameState.generated.h"
 
+class UUnitDataAsset;
+
 /**
  * 한 판의 단계. 서버가 정하고 복제된다.
  * WaitingForPlayers(전원 준비 대기) → Countdown(3초) → Playing(타이머 진행) → Ended(결과).
@@ -184,6 +186,17 @@ public:
 	/** 위의 규칙만 떼어낸 것. 월드도 인스턴스도 없이 테스트한다(LeaderPastLine과 같은 이유). */
 	static FText MakeMatchResultText(bool bEnded, int32 InWinningTeam);
 
+	/**
+	 * 팀 번호를 인덱스로 쓰는 캐릭터 정의. 없으면 nullptr.
+	 *
+	 * 원본은 AGameGameMode::TeamUnitData 인데 게임 모드는 서버에만 있다. 결과 연출은 클라이언트에서도
+	 * 양 팀의 메시를 세워야 하므로 서버가 경기 시작 때 이리로 옮겨 담아 복제한다.
+	 */
+	UUnitDataAsset* FindTeamUnitData(int32 Team) const;
+
+	/** 서버 전용. 게임 모드가 가진 팀별 캐릭터 정의를 복제 경로에 올린다. */
+	void SetTeamUnitData(const TArray<TObjectPtr<UUnitDataAsset>>& InTeamUnitData);
+
 	/** 경기가 끝났을 때 서버와 모든 클라이언트에서 한 번씩 불린다. 결과 UI를 여기에 붙인다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Match")
 	void BP_OnMatchEnded(int32 InWinningTeam);
@@ -261,6 +274,10 @@ protected:
 	 */
 	UPROPERTY(Replicated)
 	double MatchEndServerTime = 0.0;
+
+	/** 팀 번호를 인덱스로 쓰는 캐릭터 정의. 게임 모드가 경기 시작 때 한 번 채우고 그대로 복제된다. */
+	UPROPERTY(Replicated)
+	TArray<TObjectPtr<UUnitDataAsset>> TeamUnitData;
 
 	/**
 	 * 전원이 로비로 떠나는 서버 월드 시각. 0이면 예약되지 않았다(경기 중이거나 자동 복귀를 껐다).

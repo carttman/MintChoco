@@ -68,6 +68,21 @@ FGameplayTag FGameHudMath::CountdownTickTag(EGameHudCenter Kind, int32 Number)
 
 // ---------------------------------------------------------------- UGameHudWidget
 
+void UGameHudWidget::SetHudVisible(bool bVisible)
+{
+	if (!bVisible)
+	{
+		// Collapsed 는 틱도 멈춘다. 결과 연출 동안 타이머와 크로스헤어가 계속 돌 이유가 없다.
+		if (GetVisibility() != ESlateVisibility::Collapsed)
+		{
+			VisibilityBeforeHide = GetVisibility();
+		}
+		SetVisibility(ESlateVisibility::Collapsed);
+		return;
+	}
+	SetVisibility(VisibilityBeforeHide);
+}
+
 void UGameHudWidget::NativeConstruct()
 {
 	Super::NativeConstruct();

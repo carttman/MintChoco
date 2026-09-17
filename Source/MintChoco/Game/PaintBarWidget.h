@@ -69,6 +69,24 @@ public:
 
 	FVector2D GetBarSize() const { return BarSize; }
 
+	/**
+	 * 바의 크기를 바꾼다. 결과 연출은 경기 중 HUD 보다 큰 바를 쓴다. 위젯 블루프린트를 따로 만들지
+	 * 않고 C++ 에서 바로 얹을 수 있도록 열어 둔 문이다.
+	 */
+	void SetBarSize(const FVector2D& InBarSize);
+
+	/** 값이 바뀔 때 게이지가 따라가는 시간. 느리게 두면 차오르는 것이 보인다. */
+	void SetFillSmoothingSeconds(float InSeconds) { FillSmoothingSeconds = FMath::Max(InSeconds, 0.0f); }
+
+	/**
+	 * 경기의 격돌 문턱과 판정선을 넘겨준다. 커버리지 미리보기를 켜면 바가 AGameGameState 에서
+	 * 떨어져 나가므로(FindRuleSource), 경기와 같은 자로 재려면 부르는 쪽이 값을 들려 보내야 한다.
+	 */
+	void SetMatchRules(float InClashCoverage, float InKoLine);
+
+	int32 GetLeftPaintId() const { return LeftPaintId; }
+	int32 GetRightPaintId() const { return RightPaintId; }
+
 protected:
 	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
@@ -255,6 +273,9 @@ private:
 		float RingProgress = 0.0f;
 		int32 RingNumber = 0;
 	};
+
+	/** 지금 커버리지 대신 쓰는 값. 디자이너 미리보기가 먼저고, 게임에서는 SetCoverageOverride 로 들어온 것. 없으면 nullptr. */
+	const FPaintBarPreview* FindCoveragePreview() const;
 
 	FVector2f ReadCoverage(float DeltaTime);
 	FVector2f CoverageOf(const FPaintCoverage& Coverage) const;

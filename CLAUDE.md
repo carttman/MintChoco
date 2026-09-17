@@ -126,7 +126,12 @@ scalar. Tests: `MintChoco.Paint.Materials.LookStyle` catches a material that ski
 - Match flow: `AGameGameState::MatchPhase` WaitingForPlayers → Countdown → Playing → Ended;
   input is locked until Playing through `IsPlayerInputAllowed`.
 - Screen fade: every travel goes through `UScreenFadeSubsystem::*TravelWithFade`; a direct
-  `ServerTravel` skips the cover.
+  `ServerTravel` skips the cover. `FadeOut`/`FadeIn` cover this machine only, no travel.
+- Match result (`Source/MintChoco/Game/MatchResult*`): `UMatchResultSubsystem` plays the end-of-match
+  shot **locally on every machine** off already-replicated values; `AMatchResultStage` is the placed
+  camera + two foreground character slots; the gauge is a second `UPaintBarWidget` driven through
+  `FPaintBarPreview` (`ForcedKnockoutTeam` is what makes the KO finish play on a clock win).
+  `mc.Result.Preview` replays it without a match. Tests: `MintChoco.Match.Result.*`.
 - Steam sessions: use `Online::GetSubsystem(GetWorld())`, keep `bAllowJoinInProgress` on, and
   filter lobbies with a private key; any filter change must be repackaged on both PCs.
 - Look presets (`Source/MintChoco/Look/`): the shipped look is **baked into the level**. Hybrid

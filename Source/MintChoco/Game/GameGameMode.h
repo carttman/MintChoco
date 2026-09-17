@@ -99,14 +99,15 @@ protected:
 	float DrawMarginFraction = 0.1f;
 
 	/**
-	 * 결과창이 뜨고 이만큼 뒤에 전원이 로비로 돌아간다(초). 0 이하면 자동 복귀하지 않고
-	 * 결과창의 나가기 버튼만 남는다.
+	 * 결과 연출이 끝나고 이만큼 더 있다가 전원이 로비로 돌아간다(초). 연출 길이
+	 * (UMatchResultSubsystem::GetTotalSeconds)는 여기에 자동으로 더해지므로, 이 값은 연출이
+	 * 끝난 뒤의 여운만 뜻한다. 0이면 연출이 끝나는 즉시 떠난다.
 	 *
 	 * 서버 트래블이라 접속한 전원이 함께 따라간다. 화면이 실제로 넘어가는 것은 이 시간 뒤
-	 * 페이드 아웃이 끝나는 순간이므로, 이 값은 "결과를 보는 시간"이다.
+	 * 페이드 아웃이 끝나는 순간이다.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0.0", ForceUnits = "s"))
-	float ReturnToLobbyDelay = 5.0f;
+	float ReturnToLobbyDelay = 0.0f;
 
 
 	/**

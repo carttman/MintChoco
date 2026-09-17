@@ -356,6 +356,58 @@ last `FinalCountdownSeconds`).
 |---|---|
 | The countdown never starts | A PlayerState never reported ready: it needs a local PlayerController, a valid pawn, and `UScreenFadeSubsystem::IsCovered()` false. `LogMintChoco` prints `준비 완료` per player and a warning when `ReadyTimeout` fires. |
 | Players can move during the countdown | The phase is read from the world's `AGameGameState`; a map using another GameState class locks nothing. |
+| Players can still move after the match ends | `AllowsPlayerInput` returns true for `Playing` only. It used to allow `Ended` as well; the result sequence needs the pawns still. Looking around is deliberately not gated. |
+
+## Match result sequence (승리 연출)
+
+`AGameGameState::HandleMatchEnded` (every machine) starts `UMatchResultSubsystem`, a world
+subsystem that plays the whole thing **locally**. Nothing about the sequence is replicated: the
+winner, the final coverage and `bEndedByKnockout` already are, so every machine builds the same
+picture from the same numbers. The only server-side part is the lobby travel timer, and
+`AGameGameMode::FinishMatch` sizes it as `ReturnToLobbyDelay + UMatchResultSubsystem::GetTotalSeconds()`
+so the two can never drift.
+
+Phases (`FMatchResultTimeline`, all times in `[/Script/MintChoco.MatchResultSettings]`):
+Frozen → FadingOut → Reveal → BarEmpty → BarTeaser → BarReal → BarFinish → Characters → Hold.
+The fade is subtracted from `FreezeSeconds`, so the screen is fully covered exactly
+`FreezeSeconds` after the match ends.
+
+`AMatchResultStage` is the shot: a camera plus two slots parented **to the camera**, so the
+characters are foreground elements floating in front of it, not standing on the floor. That is
+what makes the layering (map behind → characters → UMG bar in front) fall out for free. Place one
+in the map and frame it in the viewport; with none in the map the subsystem spawns one and
+`FrameBounds` guesses from the union of every paintable actor's bounds.
+
+The two characters are plain `USkeletalMeshComponent`s in `AnimationSingleNode` mode, not pawns
+and not `RT_ABP_Unit_V2` — that graph reads from a pawn, and single-node playback is exactly
+"stand → dance → freeze". The freeze is `bPauseAnims`, which stops ticking but keeps refreshing
+bones, so the pose holds.
+
+A slot means **position only**. `PoseAtOffset` writes the character's world transform every time it
+moves: yaw so it faces the camera (yaw alone — following the overhead pitch would lay it on its
+back), and position offset along the camera's forward axis, so a step toward the camera changes the
+character's size without sliding it across the screen. Move a slot anywhere and the character still
+faces the viewer and still steps along the view axis.
+
+| Symptom | Check first |
+|---|---|
+| A slot is empty | `AGameGameState::TeamUnitData`, which `AGameGameMode::StartPlay` copies from its own `TeamUnitData` (set in `BP_GameMode`). The game mode only exists on the server, so clients read the replicated copy; an empty array there means the mode's array was empty too. `LogMintChoco` warns per slot. |
+| The clash effect shows on a quiet match, or never shows | Nothing triggers clash. `FPaintBarFill::IsClashing()` is "both gauges non-empty and their lengths fill the bar", which happens when the two coverages sum to `ClashCoverage` (0.6). A match that ended at 25/20 correctly shows none. The teaser (0.1/0.1) stays under the threshold on purpose. |
+| The KO finish never appears on a match that ended on the clock | `FPaintBarPreview::ForcedKnockoutTeam`. Turning the coverage override on detaches the bar from the GameState (`FindRuleSource`), so the KO hold clock would never fire; the sequence names the winner directly instead. The flag follows the GameState's inverted convention — a side's KO flag means *the opponent* won, which is why the loser's liquid dulls and the winner's gauge is the one pushed. |
+| The result bar's clash threshold differs from the match's | Same detachment. `UMatchResultSubsystem::CreateBar` copies `GetClashCoverage` / `GetKnockoutLine` in through `UPaintBarWidget::SetMatchRules`. |
+| The bar animates up from zero on the first frame instead of starting empty | It cannot: the widget takes its first coverage instantly (`bHasCoverage`), and the bar is created fresh inside the blackout with (0, 0). If it does, something created the bar before `Reveal`. |
+| Left/right teams disagree with the gauge | The bar owns the orientation. `UMatchResultSubsystem::Start` reads `LeftPaintId` / `RightPaintId` off the bar class CDO and seats the characters from that, so flipping the bar flips the characters. |
+| A character faces sideways or away | `AMatchResultStage::MeshYawOffset` (-90, the `ACharacter` convention: this project's meshes face +Y in their own space). Rotating the character **component** in the Blueprint does nothing — `PoseAtOffset` overwrites its world rotation every move. |
+| A character drifts across the screen while stepping in or out | It should not: the step is along `Camera->GetForwardVector()`, which keeps its screen position. A slot rotated in the Blueprint is ignored on purpose. |
+| The decorative frame never appears, or appears too early | `UMatchResultFrameWidget` is added transparent in `Reveal` and told to fade only on entering `Hold` — the instant the step finishes and the winner's dance starts. An empty `UMatchResultSettings::FrameTexture` skips the widget entirely and the rest of the sequence still runs. It fades on a draw too: the frame dresses the result, not the win. |
+| The whole screen turns white when the frame fades in | A native `UUserWidget` has no widget tree until `RebuildWidget` runs, and that only happens on `AddToViewport` - **not** in `CreateWidget`. Configuring a child widget before then is silently dropped, and `UImage`'s default brush has no resource, which Slate draws as a full-screen white box. `UMatchResultFrameWidget` holds the texture in `FrameTexture` and applies it from `RebuildWidget`; a null texture collapses the image rather than leaving the default brush. The same ordering applies to any native widget that builds its tree in `RebuildWidget` (`UPaintBarWidget` sidesteps it by drawing in `NativePaint` and re-applying `BarSize` through `SynchronizeProperties`). |
+| The frame covers the coverage bar | It should not — the art is top and sides only, and the frame is laid at a lower ZOrder than the bar. A frame texture with content in the lower middle will fight the bar. |
+| The loser is not grey | `r.CustomDepth=3` (Custom Depth-Stencil Pass: Enabled with Stencil) in `DefaultEngine.ini`, and `UMatchResultSettings::LoserDesaturateMaterial`. The blendable is added to the stage camera only, in `BeginPlay`, so nothing about the match render changes. Empty material = the rest of the sequence still runs. |
+| The map travels to the lobby mid-sequence | `ReturnToLobbyDelay` is now *extra* time after the sequence, not the whole wait. A `BP_GameMode` that serialised the old 5.0 just adds five seconds of hold. |
+| The loading screen widget flashes during the result fade | `FadeOut`/`FadeIn` use `UScreenFadeSettings::LoadingWidgetClass` like any other fade. If `WBP_LoadingScreen` carries a spinner or "로딩 중" text, it will show. |
+| Checking the look without playing a match | `mc.Result.Preview <민트 %> <초코 %> [이긴 팀 0\|1\|-1]`, no args to stop. `55 40 0` clashes then finishes, `25 20 0` finishes with no clash, `45 45 -1` is a draw. |
+
+Tests: `MintChoco.Match.Result.*`.
 
 ## Audio
 
