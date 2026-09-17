@@ -17,7 +17,14 @@
 #include "Items/ItemSpawnPoint.h"
 #include "Kismet/GameplayStatics.h"
 #include "MintChoco.h"
+#include "Screen/ScreenFadeSubsystem.h"
 #include "TimerManager.h"
+
+namespace
+{
+	/** 돌아갈 로비. 세션을 만든 뒤 처음 가는 곳과 같아야 한다(UOnlineSessionsSubsystem). */
+	const TCHAR* const LobbyURL = TEXT("/Game/Maps/Lobby?listen");
+}
 
 AGameGameMode::AGameGameMode()
 {
@@ -243,7 +250,7 @@ void AGameGameMode::EndMatchByKnockout(int32 Team)
 	GetWorldTimerManager().ClearTimer(MatchTimer);
 
 	const float Fraction = State->GetWorldCoverage().GetFraction(static_cast<uint8>(Team));
-	State->SetMatchResult(Team);
+	FinishMatch(Team);
 
 	UE_LOG(LogMintChoco, Log, TEXT("KO 승리: %s (점유율 %.1f%%를 %.1f초 유지, 남은 시간 %.1f초)"),
 		Teams::GetDisplayName(Team), Fraction * 100.0f, State->GetKnockoutHoldSeconds(), State->GetRemainingTime());
@@ -300,7 +307,7 @@ void AGameGameMode::OnMatchTimeExpired()
 	const bool bDraw = RelativeMargin <= DrawMarginFraction;
 	const int32 Winner = bDraw ? Teams::None : BestTeam;
 
-	State->SetMatchResult(Winner);
+	FinishMatch(Winner);
 
 	UE_LOG(LogMintChoco, Log,
 		TEXT("경기 종료: %s (1위 %.2f%% vs 2위 %.2f%%, 상대 격차 %.1f%% / 무승부 기준 %.1f%%) | %s"),
@@ -310,6 +317,53 @@ void AGameGameMode::OnMatchTimeExpired()
 		RelativeMargin * 100.0f,
 		DrawMarginFraction * 100.0f,
 		*Coverage.ToString());
+}
+
+void AGameGameMode::FinishMatch(int32 Winner)
+{
+	AGameGameState* const State = GetGameState<AGameGameState>();
+	if (!State)
+	{
+		return;
+	}
+
+	// 이미 끝난 경기면 여기서 아무 일도 일어나지 않는다(SetMatchResult가 막는다). 그 경우
+	// 복귀 예약도 다시 걸지 않아야 하므로 확정 여부를 먼저 본다.
+	if (State->IsMatchEnded())
+	{
+		return;
+	}
+
+	State->SetMatchResult(Winner);
+
+	if (ReturnToLobbyDelay > 0.0f)
+	{
+		GetWorldTimerManager().SetTimer(ReturnToLobbyTimer, this, &AGameGameMode::ReturnToLobby, ReturnToLobbyDelay, false);
+
+		// 결과창의 카운트다운이 읽는 값. 타이머와 같은 순간을 가리켜야 숫자가 0이 되는 때와
+		// 실제로 떠나는 때가 맞는다.
+		State->SetReturnToLobbyTime(State->GetServerWorldTimeSeconds() + ReturnToLobbyDelay);
+	}
+}
+
+void AGameGameMode::ReturnToLobby()
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 서버 트래블이라 접속한 전원이 함께 넘어간다. 가림막을 거치는 것이 이 프로젝트의 규칙이다.
+	if (UScreenFadeSubsystem* const Fade = UScreenFadeSubsystem::Get(World))
+	{
+		Fade->ServerTravelWithFade(LobbyURL);
+		return;
+	}
+
+	// 가림막이 없으면 화면이 튀지만, 결과창에 갇혀 있는 것보다는 낫다.
+	UE_LOG(LogMintChoco, Warning, TEXT("화면 가림막을 찾지 못해 페이드 없이 로비로 돌아갑니다."));
+	World->ServerTravel(LobbyURL);
 }
 
 int32 AGameGameMode::GetTeamOf(const AController* Player) const

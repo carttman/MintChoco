@@ -85,4 +85,29 @@ bool FMatchResultTextTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+/**
+ * 로비 복귀 카운트다운 문구. 올림이라 5초가 남은 순간에 5가 뜨고, 마지막 한 조각이 남아 있는
+ * 동안에도 1이 남는다 — 내림으로 세면 시작하자마자 4가 되고 마지막 1초를 0으로 센다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FReturnToLobbyTextTest,
+	"MintChoco.Match.ReturnToLobbyText",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FReturnToLobbyTextTest::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("5초가 그대로 남았으면 5"),
+		AGameGameState::MakeReturnToLobbyText(5.0f).ToString(), TEXT("5초 뒤 로비로 이동"));
+	TestEqual(TEXT("4.2초는 아직 5로 보인다"),
+		AGameGameState::MakeReturnToLobbyText(4.2f).ToString(), TEXT("5초 뒤 로비로 이동"));
+	TestEqual(TEXT("마지막 한 조각도 1로 남는다"),
+		AGameGameState::MakeReturnToLobbyText(0.3f).ToString(), TEXT("1초 뒤 로비로 이동"));
+
+	// 다 됐거나 예약이 없으면 칸이 비어야 한다. 0을 띄우면 떠나지도 않은 채 "0초"가 남는다.
+	TestTrue(TEXT("0이면 빈 텍스트"), AGameGameState::MakeReturnToLobbyText(0.0f).IsEmpty());
+	TestTrue(TEXT("음수여도 빈 텍스트"), AGameGameState::MakeReturnToLobbyText(-1.0f).IsEmpty());
+
+	return true;
+}
+
 #endif

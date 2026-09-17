@@ -77,6 +77,7 @@ void AGameGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(AGameGameState, SplatLog);
 	DOREPLIFETIME(AGameGameState, WorldCoverage);
 	DOREPLIFETIME(AGameGameState, MatchEndServerTime);
+	DOREPLIFETIME(AGameGameState, ReturnToLobbyServerTime);
 	DOREPLIFETIME(AGameGameState, WinningTeam);
 	DOREPLIFETIME(AGameGameState, bMatchEnded);
 	DOREPLIFETIME(AGameGameState, MatchPhase);
@@ -165,6 +166,45 @@ void AGameGameState::SetMatchEndTime(double InServerTime)
 	}
 
 	MatchEndServerTime = InServerTime;
+}
+
+void AGameGameState::SetReturnToLobbyTime(double InServerTime)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	ReturnToLobbyServerTime = InServerTime;
+}
+
+float AGameGameState::GetReturnToLobbyRemaining() const
+{
+	if (ReturnToLobbyServerTime <= 0.0)
+	{
+		return 0.0f;
+	}
+
+	return static_cast<float>(FMath::Max(0.0, ReturnToLobbyServerTime - GetServerWorldTimeSeconds()));
+}
+
+FText AGameGameState::GetReturnToLobbyText() const
+{
+	return MakeReturnToLobbyText(GetReturnToLobbyRemaining());
+}
+
+FText AGameGameState::MakeReturnToLobbyText(float RemainingSeconds)
+{
+	if (RemainingSeconds <= 0.0f)
+	{
+		return FText::GetEmpty();
+	}
+
+	// 올림이라 5.0초에 5가 뜨고 0.3초에도 1이 남는다. 내림으로 하면 시작하자마자 4가 되고
+	// 마지막 1초를 0으로 세다가 사라진다.
+	const int32 Seconds = FMath::CeilToInt(RemainingSeconds);
+	return FText::Format(NSLOCTEXT("MintChoco.Match", "ReturnToLobbyCountdown", "{0}초 뒤 로비로 이동"),
+		FText::AsNumber(Seconds));
 }
 
 void AGameGameState::SetMatchResult(int32 InWinningTeam)

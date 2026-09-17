@@ -98,6 +98,16 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float DrawMarginFraction = 0.1f;
 
+	/**
+	 * 결과창이 뜨고 이만큼 뒤에 전원이 로비로 돌아간다(초). 0 이하면 자동 복귀하지 않고
+	 * 결과창의 나가기 버튼만 남는다.
+	 *
+	 * 서버 트래블이라 접속한 전원이 함께 따라간다. 화면이 실제로 넘어가는 것은 이 시간 뒤
+	 * 페이드 아웃이 끝나는 순간이므로, 이 값은 "결과를 보는 시간"이다.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0.0", ForceUnits = "s"))
+	float ReturnToLobbyDelay = 5.0f;
+
 
 	/**
 	 * 팀 번호를 인덱스로 쓰는 캐릭터 정의. [0]은 민트, [1]은 초코.
@@ -149,9 +159,21 @@ private:
 	/** 시간이 다 됐을 때. 커버리지를 다시 재고 더 많이 칠한 팀을 승팀으로 확정한다. 같으면 무승부. */
 	void OnMatchTimeExpired();
 
+	/**
+	 * 경기를 끝내는 단 하나의 자리. 결과를 확정하고 로비 복귀를 예약한다.
+	 *
+	 * 시간 만료와 KO가 각자 SetMatchResult를 부르던 것을 여기로 모았다. 종료 경로가 하나
+	 * 더 생겨도 복귀 예약을 빼먹을 수 없다.
+	 */
+	void FinishMatch(int32 Winner);
+
+	/** 서버 전용. 전원을 로비로 데려간다. 트래블은 페이드를 거친다(직접 ServerTravel은 화면이 튄다). */
+	void ReturnToLobby();
+
 	FTimerHandle ReadyCheckTimer;
 	FTimerHandle CountdownTimer;
 	FTimerHandle MatchTimer;
+	FTimerHandle ReturnToLobbyTimer;
 
 	/** 준비 대기를 시작한 서버 시각. ReadyTimeout의 기준. */
 	double WaitStartTime = 0.0;

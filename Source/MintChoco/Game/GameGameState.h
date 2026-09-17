@@ -137,6 +137,25 @@ public:
 	/** 서버 전용. 승팀을 확정한다. Teams::None은 무승부. */
 	void SetMatchResult(int32 InWinningTeam);
 
+	/** 서버 전용. 전원이 로비로 떠나는 서버 월드 시각을 정한다. 0이면 예약 없음. */
+	void SetReturnToLobbyTime(double InServerTime);
+
+	/** 로비로 떠나기까지 남은 시간(초). 예약이 없으면 0. 경기 타이머와 같은 방식이다. */
+	UFUNCTION(BlueprintPure, Category = "Match")
+	float GetReturnToLobbyRemaining() const;
+
+	/**
+	 * 결과창에 띄우는 카운트다운 문구. 예약이 없거나 다 됐으면 빈 텍스트다.
+	 *
+	 * 위젯은 텍스트를 여기에 바인딩하면 된다 — 매 프레임 다시 평가되므로 위젯 쪽에 타이머도
+	 * 틱도 필요 없다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Match")
+	FText GetReturnToLobbyText() const;
+
+	/** 위의 규칙만 떼어낸 것. 월드 없이 테스트한다. */
+	static FText MakeReturnToLobbyText(float RemainingSeconds);
+
 	/**
 	 * 남은 시간(초). 종료 시각에서 서버 시간을 뺀 값이라 모든 머신이 같은 답을 낸다.
 	 * 매 프레임 불러도 되고, 복제는 경기 시작 때 종료 시각 한 번뿐이다.
@@ -242,6 +261,15 @@ protected:
 	 */
 	UPROPERTY(Replicated)
 	double MatchEndServerTime = 0.0;
+
+	/**
+	 * 전원이 로비로 떠나는 서버 월드 시각. 0이면 예약되지 않았다(경기 중이거나 자동 복귀를 껐다).
+	 *
+	 * MatchEndServerTime과 같은 이유로 시각을 나른다: 남은 초를 매초 보내면 화면마다 눈금이
+	 * 다르게 튄다. 이 값은 경기가 끝날 때 한 번만 복제된다.
+	 */
+	UPROPERTY(Replicated)
+	double ReturnToLobbyServerTime = 0.0;
 
 	UPROPERTY(ReplicatedUsing = OnRep_MatchPhase)
 	EMatchPhase MatchPhase = EMatchPhase::WaitingForPlayers;
