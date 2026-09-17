@@ -5,6 +5,7 @@
 
 #include "EngineUtils.h"
 #include "Game/GameGameState.h"
+#include "Game/MatchResultSubsystem.h"
 #include "Game/GamePlayerState.h"
 #include "Game/TeamPlayerStart.h"
 #include "Game/Unit.h"
@@ -29,6 +30,22 @@ namespace
 {
 	/** 돌아갈 로비. 세션을 만든 뒤 처음 가는 곳과 같아야 한다(UOnlineSessionsSubsystem). */
 	const TCHAR* const LobbyURL = TEXT("/Game/Maps/Lobby?listen");
+
+#if !UE_BUILD_SHIPPING
+	FAutoConsoleCommandWithWorld GFinishMatchCommand(
+		TEXT("mc.Match.Finish"),
+		TEXT("경기를 지금 끝낸다. 시간이 다 된 것과 같은 길이라 승팀도 지금 점유율로 가려지고, 결과 연출과 로비 복귀까지 그대로 돈다. 서버에서만 듣는다."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+		{
+			AGameGameMode* const Mode = World ? World->GetAuthGameMode<AGameGameMode>() : nullptr;
+			if (!Mode)
+			{
+				UE_LOG(LogMintChoco, Warning, TEXT("mc.Match.Finish: 서버의 AGameGameMode 에서만 쓸 수 있다."));
+				return;
+			}
+			Mode->DebugFinishMatch();
+		}));
+#endif
 }
 
 AGameGameMode::AGameGameMode()
@@ -49,6 +66,9 @@ void AGameGameMode::StartPlay()
 		StartItemSpawning();
 		return;
 	}
+
+	// 결과 연출이 클라이언트에서도 양 팀 메시를 세워야 한다. 게임 모드는 서버에만 있으므로 복제 경로에 올린다.
+	State->SetTeamUnitData(TeamUnitData);
 
 	// 전원 준비 → 카운트다운 → 경기. HUD는 경기 전에도 한 판의 길이를 보여준다.
 	State->SetMatchDuration(MatchDuration);
@@ -341,15 +361,26 @@ void AGameGameMode::FinishMatch(int32 Winner)
 
 	State->SetMatchResult(Winner);
 
-	if (ReturnToLobbyDelay > 0.0f)
+	// 결과 연출이 다 끝난 뒤에 떠난다. 연출 길이는 연출이 정하므로 여기서 숫자를 따로 적지 않는다.
+	const float Delay = ReturnToLobbyDelay + UMatchResultSubsystem::GetTotalSeconds();
+	if (Delay > 0.0f)
 	{
-		GetWorldTimerManager().SetTimer(ReturnToLobbyTimer, this, &AGameGameMode::ReturnToLobby, ReturnToLobbyDelay, false);
+		GetWorldTimerManager().SetTimer(ReturnToLobbyTimer, this, &AGameGameMode::ReturnToLobby, Delay, false);
 
-		// 결과창의 카운트다운이 읽는 값. 타이머와 같은 순간을 가리켜야 숫자가 0이 되는 때와
+		// 결과 UI 의 카운트다운이 읽는 값. 타이머와 같은 순간을 가리켜야 숫자가 0이 되는 때와
 		// 실제로 떠나는 때가 맞는다.
-		State->SetReturnToLobbyTime(State->GetServerWorldTimeSeconds() + ReturnToLobbyDelay);
+		State->SetReturnToLobbyTime(State->GetServerWorldTimeSeconds() + Delay);
 	}
 }
+
+#if !UE_BUILD_SHIPPING
+void AGameGameMode::DebugFinishMatch()
+{
+	// 시간 만료와 같은 길로 보낸다. 승팀 판정도, 결과 연출도, 로비 복귀 예약도 전부 진짜와 같다.
+	GetWorldTimerManager().ClearTimer(MatchTimer);
+	OnMatchTimeExpired();
+}
+#endif
 
 void AGameGameMode::ReturnToLobbyNow()
 {

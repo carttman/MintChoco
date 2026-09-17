@@ -22,7 +22,8 @@ bool FMatchPhaseTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("waiting locks input"), AGameGameState::AllowsPlayerInput(EMatchPhase::WaitingForPlayers));
 	TestFalse(TEXT("countdown locks input"), AGameGameState::AllowsPlayerInput(EMatchPhase::Countdown));
 	TestTrue(TEXT("playing allows input"), AGameGameState::AllowsPlayerInput(EMatchPhase::Playing));
-	TestTrue(TEXT("ended allows input"), AGameGameState::AllowsPlayerInput(EMatchPhase::Ended));
+	// 끝난 판도 잠긴다. 결과 연출이 화면을 가져가는 동안 움직일 수 있으면 아이템 효과가 계속 돈다.
+	TestFalse(TEXT("ended locks input"), AGameGameState::AllowsPlayerInput(EMatchPhase::Ended));
 	TestTrue(TEXT("no game state: always allowed"), AGameGameState::IsPlayerInputAllowed(nullptr));
 
 	// 전원 준비: 한 명이라도 아니면 아니다. 아무도 없으면 시작하지 않는다.

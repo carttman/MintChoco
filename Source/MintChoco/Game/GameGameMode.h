@@ -75,6 +75,16 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Match")
 	void ReturnToLobbyNow();
 
+#if !UE_BUILD_SHIPPING
+	/**
+	 * 디버그. 시간이 다 된 것처럼 경기를 지금 끝낸다. mc.Match.Finish 가 부른다.
+	 *
+	 * 결과 연출을 끝까지 - 로비로 돌아가는 것까지 - 보려면 이 길로 들어와야 한다.
+	 * mc.Result.Preview 는 연출만 로컬로 돌릴 뿐이라 로비 복귀 타이머가 걸리지 않는다.
+	 */
+	void DebugFinishMatch();
+#endif
+
 protected:
 	/** 아이템이 나오는 주기(초). 0 이하면 아이템이 나오지 않는다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Items", meta = (ClampMin = "0.0", ForceUnits = "s"))
@@ -113,14 +123,15 @@ protected:
 	float DrawMarginFraction = 0.1f;
 
 	/**
-	 * 결과창이 뜨고 이만큼 뒤에 전원이 로비로 돌아간다(초). 0 이하면 자동 복귀하지 않고
-	 * 결과창의 나가기 버튼만 남는다.
+	 * 결과 연출이 끝나고 이만큼 더 있다가 전원이 로비로 돌아간다(초). 연출 길이
+	 * (UMatchResultSubsystem::GetTotalSeconds)는 여기에 자동으로 더해지므로, 이 값은 연출이
+	 * 끝난 뒤의 여운만 뜻한다. 0이면 연출이 끝나는 즉시 떠난다.
 	 *
 	 * 서버 트래블이라 접속한 전원이 함께 따라간다. 화면이 실제로 넘어가는 것은 이 시간 뒤
-	 * 페이드 아웃이 끝나는 순간이므로, 이 값은 "결과를 보는 시간"이다.
+	 * 페이드 아웃이 끝나는 순간이다.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0.0", ForceUnits = "s"))
-	float ReturnToLobbyDelay = 5.0f;
+	float ReturnToLobbyDelay = 0.0f;
 
 
 	/**

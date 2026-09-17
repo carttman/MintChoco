@@ -188,9 +188,26 @@ void UScreenFadeSubsystem::ClientTravelWithFade(const FString& URL)
 
 void UScreenFadeSubsystem::FadeOut(float Duration)
 {
+	DurationOverride = FMath::Max(Duration, 0.0f);
 	State.StartFadeOut();
 	EnsureCoverShown();
 	ApplyOpacity();
+}
+
+void UScreenFadeSubsystem::FadeIn(float Duration)
+{
+	if (bTravelQueued)
+	{
+		return;
+	}
+	DurationOverride = FMath::Max(Duration, 0.0f);
+	State.StartFadeIn();
+	ApplyOpacity();
+}
+
+float UScreenFadeSubsystem::GetFadeDuration() const
+{
+	return DurationOverride > 0.0f ? DurationOverride : UScreenFadeSettings::Get().FadeDuration;
 }
 
 void UScreenFadeSubsystem::AddHold(const UObject* Owner, FName Reason)
@@ -272,7 +289,7 @@ bool UScreenFadeSubsystem::Tick(float DeltaTime)
 	const EScreenFadePhase Before = State.Phase;
 	const float WaitedBefore = State.Elapsed;
 	const bool bReady = Before == EScreenFadePhase::WaitingForReady && IsWorldReady(World);
-	State.Tick(DeltaTime, Settings.FadeDuration, bReady, Settings.MaxReadyWait);
+	State.Tick(DeltaTime, GetFadeDuration(), bReady, Settings.MaxReadyWait);
 
 	if (Before == EScreenFadePhase::WaitingForReady && State.Phase == EScreenFadePhase::FadingIn && !bReady && !bWarnedTimeout)
 	{
@@ -305,6 +322,8 @@ bool UScreenFadeSubsystem::Tick(float DeltaTime)
 
 	if (State.IsClear())
 	{
+		// 다음 페이드는 다시 설정값에서 시작한다. 연출이 정한 시간이 트래블까지 따라가지 않도록.
+		DurationOverride = 0.0f;
 		HideCover();
 	}
 	else

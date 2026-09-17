@@ -128,6 +128,19 @@ void UPaintBarWidget::SynchronizeProperties()
 	BarBrush.ImageSize = FVector2f(BarSize);
 }
 
+void UPaintBarWidget::SetBarSize(const FVector2D& InBarSize)
+{
+	BarSize = InBarSize;
+	// 루트 SizeBox와 브러시가 크기를 따로 들고 있다. 이미 만들어진 뒤에도 맞도록 같은 경로를 탄다.
+	SynchronizeProperties();
+}
+
+void UPaintBarWidget::SetMatchRules(float InClashCoverage, float InKoLine)
+{
+	Rules.ClashCoverage = FMath::Max(InClashCoverage, 0.01f);
+	Rules.KoLine = FMath::Clamp(InKoLine, 0.0f, 0.45f);
+}
+
 void UPaintBarWidget::SetCoverageOverride(const FPaintBarPreview& InOverride)
 {
 	if (InOverride.bLoopDemo && !CoverageOverride.bLoopDemo)
@@ -203,18 +216,18 @@ void UPaintBarWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	UpdateMaterial();
 }
 
-FVector2f UPaintBarWidget::ReadCoverage(float DeltaTime)
+const FPaintBarPreview* UPaintBarWidget::FindCoveragePreview() const
 {
-	const FPaintBarPreview* Preview = nullptr;
 	if (IsDesignTime())
 	{
-		Preview = DesignerPreview.bEnabled ? &DesignerPreview : nullptr;
+		return DesignerPreview.bEnabled ? &DesignerPreview : nullptr;
 	}
-	else if (CoverageOverride.bEnabled)
-	{
-		Preview = &CoverageOverride;
-	}
+	return CoverageOverride.bEnabled ? &CoverageOverride : nullptr;
+}
 
+FVector2f UPaintBarWidget::ReadCoverage(float DeltaTime)
+{
+	const FPaintBarPreview* const Preview = FindCoveragePreview();
 	if (Preview)
 	{
 		if (Preview->bLoopDemo)
@@ -276,6 +289,18 @@ UPaintBarWidget::FKoStatus UPaintBarWidget::MakeKoStatus(FSideState& Side, const
 		Status.SecondsLeft = Status.bCounting ? FMath::CeilToInt(GameState->GetKnockoutRemaining()) : 0;
 		Status.bKnockedOut = GameState->IsMatchEnded() && GameState->WasEndedByKnockout() && GameState->GetWinningTeam() == OpponentPaintId;
 		return Status;
+	}
+
+	// 결과 연출은 판정선과 무관하게 이긴 팀을 들려 보낸다. GameState 분기와 같은 규칙이다:
+	// 한쪽의 플래그는 '상대가 이겼다'를 뜻하므로 진 쪽 액체가 탁해지고 이긴 쪽 게이지가 더 밀린다.
+	if (const FPaintBarPreview* const Preview = FindCoveragePreview())
+	{
+		if (Teams::IsValidId(Preview->ForcedKnockoutTeam))
+		{
+			Status.bKnockedOut = Preview->ForcedKnockoutTeam == OpponentPaintId;
+			Side.Clock = FPaintKoClock();
+			return Status;
+		}
 	}
 
 	Side.Clock.Advance(KoLine > 0.0f && FPaintBarMath::IsPastKoLine(OpponentFill, KoLine), DeltaTime, KoHoldSeconds);

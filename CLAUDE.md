@@ -3,54 +3,27 @@
 C++ follows the Epic Coding Standard (tabs, PascalCase, U/A/F/E prefixes);
 personal styles do not apply here.
 
-Reference docs, read on demand rather than up front:
+This file keeps only what cannot be looked up and does not go stale. Symbol names, numbers,
+asset paths and test ids belong in the code, not here — read them there, where they are true.
+The reference docs carry the detail and are read on demand, not up front:
 
-- `docs/UnrealMcp.md` — driving the editor over MCP: server setup, writes that crash, arrays
-  and pins, materials, Niagara, verifying. Read before the first MCP write of a session.
-- `docs/Traps.md` — symptom → check-first tables and system summaries: paint pipeline,
-  rendering, items (GAS), balloon, match flow, screen fade, Steam sessions. Read when
-  something looks wrong in PIE before forming a theory.
+- `docs/UnrealMcp.md` — driving the editor over MCP. Read before the first MCP write of a session.
+- `docs/Traps.md` — symptom → check-first tables, one section per system. Read when something
+  looks wrong in PIE, before forming a theory.
 
 ## Working rules
 
 - After an editor crash: stop, report the crash log (`Saved/Crashes/*/MintChoco.log`, the
-  `Assertion failed` line and the lines before it), and wait. Never keep working in a
-  relaunched editor on your own. A crash can surface minutes after the offending call
-  (autosave thumbnail compiles), so read the log instead of blaming the last call.
-- Never drive the developer's mouse or keyboard. Anything MCP cannot do (the `MP_Displacement`
-  wire, console commands, painting in PIE, layer stacks, dynamic pins) is a request to the
+  `Assertion failed` line and the lines before it), and wait. Never keep working in a relaunched
+  editor on your own. A crash can surface minutes after the call that caused it, so read the log
+  instead of blaming the last thing you did.
+- Never drive the developer's mouse or keyboard. Anything MCP cannot do is a request to the
   developer with exact steps. Launching or relaunching the editor and running a build watcher
   are fine.
-- Before "fixing" a graph the developer edited, ask what they changed. A wire that looks
-  wrong (packed ids on Anisotropy, weights on Refraction, coverage on Opacity) may be a
-  deliberate carrier convention.
+- Before "fixing" a graph the developer edited, ask what they changed. A wire that looks wrong
+  may be a deliberate carrier convention.
 - Try a new node type or property write on a scratch asset first, through save + recompile,
   before touching real assets.
-
-## Team look (colors and gloss)
-
-The single source is `Content/Assets/Paint/Materials/Team/MPC_TeamLook`: `MintColor`,
-`MintSubsurface`, `MintSurface`, `MintSurface2` and the same four for `Choco`. `Surface` packs
-`(Roughness, Specular [UE 0..1], Metallic, WetCoat)`, `Surface2` packs `(SecondRoughness,
-SecondRoughnessWeight, FuzzAmount, FuzzRoughness)`. Editing the MPC updates every material
-live; no recompile, no restart.
-
-- Shaders read it through `MF_TeamLook(TeamId)` → `Color, Subsurface, Roughness, Specular,
-  Metallic, WetCoat, SecondRoughness, SecondRoughnessWeight, FuzzAmount, FuzzRoughness`. Never
-  reorder or delete those outputs: call nodes address them by index; append only.
-- C++ reads it through `TeamLook::Get / GetColor / GetDisplayColor` (`Game/TeamLook.h`), which
-  resolve `UPaintSettings::TeamLookCollection`. The MPC is the only source — there is no fallback
-  table, and a collection that will not load leaves both teams neutral grey. Look presets do not
-  touch team color. `Teams::` holds ids and names only.
-- Every team-tinted master declares a scalar `TeamId` (0 Mint, 1 Choco); per-team MIs differ
-  only by `TeamId`. A non-team look (`MI_InkLiquid_Red`, `MI_InkSurface_Red`) sets
-  `UseTeamLook = 0`. `ML_Look_Mint/Choco` call the function with a constant 0/1, so the old
-  `Albedo/Roughness/Specular/SSSMFP/WetCoat/SecondRoughness/Fuzz*` layer parameters no longer
-  exist (`M_PaintSplashBlob` reads the same outputs, so the blob and the floor paint share one
-  slab recipe). MIDs set
-  `TeamId` from `Splat.PaintId`; the HUD bar and Niagara `User.TintColor` (splat, burst,
-  muzzle flash, charge hold) take `TeamLook::GetColor(PaintId)`.
-- Test: `MintChoco.Game.TeamLook.*`.
 
 ## MCP: the rules that crash or waste an hour
 
@@ -81,59 +54,40 @@ Details and the rest are in `docs/UnrealMcp.md`.
   `SetCameraTransform` then `captureTransform: null`. Captures return base64 too large for the
   tool result: decode the saved result file with PowerShell.
 
-## Paint pipeline in one paragraph
+## Conventions the code will not tell you
 
-The paint buffer is a procedural planar atlas: one island per enabled local direction on
-`UPaintableComponent`, packed from the mesh bounds by `FPaintIslandLayout`, baked on the CPU by
-`PaintAtlasBaker` from LOD 0 (Allow CPU Access required). `MF_PaintOverlay` picks the island
-from the pixel's local normal, so paint only shows on kept directions; anything else, and any
-non-paintable static mesh, gets a transient side-splat decal. Stamps and the cell grid are in
-the scaled-local frame (world cm). Paint thickness is `PaintMaxHeight` in world cm, which
-`UPaintableComponent` derives from the material: every paintable master bakes it into
-`DisplacementScaling.Magnitude`, so the number lives in one place.
-Nanite tessellation is on by default in 5.8; displacement
-follows the vertex normal and never recomputes shading normals. Per-pixel data through the
-layer stack rides pixel attributes only (Anisotropy, Refraction.rg, PixelDepthOffset, Opacity,
-Tangent); `CustomizedUVs` and WPO are vertex-frequency. The looks also borrow `ClearCoat`,
-`ClearCoatRoughness` and `AmbientOcclusion` for `FuzzAmount` / `FuzzRoughness` / `SSSMFPScale`,
-since Substrate ignores those pins. Height is read through a cubic B-spline that also returns
-its analytic slope (`MF_PaintHeightField` → `MF_PaintNormal`), never a finite difference, and its
-width never drops below one texel. Look style (coat / fuzz / roughness / flow) is
-`MPC_PaintStyle`, driven by `mc.Paint.Style`, and no material reads that collection by hand:
-every paint and ink surface runs its coat, fuzz and roughness through `MF_PaintStyle`, whose
-outputs are already scaled and whose output order is load-bearing like `MF_TeamLook`'s. A
-team-tinted material outside the look (graybox, a test asset) opts out with a `PaintStyleExempt`
-scalar. Tests: `MintChoco.Paint.Materials.LookStyle` catches a material that skipped the function,
-`.LookStyleCollection` catches a collection entry nothing reads. Everything else: `docs/Traps.md`.
+Each of these is a decision, not a fact you can read off a symbol. `docs/Traps.md` has the
+systems these belong to.
 
-## Gameplay systems in one line each
-
-- Items (`Source/MintChoco/Items/`): `UItemProfile` + `UItemAbility` + one
-  `UItemGameplayEffect` subclass per item, `UItemSlotComponent` on `AUnit`, list in
-  `[/Script/MintChoco.ItemSettings]`. Movement-affecting state rides compressed move flags,
-  never a GAS attribute.
-- Weapon hits reach any `IPaintHitReceiver` (`ABalloon`) through `FPaintDeposit::ApplyHit`
-  before the surface test; `HitPower` is the balance number.
-- Facing: the body yaw follows the camera only while moving or firing
-  (`UUnitMovementComponent::PhysicsRotation` gate, `RotationRate.Yaw` 720, `AUnit::FaceAimHoldSeconds`);
-  idle look-around leaves the body alone. Never turn `bUseControllerRotationYaw` back on.
-  While dashing (board) the yaw follows through `FBoardTurn` (smooth angular velocity with min/max
-  rate) instead of the constant 720, and the board lean is that turn rate × speed.
-- Firing origin: a shot's physics leaves the sight line at the pawn's depth (`PaintAim::FireOrigin`
-  → `FPaintFireContext::Muzzle`); the gun socket is only `VisualMuzzle`, for FX, tracers and the
-  ball mesh's merge onto the path (`UPaintballProfile::VisualMergeSeconds`). Never fire from the
-  animated socket: it wobbles with the pose and differs between owner and server.
-- Match flow: `AGameGameState::MatchPhase` WaitingForPlayers → Countdown → Playing → Ended;
-  input is locked until Playing through `IsPlayerInputAllowed`.
-- Screen fade: every travel goes through `UScreenFadeSubsystem::*TravelWithFade`; a direct
-  `ServerTravel` skips the cover.
-- Steam sessions: use `Online::GetSubsystem(GetWorld())`, keep `bAllowJoinInProgress` on, and
-  filter lobbies with a private key; any filter change must be repackaged on both PCs.
-- Look presets (`Source/MintChoco/Look/`): the shipped look is **baked into the level**. Hybrid
-  lives in `Lvl_Stage` / `Lvl_Stage_inside` (post-process volume, sun, hidden volumetric cloud)
-  plus `MI_StageSkyDome` and `MPC_TeamLook`, so the editor viewport, PIE and a packaged build all
-  show the same thing. `ULookPreset` assets and `ULookSubsystem` (`mc.Look <name|number|Off>`,
-  `mc.Look.List`) are a comparison tool that lays a preset over the baked look at runtime;
-  `mc.Look Off` is the baked look and `mc.Look Baseline` the pre-bake one. Details and the
-  pre-bake values: `docs/history/2026-09-look-bake/PreBake.md`.
-  Comparison captures set the `ReviewPreset` / `ReviewSetup` on the settings CDO before Simulate.
+- Team colors and gloss come from `MPC_TeamLook` and nowhere else. There is no fallback table: a
+  collection that will not load leaves both teams neutral grey. Editing the MPC updates every
+  material live — no recompile, no restart.
+- Material function outputs are addressed **by index** by their call nodes. Append only; never
+  reorder or delete one, however dead it looks.
+- `TeamId` is 0 Mint, 1 Choco. Per-team material instances differ only by that scalar. A look
+  that is not team-tinted opts out of the team color, and one outside the shared paint style
+  opts out of the style — both through an explicit scalar, never by skipping the function.
+- Paint only shows on the local directions a paintable component keeps. A disabled direction and
+  any non-paintable static mesh get a transient decal instead, so "the paint went missing" is
+  usually an atlas with no island there. Baking one needs CPU access on the mesh.
+- Paint thickness lives in the material and the component reads it back, so the number exists in
+  one place. Do not reintroduce it in code.
+- Substrate ignores the clear-coat and ambient-occlusion pins, so the looks borrow them to carry
+  other values. A number on those pins is not what the pin is named.
+- Per-pixel data through a layer stack rides pixel attributes only. `CustomizedUVs` and WPO are
+  vertex-frequency and will quantise anything sent through them.
+- Height is read through a spline that returns its own analytic slope, never a finite difference.
+- Movement-affecting item state rides compressed move flags, never a GAS attribute.
+- Never fire a shot from the animated gun socket: it wobbles with the pose and differs between
+  owner and server. That socket is for FX only; the shot leaves the sight line at the pawn's depth.
+- Never turn `bUseControllerRotationYaw` back on. The body yaw is driven by the movement
+  component on purpose, so that idle look-around does not turn the body.
+- Every travel goes through the screen fade subsystem. A direct `ServerTravel` skips the cover.
+- The end-of-match shot plays locally on every machine off already-replicated values, not off an
+  RPC. Anything it needs must already be on a replicated path before the match ends.
+- Steam sessions: resolve the subsystem with `Online::GetSubsystem(GetWorld())`, keep
+  `bAllowJoinInProgress` on, and filter lobbies with a private key. Any filter change has to be
+  repackaged on both PCs or they stop seeing each other.
+- The shipped look is **baked into the levels**, not applied at runtime. The `mc.Look` presets
+  are a comparison tool laid over it; "off" is the shipped look. Never treat a preset as the
+  source of truth, and never assume a level carries the bake without checking that level.

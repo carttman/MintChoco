@@ -73,6 +73,13 @@ class MINTCHOCO_API UGameHudWidget : public UUserWidget
 {
 	GENERATED_BODY()
 
+public:
+	/**
+	 * HUD 전체를 보이거나 감춘다. 경기 결과 연출이 화면을 무대로 바꾸는 동안 쓴다. 뷰포트에서 빼지
+	 * 않는 이유는 크로스헤어 호스트가 자기 상태(페이드, 인스턴스)를 들고 있어 다시 만들면 튀기 때문이다.
+	 */
+	void SetHudVisible(bool bVisible);
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
@@ -139,6 +146,9 @@ protected:
 	FLinearColor FinalCountdownColor = FLinearColor(1.0f, 1.0f, 1.0f, 0.5f);
 
 private:
+	/** 숨기기 전의 가시성. 위젯 블루프린트가 정한 값을 그대로 되돌리려고 기억해 둔다. */
+	ESlateVisibility VisibilityBeforeHide = ESlateVisibility::SelfHitTestInvisible;
+
 	/** Txt_Timer의 원래 색. 경고가 끝나면 되돌린다. */
 	FLinearColor TimerNormalColor = FLinearColor::White;
 	FLinearColor CountdownNormalColor = FLinearColor::White;
