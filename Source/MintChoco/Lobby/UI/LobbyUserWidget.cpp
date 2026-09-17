@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
 #include "LobbyUserWidget.h"
@@ -8,7 +8,24 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "LobbyWidget.h"
 #include "Components/EditableTextBox.h"
-#include "Game/TeamLook.h"
+#include "Game/TeamTypes.h"
+
+namespace
+{
+	/**
+	 * 로비 줄의 팀 글자색. sRGB 16진수를 FColor 로 적되 FLinearColor 로 풀어서 넘긴다.
+	 *
+	 * FSlateColor(FColor) 는 ReinterpretAsLinear(), 즉 255로 나누기만 하고 sRGB 감마를
+	 * 풀지 않는다. FColor 를 그대로 넘기면 #58ACB4 가 화면에 #9FD6DB 로 떠서 눈에 띄게
+	 * 연해진다. FLinearColor(FColor) 는 sRGBToLinearTable 을 거치므로 적어둔 색이
+	 * 그대로 나온다.
+	 */
+	constexpr FLinearColor MintTeamTextColor(FColor(0x58, 0xAC, 0xB4, 0xFF));
+	constexpr FLinearColor ChocoTeamTextColor(FColor(0x8F, 0x5D, 0x39, 0xFF));
+
+	/** 아직 팀을 고르지 않은 줄. */
+	constexpr FLinearColor NoTeamTextColor(FColor(0x00, 0x00, 0x00, 0xFF));
+}
 
 void ULobbyUserWidget::SetInfo(ALobbyPlayerState* InPlayerState)
 {
@@ -28,18 +45,23 @@ void ULobbyUserWidget::RefreshUI()
 	bool IsServer = UKismetSystemLibrary::IsServer(this);
 	bool IsLocalPlayer = false;
 	FText TeamText;
+	FLinearColor TeamColor;
 	if (PlayerState->Team == Teams::Mint)
-		TeamText = FText::FromString("Mint");
+	{
+		TeamText = FText::FromString(TEXT("민트"));
+		TeamColor = MintTeamTextColor;
+	}
 	else if (PlayerState->Team == Teams::Choco)
-		TeamText = FText::FromString("Choco");
+	{
+		TeamText = FText::FromString(TEXT("초코"));
+		TeamColor = ChocoTeamTextColor;
+	}
 	else
-		TeamText = FText::FromString("Select Team!");
-
-	const FColor TeamColor = Teams::IsValidId(PlayerState->Team)
-		? TeamLook::GetDisplayColor(PlayerState->Team, GetWorld())
-		: FColor(0, 0, 0, 255);
+	{
+		TeamText = FText::FromString(TEXT("팀 선택"));
+		TeamColor = NoTeamTextColor;
+	}
 	Txt_Team->SetColorAndOpacity(FSlateColor(TeamColor));
-
 	Txt_Team->SetText(TeamText);
 
 	if (APlayerController* PlayerController = PlayerState->GetPlayerController())
