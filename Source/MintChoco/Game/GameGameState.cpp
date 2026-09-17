@@ -77,6 +77,7 @@ void AGameGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	DOREPLIFETIME(AGameGameState, SplatLog);
 	DOREPLIFETIME(AGameGameState, WorldCoverage);
 	DOREPLIFETIME(AGameGameState, MatchEndServerTime);
+	DOREPLIFETIME(AGameGameState, ReturnToLobbyServerTime);
 	DOREPLIFETIME(AGameGameState, WinningTeam);
 	DOREPLIFETIME(AGameGameState, bMatchEnded);
 	DOREPLIFETIME(AGameGameState, MatchPhase);
@@ -167,6 +168,45 @@ void AGameGameState::SetMatchEndTime(double InServerTime)
 	MatchEndServerTime = InServerTime;
 }
 
+void AGameGameState::SetReturnToLobbyTime(double InServerTime)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	ReturnToLobbyServerTime = InServerTime;
+}
+
+float AGameGameState::GetReturnToLobbyRemaining() const
+{
+	if (ReturnToLobbyServerTime <= 0.0)
+	{
+		return 0.0f;
+	}
+
+	return static_cast<float>(FMath::Max(0.0, ReturnToLobbyServerTime - GetServerWorldTimeSeconds()));
+}
+
+FText AGameGameState::GetReturnToLobbyText() const
+{
+	return MakeReturnToLobbyText(GetReturnToLobbyRemaining());
+}
+
+FText AGameGameState::MakeReturnToLobbyText(float RemainingSeconds)
+{
+	if (RemainingSeconds <= 0.0f)
+	{
+		return FText::GetEmpty();
+	}
+
+	// 올림이라 5.0초에 5가 뜨고 0.3초에도 1이 남는다. 내림으로 하면 시작하자마자 4가 되고
+	// 마지막 1초를 0으로 세다가 사라진다.
+	const int32 Seconds = FMath::CeilToInt(RemainingSeconds);
+	return FText::Format(NSLOCTEXT("MintChoco.Match", "ReturnToLobbyCountdown", "{0}초 뒤 로비로 이동"),
+		FText::AsNumber(Seconds));
+}
+
 void AGameGameState::SetMatchResult(int32 InWinningTeam)
 {
 	if (!HasAuthority() || bMatchEnded)
@@ -180,6 +220,29 @@ void AGameGameState::SetMatchResult(int32 InWinningTeam)
 
 	// RepNotify는 값을 쓴 권한자에게는 오지 않는다. 리슨 호스트의 화면도 갱신되도록 직접 부른다.
 	HandleMatchEnded();
+}
+
+FText AGameGameState::GetMatchResultText() const
+{
+	return MakeMatchResultText(bMatchEnded, WinningTeam);
+}
+
+FText AGameGameState::MakeMatchResultText(bool bEnded, int32 InWinningTeam)
+{
+	// 경기 중에 팝업이 먼저 떠 있어도 빈 칸이지 "무승부"가 아니다. 둘을 가르는 것은 승팀 값이
+	// 아니라 끝났는지다 — 무승부의 승팀도 Teams::None이기 때문이다.
+	if (!bEnded)
+	{
+		return FText::GetEmpty();
+	}
+
+	if (!Teams::IsValidId(InWinningTeam))
+	{
+		return NSLOCTEXT("MintChoco.Match", "ResultDraw", "무승부");
+	}
+
+	return FText::Format(NSLOCTEXT("MintChoco.Match", "ResultWin", "{0} 팀 승리"),
+		FText::FromString(Teams::GetDisplayName(InWinningTeam)));
 }
 
 float AGameGameState::GetRemainingTime() const

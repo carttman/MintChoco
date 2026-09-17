@@ -9,6 +9,7 @@
 
 #include "Game/TeamTypes.h"
 #include "Paint/PaintBrushProfile.h"
+#include "Paint/PaintSplash.h"
 #include "Paint/PaintSplashProfile.h"
 #include "Weapons/PaintDeposit.h"
 #include "Weapons/PaintGunProfile.h"
@@ -106,6 +107,9 @@ bool FPaintProfileAssetTest::RunTest(const FString& Parameters)
 			TestNotNull(*FString::Printf(TEXT("%s: a splashing ball has an ImpactFX to fly its droplets"), *Name), Paintball->ImpactFX.Get());
 			TestTrue(*FString::Printf(TEXT("%s: Splash.MaxDropletSpeed is positive"), *Name), Splash->MaxDropletSpeed > 0.0f);
 			TestTrue(*FString::Printf(TEXT("%s: Splash.MaxLifetime is positive"), *Name), Splash->MaxLifetime > 0.0f);
+			TestTrue(*FString::Printf(TEXT("%s: Splash.DropletCount fits the slots"), *Name), Splash->DropletCount >= 1 && Splash->DropletCount <= PaintSplash::MaxDroplets);
+			TestTrue(*FString::Printf(TEXT("%s: Splash.MaxMarkDroplets flies at least one"), *Name), Splash->MaxMarkDroplets >= 1);
+			TestTrue(*FString::Printf(TEXT("%s: Splash.MaxScoreDroplets is within the count"), *Name), Splash->MaxScoreDroplets <= Splash->DropletCount);
 			if (const UMaterialInterface* const Blob = Splash->BlobMaterial)
 			{
 				// A mesh renderer silently drops an override material without this flag.

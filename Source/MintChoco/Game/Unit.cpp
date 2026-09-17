@@ -47,6 +47,25 @@ namespace
 {
 	/** 총 메시에 있는 총구 소켓. 발사 지점과 총구 화염이 같이 쓴다. */
 	const FName GunMuzzleSocketName(TEXT("Muzzle"));
+
+	/**
+	 * 로그에 찍을 이 머신의 역할. 스턴 로그에서 이것이 핵심이다 — 서버에 "적용" 줄이 없는데
+	 * 클라이언트에만 태그가 서면 원인이 스턴 경로가 아니라 복제·GE 쪽에 있다는 뜻이다.
+	 */
+	const TCHAR* NetRoleName(const APawn* Pawn)
+	{
+		if (!Pawn)
+		{
+			return TEXT("없음");
+		}
+		switch (Pawn->GetLocalRole())
+		{
+		case ROLE_Authority:       return Pawn->IsLocallyControlled() ? TEXT("호스트") : TEXT("서버");
+		case ROLE_AutonomousProxy: return TEXT("소유");
+		case ROLE_SimulatedProxy:  return TEXT("프록시");
+		default:                   return TEXT("?");
+		}
+	}
 }
 
 AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
@@ -446,14 +465,38 @@ bool AUnit::TryApplyStun()
 
 bool AUnit::TryApplyStun(float StunSeconds, float SuperArmorSeconds)
 {
-	if (!HasAuthority() || StunSeconds <= 0.0f || IsStunned() || HasSuperArmor())
+	// 걸리지 않은 이유는 걸린 사실만큼 중요하다. 거절을 조용히 false로만 돌려주면
+	// "맞았는데 안 걸렸다"와 "맞지도 않았는데 걸렸다"가 로그에서 구분되지 않는다.
+	const TCHAR* Refusal = nullptr;
+	if (!HasAuthority())
 	{
+		Refusal = TEXT("권한 없음");
+	}
+	else if (StunSeconds <= 0.0f)
+	{
+		Refusal = TEXT("지속시간 0");
+	}
+	else if (IsStunned())
+	{
+		Refusal = TEXT("이미 스턴");
+	}
+	else if (HasSuperArmor())
+	{
+		Refusal = TEXT("슈퍼아머");
+	}
+	if (Refusal)
+	{
+		UE_LOG(LogMintChoco, Verbose, TEXT("[스턴][%s] %s 거절: %s (요청 %.2f초)."),
+			NetRoleName(this), *GetNameSafe(this), Refusal, StunSeconds);
 		return false;
 	}
 
 	FActiveGameplayEffectHandle Handle;
 	if (!ApplyStatusEffect(UGE_Stunned::StaticClass(), ItemTags::State_Status_Stunned, StunSeconds, Handle))
 	{
+		// 여기까지 왔다면 길이도 권한도 멀쩡하다. 남은 이유는 ASC나 GE 설정뿐이라 경고다.
+		UE_LOG(LogMintChoco, Warning, TEXT("[스턴][%s] %s: 스턴 GE를 적용하지 못했다(%.2f초)."),
+			NetRoleName(this), *GetNameSafe(this), StunSeconds);
 		return false;
 	}
 
@@ -464,7 +507,10 @@ bool AUnit::TryApplyStun(float StunSeconds, float SuperArmorSeconds)
 		Removed->AddUObject(this, &AUnit::HandleStunEnded);
 	}
 
-	UE_LOG(LogMintChoco, Verbose, TEXT("%s: 스턴 %.2f초, 이어서 슈퍼아머 %.2f초."), *GetNameSafe(this), StunSeconds, SuperArmorSeconds);
+	// 실제로 걸린 순간은 항상 남긴다. 드문 사건이라 시끄럽지 않고, 간헐적인 제보는
+	// 재현될 때 로그가 이미 켜져 있어야만 잡힌다.
+	UE_LOG(LogMintChoco, Log, TEXT("[스턴][%s] %s 적용: %.2f초, 이어서 슈퍼아머 %.2f초."),
+		NetRoleName(this), *GetNameSafe(this), StunSeconds, SuperArmorSeconds);
 	return true;
 }
 
@@ -496,6 +542,12 @@ void AUnit::HandleStunEnded(const FGameplayEffectRemovalInfo& RemovalInfo)
 void AUnit::HandleStunTagChanged(const FGameplayTag Tag, int32 NewCount)
 {
 	const bool bStunned = NewCount > 0;
+
+	// 태그는 모든 머신에서 선다. 서버에 "적용" 줄이 없는데 여기만 켜졌다면 원인은
+	// TryApplyStun이 아니라 복제나 다른 GE에 있다 — 그 갈림은 이 한 줄로만 난다.
+	UE_LOG(LogMintChoco, Log, TEXT("[스턴][%s] %s 태그 %s (중첩 %d)."),
+		NetRoleName(this), *GetNameSafe(this), bStunned ? TEXT("켜짐") : TEXT("꺼짐"), NewCount);
+
 	if (bStunned)
 	{
 		// 누르고 있던 방아쇠는 놓는다. 차지 중이었다면 발사되지 않는다(부분 충전 발사도 없다).
@@ -1448,33 +1500,34 @@ void AUnit::SetBoardShown(bool bShown)
 	UpdateBoardLoopSound();
 }
 
-void AUnit::SetMeshLean(float RollDegrees)
+void AUnit::SetMeshOffset(const FRotator& Offset)
 {
 	USkeletalMeshComponent* const MeshComponent = GetMesh();
-	if (!MeshComponent || FMath::IsNearlyEqual(RollDegrees, MeshLeanDegrees, 1e-3f))
+	if (!MeshComponent || Offset.Equals(MeshOffset, 1e-3f))
 	{
 		return;
 	}
 
-	// 기준은 처음 기울일 때 한 번 잡는다. 기울이는 동안 캐릭터의 기준 회전도 같이 바뀌므로, 매번 다시
-	// 읽으면 기울기가 쌓인다.
+	// 기준은 처음 돌릴 때 한 번 잡는다. 돌리는 동안 캐릭터의 기준 회전도 같이 바뀌므로, 매번 다시
+	// 읽으면 회전이 쌓인다.
 	if (!bMeshRestCaptured)
 	{
 		MeshRestRotation = GetBaseRotationOffset();
 		bMeshRestCaptured = true;
 	}
-	MeshLeanDegrees = RollDegrees;
+	MeshOffset = Offset;
 
-	// 캡슐의 앞 축(X)을 중심으로 굴린다. 메시의 기준 회전(보통 요 -90)보다 바깥에서 곱해야 메시 축이 아니라
-	// 캐릭터 축으로 기운다. 양의 롤은 앞을 보며 시계 방향이라 머리가 오른쪽(+Y)으로 간다.
-	const FQuat Leaned = FRotator(0.0f, 0.0f, RollDegrees).Quaternion() * MeshRestRotation;
+	// 캡슐 축으로 돌린다. 메시의 기준 회전(보통 요 -90)보다 바깥에서 곱해야 메시 축이 아니라 캐릭터
+	// 축이 기준이 된다. 양의 롤은 앞을 보며 시계 방향이라 머리가 오른쪽(+Y)으로 가고, 음의 피치는
+	// 앞으로 숙인다.
+	const FQuat Rotated = Offset.Quaternion() * MeshRestRotation;
 
 	// 네트워크 스무딩(다른 클라이언트의 폰, 리슨 서버의 원격 폰)은 매 틱 메시 상대 회전을
-	// "스무딩 오프셋 × GetBaseRotationOffset"으로 다시 쓴다. 기준도 함께 바꿔야 기울기가 덮이지 않는다.
+	// "스무딩 오프셋 × GetBaseRotationOffset"으로 다시 쓴다. 기준도 함께 바꿔야 회전이 덮이지 않는다.
 	// 지금 걸려 있는 스무딩 오프셋은 그대로 보존한다.
 	const FQuat SmoothingOffset = MeshComponent->GetRelativeRotation().Quaternion() * GetBaseRotationOffset().Inverse();
-	CacheInitialMeshOffset(GetBaseTranslationOffset(), Leaned.Rotator());
-	MeshComponent->SetRelativeRotation(SmoothingOffset * Leaned);
+	CacheInitialMeshOffset(GetBaseTranslationOffset(), Rotated.Rotator());
+	MeshComponent->SetRelativeRotation(SmoothingOffset * Rotated);
 }
 
 void AUnit::UpdateBoardLoopSound()

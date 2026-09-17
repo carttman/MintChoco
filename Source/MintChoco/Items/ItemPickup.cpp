@@ -14,21 +14,13 @@
 
 #include "Audio/AudioGameplayTags.h"
 #include "Audio/GameAudioSubsystem.h"
+#include "Game/BobMotion.h"
 #include "Game/Unit.h"
 #include "Items/ItemLabelWidget.h"
 #include "Items/ItemProfile.h"
 #include "Items/ItemSlotComponent.h"
 #include "Items/ItemSpawnPoint.h"
 #include "MintChoco.h"
-
-float FItemPickupMotion::BobOffset(float Time, float Amplitude, float FrequencyHz)
-{
-	if (Amplitude <= 0.0f || FrequencyHz <= 0.0f)
-	{
-		return 0.0f;
-	}
-	return Amplitude * FMath::Sin(2.0f * PI * FrequencyHz * Time);
-}
 
 float FItemPickupMotion::SpinYaw(float Time, float RateDegPerSecond)
 {
@@ -154,7 +146,7 @@ void AItemPickup::Tick(float DeltaTime)
 		return;
 	}
 	MotionTime += DeltaTime;
-	Mesh->SetRelativeLocation(MeshBaseLocation + FVector(0.0f, 0.0f, FItemPickupMotion::BobOffset(MotionTime, BobAmplitude, BobFrequency)));
+	Mesh->SetRelativeLocation(MeshBaseLocation + FVector(0.0f, 0.0f, BobMotion::Offset(MotionTime, BobAmplitude, BobFrequency)));
 	FRotator Rotation = MeshBaseRotation;
 	Rotation.Yaw = FRotator::NormalizeAxis(MeshBaseRotation.Yaw + FItemPickupMotion::SpinYaw(MotionTime, SpinRateDeg));
 	Mesh->SetRelativeRotation(Rotation);

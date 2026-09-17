@@ -519,12 +519,111 @@ bool FHeroLandingLaunchTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("착지는 그대로 온다"), Movement->FinishHeroLandingDive());
 	TestEqual(TEXT("착지 뒤는 경직 단계다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::Recover);
 
-	// 경직 중이라면 이야기가 다르다. 이미 땅에 있으므로 던져지는 것 자체는 말이 되지만,
-	// 경직을 안고 가면 입력이 잠긴 채로 떠오른다.
+	// 경직 중에도 무시한다. 여기가 이 테스트의 핵심이다.
+	//
+	// 예전에는 받아 주고 경직을 풀었다. 이미 땅에 있으니 던져지는 것 자체는 말이 되고, 경직을
+	// 안고 떠오르는 것도 막을 수 있어서였다. 그런데 그러면 Recover가 태어난 그 프레임에 죽는다.
+	// 애님 블루프린트의 착지 상태는 그 단계를 보고 들어오고 나가므로(LandingRecoverTime), 한 번도
+	// 보이지 않은 단계를 기다리며 갇힌다 — 점프대 위로 내리꽂았을 때 동작이 반복되며 움직일 수
+	// 없게 됐다. 아예 던지지 않으면 "잠긴 채로 떠오르는" 일도 "갇히는" 일도 없다.
 	Movement->Launch(FVector(0.0f, 0.0f, 1200.0f));
-	TestFalse(TEXT("경직 중에는 던져진 속도를 받는다"), Movement->PendingLaunchVelocity.IsNearlyZero());
-	TestEqual(TEXT("받으면서 경직은 푼다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::None);
+	TestTrue(TEXT("경직 중에도 던져진 속도를 쌓아 두지 않는다"), Movement->PendingLaunchVelocity.IsNearlyZero());
+	TestEqual(TEXT("경직 단계가 살아남는다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::Recover);
+
+	// 경직은 제 시간을 다 쓰고 스스로 풀린다. 애님이 그 단계를 볼 수 있다는 뜻이다.
+	Movement->UpdateCharacterStateBeforeMovement(0.25f);
+	TestEqual(TEXT("경직이 발사에 잘려 나가지 않았다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::Recover);
+	Movement->UpdateCharacterStateBeforeMovement(0.25f);
+	TestEqual(TEXT("제 시간을 다 쓰면 풀린다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::None);
 	TestTrue(TEXT("풀리면 다시 움직일 수 있다"), Movement->GetMaxSpeed() > 0.0f);
+
+	// 히어로 랜딩이 끝나면 점프대는 평범하게 듣는다. 가드가 그 밖까지 번지면 안 된다.
+	Movement->Launch(FVector(0.0f, 0.0f, 1200.0f));
+	TestFalse(TEXT("히어로 랜딩이 끝나면 발사가 예약된다"), Movement->PendingLaunchVelocity.IsNearlyZero());
+
+	return true;
+}
+
+/**
+ * 착지하면 꽂은 쪽을 보고 선다. 내리꽂는 동안 캡슐은 전혀 돌지 않으므로(입력이 잠긴 동안
+ * ShouldFaceControlRotation이 거짓) 그 차이는 메시가 들고 있었고, 착지하는 순간 캡슐이 그 각을
+ * 이어받는다. 그래서 경직이 풀려 조작이 돌아온 뒤에도 방향이 유지된다.
+ *
+ * 돌 방향이 없는 착지(바로 발밑으로 떨어지는 수직 낙하)는 몸을 건드리지 않는다. 0도로 돌려버리면
+ * 세계의 +X를 보게 되는데, 그것은 "정면"이 아니라 아무 쪽도 아니다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FHeroLandingFacingTest,
+	"MintChoco.Items.HeroLanding.LandingFacing",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FHeroLandingFacingTest::RunTest(const FString& Parameters)
+{
+	UWorld* const World = MintChocoTest::MakeWorld();
+	if (!TestNotNull(TEXT("테스트 월드"), World))
+	{
+		return false;
+	}
+
+	ON_SCOPE_EXIT { MintChocoTest::DestroyWorld(World); };
+
+	MintChocoTest::SpawnBlock(*World, FVector(0.0f, 0.0f, -100.0f), FVector(4000.0f, 4000.0f, 100.0f));
+
+	// 옆(+Y, 요 90도)을 내려다보고 꽂는다. 몸은 뜰 때 보던 쪽(요 0)을 그대로 보고 있다.
+	UTestUnitMovementComponent* const Movement = HoverAt(*World, FVector(0.0f, 0.0f, 100.0f));
+	if (!TestNotNull(TEXT("정지 단계의 테스트 캐릭터"), Movement))
+	{
+		return false;
+	}
+	ACharacter* const Character = Movement->GetCharacterOwner();
+
+	LookAlong(*Movement, FRotator(-45.0f, 90.0f, 0.0f));
+	Movement->SetWantsHeroDive(true);
+	Movement->PhysCustom(0.016f, 0);
+	if (!TestEqual(TEXT("내리꽂기가 시작된다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::Dive))
+	{
+		return false;
+	}
+	TestEqual(TEXT("꽂는 동안에는 몸이 돌지 않는다"), Character->GetActorRotation().Yaw, 0.0, 1e-3);
+
+	TestTrue(TEXT("착지한다"), Movement->FinishHeroLandingDive());
+	TestEqual(TEXT("착지하면 꽂은 쪽을 보고 선다"), Character->GetActorRotation().Yaw, 90.0, 1.0);
+
+	// 경직이 풀려도 그대로다. 되돌리는 코드가 없어야 한다.
+	Movement->UpdateCharacterStateBeforeMovement(0.5f);
+	TestEqual(TEXT("경직이 풀려도 방향은 그대로다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::None);
+	TestEqual(TEXT("조작이 돌아와도 꽂은 쪽을 본다"), Character->GetActorRotation().Yaw, 90.0, 1.0);
+
+	// 바로 발밑으로 떨어지는 착지: 향할 방향이 없으므로 몸을 건드리지 않는다.
+	UTestUnitMovementComponent* const Straight = HoverAt(*World, FVector(2000.0f, 0.0f, 100.0f));
+	if (!TestNotNull(TEXT("두 번째 테스트 캐릭터"), Straight))
+	{
+		return false;
+	}
+	ACharacter* const StraightCharacter = Straight->GetCharacterOwner();
+	StraightCharacter->SetActorRotation(FRotator(0.0f, 123.0f, 0.0f));
+
+	LookAlong(*Straight, FRotator(-90.0f, 0.0f, 0.0f));
+	Straight->SetWantsHeroDive(true);
+	Straight->PhysCustom(0.016f, 0);
+	if (!TestEqual(TEXT("수직으로 꽂는다"), Straight->GetHeroLandingPhase(), EHeroLandingPhase::Dive))
+	{
+		return false;
+	}
+	TestTrue(TEXT("수직 낙하도 착지한다"), Straight->FinishHeroLandingDive());
+	TestEqual(TEXT("돌 방향이 없는 착지는 몸을 건드리지 않는다"),
+		StraightCharacter->GetActorRotation().Yaw, 123.0, 1e-3);
+
+	// 히어로 랜딩이 아닌 평범한 착지도 마찬가지다. 단계를 보고 먼저 빠져나간다.
+	UTestUnitMovementComponent* const Plain = HoverAt(*World, FVector(-2000.0f, 0.0f, 100.0f));
+	if (!TestNotNull(TEXT("세 번째 테스트 캐릭터"), Plain))
+	{
+		return false;
+	}
+	ACharacter* const PlainCharacter = Plain->GetCharacterOwner();
+	PlainCharacter->SetActorRotation(FRotator(0.0f, -45.0f, 0.0f));
+	TestFalse(TEXT("정지 중의 착지는 히어로 랜딩의 착지가 아니다"), Plain->FinishHeroLandingDive());
+	TestEqual(TEXT("평범한 착지는 몸을 건드리지 않는다"), PlainCharacter->GetActorRotation().Yaw, -45.0, 1e-3);
 
 	return true;
 }

@@ -369,6 +369,17 @@ private:
 	FVector HeroTakeoff = FVector::ZeroVector;
 	FVector HeroDiveTarget = FVector::ZeroVector;
 
+	/**
+	 * 내리꽂는 방향의 요(도). 착지하는 순간 몸을 이쪽으로 돌려 세운다 — 그동안 메시가 들고 있던
+	 * 각(UUnitAnimInstance::HeroDiveTilt)을 캡슐이 그대로 이어받는 것이라 세계 기준으로는 아무것도
+	 * 움직이지 않는다.
+	 *
+	 * 수평 성분이 없는 다이브(착지점 위까지 건너간 뒤의 수직 낙하, 제자리 낙하)는 향할 방향이
+	 * 없으므로 이 값을 세우지 않고, 그런 착지는 몸을 건드리지 않는다.
+	 */
+	float HeroDiveYaw = 0.0f;
+	uint8 bHeroDiveYawSet : 1;
+
 	/** Approach 단계가 향하는 점. 착지점 바로 위 DiveApexClearance만큼 높은 곳이다. */
 	FVector HeroApproachPoint = FVector::ZeroVector;
 
@@ -451,6 +462,8 @@ private:
 	float SavedHeroPhaseTime = 0.0f;
 	FVector SavedHeroTakeoff = FVector::ZeroVector;
 	FVector SavedHeroDiveTarget = FVector::ZeroVector;
+	float SavedHeroDiveYaw = 0.0f;
+	uint8 bSavedHeroDiveYawSet : 1;
 	FVector SavedHeroApproachPoint = FVector::ZeroVector;
 };
 

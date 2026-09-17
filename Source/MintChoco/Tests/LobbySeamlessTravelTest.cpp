@@ -88,17 +88,34 @@ bool FLobbyAllReadyTest::RunTest(const FString& Parameters)
 	ALobbyPlayerState* const Watcher = World->SpawnActor<ALobbyPlayerState>();
 	Watcher->SetIsSpectator(true);
 
-	TestFalse(TEXT("nobody: not ready"), ALobbyGameMode::AreAllReady({}));
-	TestFalse(TEXT("only a stale game state: not ready"), ALobbyGameMode::AreAllReady({Stale}));
+	// 최소 인원은 인자다. 배포 빌드가 쓰는 2와 그 밖이 쓰는 1을 여기서 둘 다 검사한다 —
+	// 함수 안에서 UE_BUILD_SHIPPING으로 갈랐다면 배포 쪽은 영원히 검사되지 않는다.
+	constexpr int32 Solo = 1;
+	constexpr int32 Shipping = 2;
+
+	TestFalse(TEXT("nobody: not ready"), ALobbyGameMode::AreAllReady({}, Solo));
+	TestFalse(TEXT("only a stale game state: not ready"), ALobbyGameMode::AreAllReady({Stale}, Solo));
 
 	A->Ready = true;
 	B->Ready = false;
-	TestFalse(TEXT("one of two: not ready"), ALobbyGameMode::AreAllReady({A, B}));
+	TestFalse(TEXT("one of two: not ready"), ALobbyGameMode::AreAllReady({A, B}, Solo));
+
+	// 혼자 준비한 경우가 이번 규칙의 핵심이다. 개발 빌드는 시작되고 배포 빌드는 시작되지 않는다.
+	TestTrue(TEXT("alone starts when one is enough"), ALobbyGameMode::AreAllReady({A}, Solo));
+	TestFalse(TEXT("alone does not start when two are required"), ALobbyGameMode::AreAllReady({A}, Shipping));
 
 	B->Ready = true;
-	TestTrue(TEXT("both: ready"), ALobbyGameMode::AreAllReady({A, B}));
-	TestTrue(TEXT("stale game state is ignored"), ALobbyGameMode::AreAllReady({A, Stale, B}));
-	TestTrue(TEXT("spectator is ignored"), ALobbyGameMode::AreAllReady({A, B, Watcher}));
+	TestTrue(TEXT("both: ready"), ALobbyGameMode::AreAllReady({A, B}, Solo));
+	TestTrue(TEXT("two is enough when two are required"), ALobbyGameMode::AreAllReady({A, B}, Shipping));
+	TestTrue(TEXT("stale game state is ignored"), ALobbyGameMode::AreAllReady({A, Stale, B}, Solo));
+	TestTrue(TEXT("spectator is ignored"), ALobbyGameMode::AreAllReady({A, B, Watcher}, Solo));
+
+	// 머릿수를 채우는 데도 끼지 않는다. 관전자를 데려와 둘을 만들 수는 없다.
+	TestFalse(TEXT("a spectator does not make up the numbers"), ALobbyGameMode::AreAllReady({A, Watcher}, Shipping));
+	TestFalse(TEXT("a stale game state does not make up the numbers"), ALobbyGameMode::AreAllReady({A, Stale}, Shipping));
+
+	// 0이나 음수를 넘겨도 아무도 없는 로비가 시작되지는 않는다.
+	TestFalse(TEXT("an empty lobby never starts"), ALobbyGameMode::AreAllReady({}, 0));
 
 	MintChocoTest::DestroyWorld(World);
 	return true;

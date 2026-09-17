@@ -28,13 +28,14 @@ before anything else.
   two surfaces' pairs. Rectangles drawn into the shared scratch buffer are copied back with
   `TransitionAndCopyTexture`; both targets must share the pixel format
   (`UPaintSubsystem::CreatePaintBuffer`).
-- Paint thickness is `DisplacementScaling.Magnitude` in **world cm** (the overlay divides by
-  the primitive scale along the normal), and it is the only knob: `UPaintableComponent` reads
-  it off the surface material and writes the shader's `PaintMaxHeight` from it. The two can
-  only disagree where no MID exists - the editor viewport, a material preview, the defaults a
-  new instance starts from - and `MintChoco.Paint.Materials.PaintHeight` guards those. A
-  `PaintMaxHeight` above the magnitude does not thicken anything; it only tilts the shading
-  normal past the silhouette, which reads as sparkle.
+- Paint thickness is `PaintMaxHeight` in **world cm** (the overlay divides by the primitive
+  scale along the normal). The masters bake it into `DisplacementScaling.Magnitude` (9) and
+  `UPaintableComponent` reads it back off the surface material into the shader's
+  `PaintMaxHeight`. They can only disagree where no MID exists - the editor
+  viewport, a material preview, the defaults a new instance starts from - and
+  `MintChoco.Paint.Materials.PaintHeight` guards those. A `PaintMaxHeight` above the magnitude
+  does not thicken anything; it only tilts the shading normal past the silhouette, which reads
+  as sparkle.
 - Pixel-frequency carriers through a layer stack: Anisotropy (1), Refraction (2, Break exposes
   RG only), PixelDepthOffset (1), Opacity (1), Tangent (3) — every look layer must pass each one
   through Break → Make. In use: Anisotropy / Refraction.rg / PixelDepthOffset = per-team signed
@@ -90,13 +91,19 @@ before anything else.
   no traces) stamped as `bScoreOnly` splats: cells only, no picture, no sound. The visible droplets
   are per machine: `UPaintballProfile::PlayImpactEffect` books a `UPaintSplashLandingHandler`,
   spawns `ImpactFX` 1 cm off the surface, and `UPaintSplashSubsystem::ConfigureEffect` hands the
-  Niagara system `User.Drop{0..3}Offset/Velocity/Radius`, `User.DropletCount` and
-  `User.LandingHandler`. `NS_PaintSplash` (CPU emitter, stock modules only) reports each
+  Niagara system `User.Drop{0..15}` (Vector4: launch velocity, radius), `User.DropletCount`
+  (= the largest `MaxMarkDroplets`, 8) and `User.LandingHandler`. `NS_PaintSplash` (CPU emitter,
+  stock modules only) reports each
   collision through `ExportParticleDataToBlueprint` (Position = landing, Velocity = collision
   normal, Size = launch speed) and the handler stamps a `bDrawOnly` splat with the profile's
   `DropletBrush`: picture only, never a cell. Score and picture therefore differ by design; the
   phantom radius is `DropletBrush->ComputeRadius(DropletSplatVolume, speed) *
   PhantomCellRadiusScale`, and a cell is claimed only when its centre falls inside that stamp.
+  `GenerateDroplets` throws `DropletCount` (16) droplets sorted largest first in three heading
+  groups (`Forward` on across the ball's travel, `Side`, `Back` toward where it came from; the
+  forward share grows with the tangential share of the approach) - no jet any more, its landing
+  left a circle inside the main splat. The largest `MaxScoreDroplets` (4) score, the largest
+  `MaxMarkDroplets` (8) fly and mark; the blob draws all 16.
 - No secondary marks: check `mc.PaintSplash.Marks` (0 disables them), that the paintball's
   `ImpactFX` is `NS_PaintSplash` and its `Deposit.Splash` profile has a `DropletBrush` with a
   material (`MintChoco.Paint.Weapons.ProfileAssets` covers both), that the surface passes
@@ -112,21 +119,41 @@ before anything else.
   why the component is placed 1 cm along the normal.
 - The blob: `NS_PaintSplash`'s `Blob` emitter is one local-space mesh particle (a 100 cm cube,
   `Particles.Scale` = `User.BlobScale`, pivot lifted 50 mesh units so the cube stands on the
-  plane) whose material `M_PaintSplashBlob` ray-marches four droplets on drag-damped parabolas
-  plus a crown torus with the team look. Each droplet is a round cone from its head to a tail:
-  while the cohesion holds (C++ `PaintSplash::Cohesion`, `CohesionRadius` smooth-min fading over
-  `CohesionDecay`) the tail roots on the crown ring at the droplet's azimuth, so the splash reads
-  as fingers rising off the rim; as it pinches off the tail slides `TailSeconds` (material scalar,
-  0.06) behind the head and thins to a point, leaving teardrops. `CrownAt` defines the ring.
+  plane) whose material `M_PaintSplashBlob` ray-marches the 16 droplets on drag-damped parabolas
+  with the team look (no crown: the surface ripple below replaced the torus). Each droplet is a
+  round cone from its head to a tail: while the cohesion holds (C++ `PaintSplash::Cohesion`,
+  `CohesionRadius` smooth-min fading over `CohesionDecay`) and the strand is shorter than four
+  ball radii, the tail roots on the puddle rim spreading under it (`PuddleSpread` × the in-plane
+  speed), so the splash reads as fingers pulling off the puddle; then it pinches off, trails the
+  head by at most three radii (`TailSeconds`, material scalar 0.06) and thins to a point. A head
+  under the contact plane has landed and is dropped. Every strand gets its bounding sphere's ray
+  interval once per pixel, so a ray marches only through the strands it can meet (the cube is
+  mostly empty). The start offset is `PaintSplash::LaunchOffset` in both C++ and HLSL.
   `UPaintSplashSubsystem::BuildBlobMaterial` makes a MID per splash (`PaintSplashBlob` names:
-  `Drop0..3` xyz offset + w radius, `Vel0..3`, `Phys`, `Crown`, `MarchMax`, `TeamId`) and
-  `PaintSplash::BlobScale` sizes the cube. `Droplets` keeps fixed bounds (±450 cm) because its
+  `Drop0..15` xyz velocity + w radius, `Phys`, `BallRadius`, `PuddleSpread`, `MarchMax`, `TeamId`)
+  and `PaintSplash::BlobScale` sizes the cube. The slab matches the floor paint pin for pin
+  (`MF_TeamLook` outputs 6..9 for the second roughness and fuzz, coat roughness 0.12, SSS MFP
+  scale 0.1 because thin strands would glow with the floor's 1.0); the remaining tone difference
+  is geometry - the floor paint is relief-shaded, the strands are smooth. `Droplets` keeps fixed bounds (±450 cm) because its
   sprite renderer is disabled: an emitter with no enabled particle renderer and dynamic bounds
   trips the "only Emitter sourced renderers" warning and has no bounds at all. No blob: `Splash.BlobMaterial` unset, the material
   missing the Niagara mesh particles usage (`ProfileAssets` test), or `User.BlobScale` zero -
   a zero-scale mesh particle silently stops the entire system, droplets and marks included.
   Pixel Depth Offset must be wired by hand in the material editor (the MCP tool cannot), or the
   blob intersects geometry at the cube's surface instead of the fluid's.
+- A droplet that vanishes in mid-air instead of landing hit `MaxLifetime` (1.8 s) or `MaxTravel`
+  (400 cm), and both are per-profile. A floor contact is where it shows: the droplet has to arc
+  up and come all the way back down, while a wall contact lands almost at once. A grazing hit is
+  the other half - the forward group keeps `SlideScale` of the ball's in-plane speed, so on a fast
+  shot it crosses `MaxTravel` before gravity returns it. Both caps also gate the score
+  (`PaintSplash::PhantomLandings` drops a landing past either), so widening them widens what a
+  splash is credited for; `MaxTravel` additionally clamps how wide the blob's cube may grow.
+- The warmup fires one throwaway impact effect per splashing ball
+  (`UWarmupSubsystem::PrewarmSplash`, `bPrewarmSplash`) because the blob's ray-march material is
+  only wired when droplets actually fly - a contact under `MinNormalSpeed` throws none and leaves
+  `User.BlobMaterial` unset, warming nothing. The screen is under the fade hold throughout, so the
+  spawn at the origin is never seen. `UPaintSplashSubsystem::Prewarm` allocates the landing
+  handlers in the same step.
 - `APaintSplashTestActor` (Blueprintable) fires a fixed contact on a timer without a weapon:
   drop one in a scratch level with `Paintball` set, Simulate, and watch the marks.
 
@@ -227,7 +254,7 @@ subclass per item (only so stacks stay separate; duration is SetByCaller, the st
 | Symptom | Check first |
 |---|---|
 | The item box sits still, or bobs while still announced / after pickup | `AItemPickup::Tick` is cosmetic and local (never replicated): it moves the `Mesh` component's *relative* transform around the base the BP set (`BobAmplitude` / `BobFrequency` / `SpinRateDeg`, `FItemPickupMotion`), so the `Trigger` sphere and the label never move. `UpdateMotionEnabled` turns the tick on only while `Active` and not `bCollected`; the base transform is read once in `BeginPlay`, so a BP that moves `Mesh` later fights the tick. |
-| The board does not lean when turning, leans the wrong way, or leans only on one machine | While `bDashAnimationActive`, `UUnitAnimInstance` leans into the turn by the bank angle of a turning bike: `FUnitAnimMath::BoardLeanFromTurn` = `atan(GroundSpeed × yaw rate[rad/s] / BoardLeanGravity)` (10000 cm/s²: 1700 cm/s at 90°/s ≈ 15°), clamped to `BoardLeanMaxDegrees` (25, flip the sign to flip), eased by `BoardLeanInterpSpeed`. The yaw rate is `YawRateDegrees` (wrap-safe) of the visible body yaw (`GetBodyYaw`: mesh world rotation with `GetBaseRotationOffset` removed), the same formula on every machine: the owner's and server's mesh follows the actor, and a proxy's mesh is network-smoothed. The body yaw itself comes from the board turn controller (Unit facing section), so the lean follows the smooth carve, not the camera. Keys do not lean. `AUnit::SetMeshLean` rolls the mesh about the capsule's forward axis on top of the rest rotation captured once, and writes the same rotation through `CacheInitialMeshOffset`: network smoothing rewrites the mesh's relative rotation from `GetBaseRotationOffset` every tick, so a plain `SetRelativeRotation` would be erased on other clients. Tests: `MintChoco.Anim.BoardLean.*`, `MintChoco.Game.Facing.Board*`. |
+| The board does not lean when turning, leans the wrong way, or leans only on one machine | While `bDashAnimationActive`, `UUnitAnimInstance` leans into the turn by the bank angle of a turning bike: `FUnitAnimMath::BoardLeanFromTurn` = `atan(GroundSpeed × yaw rate[rad/s] / BoardLeanGravity)` (10000 cm/s²: 1700 cm/s at 90°/s ≈ 15°), clamped to `BoardLeanMaxDegrees` (25, flip the sign to flip), eased by `BoardLeanInterpSpeed`. The yaw rate is `YawRateDegrees` (wrap-safe) of the visible body yaw (`GetBodyYaw`: mesh world rotation with `GetBaseRotationOffset` removed), the same formula on every machine: the owner's and server's mesh follows the actor, and a proxy's mesh is network-smoothed. The body yaw itself comes from the board turn controller (Unit facing section), so the lean follows the smooth carve, not the camera. Keys do not lean. `AUnit::SetMeshOffset` rotates the mesh in capsule space on top of the rest rotation captured once (roll for the lean, pitch and yaw for the hero dive), and writes the same rotation through `CacheInitialMeshOffset`: network smoothing rewrites the mesh's relative rotation from `GetBaseRotationOffset` every tick, so a plain `SetRelativeRotation` would be erased on other clients. Tests: `MintChoco.Anim.BoardLean.*`, `MintChoco.Game.Facing.Board*`. |
 | Speed Star feels no faster, or slower than dashing | The boost is `UUnitMovementComponent::SpeedBoostMultiplier` (1.5) on the base speed and stacks with `DashSpeedMultiplier` in `GetMaxSpeed`. It used to be a fixed 1500 cm/s that ignored dash, which fell below dash (BP_Unit walk 1000 × 1.7 = 1700) once the walk speed was raised. `MintChoco.Game.Movement.SpeedAsset` prints BP_Unit's walk, dash and boosted speeds and fails if the boost does not make both faster. |
 | Speed Star rubber-bands on a client | The speed must ride the compressed move flag (`FLAG_Custom_1`, `bWantsSpeedBoost`), never a GAS attribute: `GameplayPrediction.h` says GE prediction and movement prediction are not time-correlated, so a GE-driven speed is simulated at the old speed on the server until the activation RPC lands. |
 | An item ability ends after one RTT on the client | `WaitGameplayEffectRemoved` on the client's predicted handle fires when the prediction key catches up. The client ends on `WaitDelay(Duration)`; only the server waits for GE removal. |
@@ -239,10 +266,13 @@ subclass per item (only so stacks stay separate; duration is SetByCaller, the st
 | A unit keeps walking while stunned on the server only, or only on the client | Both sides must agree through `UUnitMovementComponent`: `GetMaxSpeed` returns 0 and `ConstrainInputAcceleration` zeroes the input while `AUnit::IsMovementInputLocked()` (Stunned or HeroLanding tag, or a hero-landing phase). The input handler alone is not authoritative because the server consumes the client acceleration verbatim. |
 | A unit should be immune (super armor) or show the outline, or keeps it after an item | Super armor is the tag `State.Status.SuperArmor`, from two sources: `UGE_SuperArmor` after a stun (`AUnit::HandleStunEnded`), and any item whose profile `GrantsSuperArmor()` (Speed Star: `USpeedStarProfile::bSuperArmor`, default on), where `UItemAbility::StartItem` adds the tag to the item GE so it lives exactly as long as the effect. `AUnit::HasSuperArmor` gates `TryApplyStun` and `Knockback`; the tag event drives `UpdateSuperArmorOutline` and the `Audio.Unit.SuperArmor.Begin/End` sounds on every machine. Overlapping sources stack the tag count, so the outline stays until both end. Test: `MintChoco.Items.SpeedStar.SuperArmor`. |
 | A weapon hit should stun, or stuns the wrong length | `FPaintDeposit::StunDuration` / `StunSuperArmorDuration` on the contact (paintball `Deposit`, sniper `Impact`): `ApplyHit` and the sniper's pawn branch call `StrikeUnit`, which skips same-colour units and calls `AUnit::TryApplyStun(Stun, SuperArmor)`. A Charged profile scales the stun by the release charge (`FPaintFireContext::ChargeFraction`, sent in `ServerFire` as a byte); `MinChargeToFire` below 1 lets a partial charge fire. Items keep `UItemSettings` (2 s / 4 s) through the parameterless `TryApplyStun()`. The stun lives on the **paintball** asset, so swapping a weapon's `Paintball` reference drops it: the shotgun (`BP_Unit` → `DA_Weapon_Fan`) fires `DA_Paintball_Heavy_Trail` (Deposit.StunDuration 0.25), not `DA_Paintball_HeavyStun`, which nothing references any more. |
+| A player is stunned with nothing visibly hitting them | Read the `[스턴]` lines. Every stun in the game goes through the one funnel `AUnit::TryApplyStun`, and only two places call it: `FPaintDeposit::StrikeUnit` (a paintball or sniper beam hit a person) and `FItemAreaEffect::Apply` (the hero landing / honey balloon / bee area stun). The funnel logs the moment a stun actually lands and `AUnit::HandleStunTagChanged` logs the tag going up and down, both at `Log` and both tagged with the machine's net role, so a packaged DebugGame run already has them. Everything else — a refused attempt and its reason (권한 없음 / 지속시간 0 / 이미 스턴 / 슈퍼아머), each paint hit with the victim's paint id beside the shot's, each area victim with its distance against the radius — is `Verbose`, so turn it on with `log LogMintChoco Verbose` before reproducing. The split that matters: if the **server** has no `적용` line but a client's tag goes up anyway, the cause is not either call site but replication or another GE, and no amount of looking at the item code will show it. Shipping strips all of this unless `bUseLoggingInShipping` is set in `MintChoco.Target.cs`. |
+| An item's user is stunned by their own item (hero landing, sweet spinner), or the chocolate fountain leaves the ground under it unpainted | A pooled ball only becomes *this* shot's ball in `APaintProjectile::Init`, and a recycled one must therefore be woken (`RestoreForReuse`) **after** it: `SetActorEnableCollision(true)` makes the engine dispatch that spot's initial overlaps on the spot, and a ball is always born inside something — the gun's muzzle sits on the sight line at the pawn's depth, the spinner's is the hand socket, an item burst's is the user's feet, and the fountain's burst is inside its own dome. Waking it first hands those overlaps the *previous* shot's `PaintId`, `Profile` and an empty move-ignore list, so `FPaintDeposit::StrikeUnit` reads the enemy colour and stuns the user, or `AChocolateFountain::OnWallBeginOverlap` swallows the user's own burst; either way `OnHit` releases the ball straight back to the pool, so that shot never flies and never paints. A pool holding one colour hides all of this, which is why it only shows in multiplayer, and only after both teams have fired. Tests: `MintChoco.Weapons.ProjectilePoolReuseIdentity`, `MintChoco.Weapons.ProjectilePoolDomeReuse`. |
 | The owner's own dash never shows (no board animation, weapon still fires while dashing) | `AUnit::bIsDashing` replicates `COND_SkipOwner`, so the owner must write it itself in `HandleDashStateChanged` (it did only on the server once). `IsDashing()` gates `UPaintWeaponComponent::IsTriggerBlocked` on the owner and the server, the dash start cancels both triggers (a held charge is lost), and `UUnitAnimInstance::bWeaponPoseHeld` is false while dashing. The board start/loop/end are states in the ABP's Locomotion machine keyed on `bIsDashing`, not C++ poses. The board mesh itself is `AUnit::BoardMesh` (a static mesh component like `GunMesh`): `UUnitDataAsset::BoardMesh` on the skeletal mesh's `Board` socket (on `foot_l`). It follows the **animation**, not the key: `UUnitAnimInstance` reads the `Locomotion` machine's current state each frame and calls `AUnit::SetBoardShown` while the state name starts with `Dash` (`LocomotionMachineName` / `DashStatePrefix` on the AnimInstance), so a dash press that never enters `Dash_Start` shows no board; the camera fade still hides it. |
 | Knockback rubber-bands or double-launches | Only the server calls `LaunchCharacter` (`AUnit::Knockback`); a client RPC on top races the correction. |
 | The hero-landing marker sits on the hovering character and it lands in place | `ComputeAimTarget` no longer rejects a wall, the sky or an out-of-range floor: it takes the aim ray's horizontal end (wall: one capsule radius in front), clamps it to `MaxAimDistance` from the takeoff, and traces down from above the hover apex to `GroundSearchDepth` below the takeoff for a walkable floor. Only a void underneath leaves no target; that is the only case where the hover timeout drops the unit where it is. Both sides compute it from the move's control rotation. |
 | Hero landing restarts after landing, or the server never gets the landing effect | The rise starts only on a 0→1 edge of `FLAG_Custom_2` (`bHeroLandingArmed`), and a dive is never aborted when the flag drops; `AUnit::Landed` → `FinishHeroLandingDive` decides. Phase state rides in `FSavedMove_Unit`, so replays reproduce it. |
+| The character dives sideways or keeps facing its take-off direction during a hero landing, the tilt snaps at the last moment, or it swivels back to the take-off facing after landing | The capsule does not rotate at all during a hero landing: `ShouldFaceControlRotation` returns false while `IsInputLocked()`, so the body holds whatever yaw it had when the item was used. During `EHeroLandingPhase::Dive` only, `UUnitAnimInstance` turns the *mesh* to the dive vector instead: `FUnitAnimMath::HeroDiveTilt` yaws by `dive yaw − visible body yaw` and pitches by the dive vector's pitch, clamped to `HeroDiveTiltMaxPitch` (60, or a vertical plunge face-plants), eased by `HeroDiveTiltInterpSpeed`. A plunge with no horizontal component (`StartHeroPlunge` after `Approach`) has no heading, so the yaw is held rather than recomputed — `FVector::Rotation()` would report world +X and spin the body on the way down. Nothing is replicated: the phase and the velocity already are, so every machine derives the same tilt, exactly like the board lean. On landing the capsule takes the heading over: `FinishHeroLandingDive` turns the actor to `HeroDiveYaw` (recorded at `StartHeroDive`, rides the saved move beside `HeroDiveTarget`) and the anim instance drops its tilt yaw to 0 in that same frame instead of easing it, so world space does not move but the facing survives the recover. Easing both would subtract the angle twice and swing the body past the dive direction and back. A dive always ends in a landing — every abort path is gated to Rise/Hover — so leaving `Dive` is the handover. The board lean and the dive tilt go through one call to `AUnit::SetMeshOffset` per frame; two writers would erase each other. Tests: `MintChoco.Anim.HeroDiveTilt`, `MintChoco.Items.HeroLanding.LandingFacing`. |
 | Friendly pawns bounce off the chocolate dome, or trapped enemies never get released | The pass-through is a *component* ignore (`IgnoreComponentWhenMoving(Wall)`) applied on every machine; an actor-level ignore would also hide the pawn from the dome's Sensor. Enemies inside at spawn are in the replicated `PassThrough` list until the Sensor reports EndOverlap. |
 | A bee dies to its own team, or stops dead when a ball touches it | Balls hit the bee's child `Shell` (Paintball Block only); the root sphere ignores Paintball so the projectile movement never gets a blocking hit from a ball. `ReceivePaintHit` ignores the bee's own paint id. |
 | The bee zig-zags or bobs while chasing, or dives into the floor | Steer heading and altitude separately (`FBeeSteering::TurnTowardsSplit`): the obstacle probe only looks along the *flat* heading (the floor is never an obstacle), altitude is a proportional term (`VerticalComponent`) capped by ground clearance (`MaxDescent`), and a chosen avoidance direction is kept for 0.3 s. Turning the full 3D direction on the shortest arc swings through straight-down when the heading change is large, and a threshold-based hover push flips sign every tick. Measured in PIE by placing `BP_Bee` in the level (it picks the nearest unit and the settings profile on its own) and sampling `get_actor_transform`. The wanted heading itself is a quadratic Bezier tangent (`FBeeSteering::CurveHeading`: control point along the current heading, `CurveTension` / `CurveLookahead` on the profile) with a sine yaw wobble on top (`WobbleYawDeg`, fading inside `WobbleSettleDistance` so the bee still hits); avoidance and altitude take that heading as their input. A second sine at a different frequency (`WobblePitchDeg`, `WobblePitchAmplitudeDeg` / `WobblePitchFrequency`) is added to the altitude term *before* the `MaxDescent` clamp, so the two waves combine into a wobble that changes direction every moment (Lissajous) without ever pushing into the floor; keep the two frequencies off an integer ratio or the path collapses to one diagonal. |

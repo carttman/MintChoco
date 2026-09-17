@@ -22,12 +22,9 @@ enum class EItemPickupState : uint8
 	Active
 };
 
-/** 박스 메시의 흔들림. 월드 없이 테스트한다. */
+/** 박스 메시의 회전. 상하 흔들림은 풍선과 함께 쓰는 BobMotion::Offset이 맡는다. */
 struct MINTCHOCO_API FItemPickupMotion
 {
-	/** 상하 오프셋(cm): Amplitude × sin(2π·FrequencyHz·Time). 진폭이나 주파수가 0이면 0. */
-	static float BobOffset(float Time, float Amplitude, float FrequencyHz);
-
 	/** 누적 요(도), -180~180으로 정규화. 시간에서 바로 구하므로 dt 오차가 쌓이지 않는다. */
 	static float SpinYaw(float Time, float RateDegPerSecond);
 };

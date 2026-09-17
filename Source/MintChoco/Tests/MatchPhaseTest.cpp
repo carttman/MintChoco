@@ -1,8 +1,12 @@
 #include "Misc/AutomationTest.h"
 
+#include "Audio/AudioGameplayTags.h"
 #include "Game/GameGameMode.h"
 #include "Game/GameGameState.h"
 #include "Game/GameHudWidget.h"
+#include "Engine/Texture2D.h"
+
+#include "Game/TeamTypes.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -48,6 +52,127 @@ bool FMatchPhaseTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("no warning at 31"), FGameHudMath::IsTimerWarning(EMatchPhase::Playing, 31.0f, 30.0f));
 	TestTrue(TEXT("warning at 30"), FGameHudMath::IsTimerWarning(EMatchPhase::Playing, 30.0f, 30.0f));
 	TestTrue(TEXT("warning at 5"), FGameHudMath::IsTimerWarning(EMatchPhase::Playing, 5.0f, 30.0f));
+
+	return true;
+}
+
+/**
+ * 결과 화면 문구. 팀 이름을 코드와 위젯 양쪽에 적으면 한쪽만 고쳐져 어긋나므로, 문구가
+ * Teams::GetDisplayName에서 온다는 것까지 여기서 못 박는다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMatchResultTextTest,
+	"MintChoco.Match.ResultText",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FMatchResultTextTest::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("민트가 이기면 민트 팀 승리"),
+		AGameGameState::MakeMatchResultText(/*bEnded=*/true, Teams::Mint).ToString(), TEXT("민트 팀 승리"));
+	TestEqual(TEXT("초코가 이기면 초코 팀 승리"),
+		AGameGameState::MakeMatchResultText(/*bEnded=*/true, Teams::Choco).ToString(), TEXT("초코 팀 승리"));
+
+	// 팀 이름의 출처가 하나라는 것. 이름을 바꾸면 문구도 따라와야 한다.
+	TestTrue(TEXT("문구의 팀 이름은 Teams::GetDisplayName에서 온다"),
+		AGameGameState::MakeMatchResultText(true, Teams::Choco).ToString().Contains(Teams::GetDisplayName(Teams::Choco)));
+
+	TestEqual(TEXT("승팀이 없으면 무승부"),
+		AGameGameState::MakeMatchResultText(/*bEnded=*/true, Teams::None).ToString(), TEXT("무승부"));
+
+	// 경기 전에 팝업이 먼저 떠 있어도 "무승부"가 뜨면 안 된다. 승팀 값은 무승부와 같다.
+	TestTrue(TEXT("경기가 끝나기 전에는 빈 텍스트"),
+		AGameGameState::MakeMatchResultText(/*bEnded=*/false, Teams::None).IsEmpty());
+	TestTrue(TEXT("끝나지 않았으면 승팀이 있어도 빈 텍스트"),
+		AGameGameState::MakeMatchResultText(/*bEnded=*/false, Teams::Mint).IsEmpty());
+
+	return true;
+}
+
+/**
+ * 로비 복귀 카운트다운 문구. 올림이라 5초가 남은 순간에 5가 뜨고, 마지막 한 조각이 남아 있는
+ * 동안에도 1이 남는다 — 내림으로 세면 시작하자마자 4가 되고 마지막 1초를 0으로 센다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FReturnToLobbyTextTest,
+	"MintChoco.Match.ReturnToLobbyText",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FReturnToLobbyTextTest::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("5초가 그대로 남았으면 5"),
+		AGameGameState::MakeReturnToLobbyText(5.0f).ToString(), TEXT("5초 뒤 로비로 이동"));
+	TestEqual(TEXT("4.2초는 아직 5로 보인다"),
+		AGameGameState::MakeReturnToLobbyText(4.2f).ToString(), TEXT("5초 뒤 로비로 이동"));
+	TestEqual(TEXT("마지막 한 조각도 1로 남는다"),
+		AGameGameState::MakeReturnToLobbyText(0.3f).ToString(), TEXT("1초 뒤 로비로 이동"));
+
+	// 다 됐거나 예약이 없으면 칸이 비어야 한다. 0을 띄우면 떠나지도 않은 채 "0초"가 남는다.
+	TestTrue(TEXT("0이면 빈 텍스트"), AGameGameState::MakeReturnToLobbyText(0.0f).IsEmpty());
+	TestTrue(TEXT("음수여도 빈 텍스트"), AGameGameState::MakeReturnToLobbyText(-1.0f).IsEmpty());
+
+	return true;
+}
+
+/**
+ * 초읽기 소리 고르기. 경기 시작의 3·2·1만 전용 소리를 쓰고 나머지는 공용 틱이다.
+ *
+ * 핵심은 마지막 줄이다: 경기 끝 10초가 3에 닿아도 시작 목소리로 넘어가면 안 된다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCountdownTickTagTest,
+	"MintChoco.Match.CountdownTickTag",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCountdownTickTagTest::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("시작 카운트다운의 3"),
+		FGameHudMath::CountdownTickTag(EGameHudCenter::Countdown, 3), AudioTags::Audio_Match_Countdown_3.GetTag());
+	TestEqual(TEXT("시작 카운트다운의 2"),
+		FGameHudMath::CountdownTickTag(EGameHudCenter::Countdown, 2), AudioTags::Audio_Match_Countdown_2.GetTag());
+	TestEqual(TEXT("시작 카운트다운의 1"),
+		FGameHudMath::CountdownTickTag(EGameHudCenter::Countdown, 1), AudioTags::Audio_Match_Countdown_1.GetTag());
+
+	// 카운트다운을 3초보다 길게 두면 앞쪽 숫자는 전용 소리가 없다.
+	TestEqual(TEXT("시작 카운트다운의 5는 공용 틱"),
+		FGameHudMath::CountdownTickTag(EGameHudCenter::Countdown, 5), AudioTags::Audio_Match_CountdownTick.GetTag());
+
+	TestEqual(TEXT("막판 초읽기의 10은 공용 틱"),
+		FGameHudMath::CountdownTickTag(EGameHudCenter::FinalCountdown, 10), AudioTags::Audio_Match_CountdownTick.GetTag());
+	TestEqual(TEXT("막판 초읽기가 3에 닿아도 시작 목소리가 새지 않는다"),
+		FGameHudMath::CountdownTickTag(EGameHudCenter::FinalCountdown, 3), AudioTags::Audio_Match_CountdownTick.GetTag());
+
+	return true;
+}
+
+/**
+ * 팀에 맞는 캐릭터 그림 고르기.
+ *
+ * 두 텍스처를 바꿔 넣어도 컴파일은 되고 화면에서도 한참 뒤에나 눈에 띄므로, 그것부터 못 박는다.
+ * 팀이 없을 때 아무 쪽이나 고르지 않는 것도 여기서 지킨다 — 그러면 팀이 정해지기도 전에 남의
+ * 캐릭터가 HUD에 떠 있게 된다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCharacterImageTest,
+	"MintChoco.Match.CharacterImage",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCharacterImageTest::RunTest(const FString& Parameters)
+{
+	UTexture2D* const Mint = NewObject<UTexture2D>();
+	UTexture2D* const Choco = NewObject<UTexture2D>();
+
+	TestTrue(TEXT("민트는 민트 그림"), FGameHudMath::CharacterImageFor(Teams::Mint, Mint, Choco) == Mint);
+	TestTrue(TEXT("초코는 초코 그림"), FGameHudMath::CharacterImageFor(Teams::Choco, Mint, Choco) == Choco);
+
+	// 뒤바뀌지 않았다. 위의 두 줄만으로는 둘 다 같은 값을 돌려줘도 통과할 수 있다.
+	TestTrue(TEXT("민트와 초코가 서로 다른 그림을 받는다"),
+		FGameHudMath::CharacterImageFor(Teams::Mint, Mint, Choco) != FGameHudMath::CharacterImageFor(Teams::Choco, Mint, Choco));
+
+	// 팀이 없으면 고르지 않는다. 호출부는 이때 그림을 건드리지 않는다.
+	TestNull(TEXT("팀이 없으면 nullptr"), FGameHudMath::CharacterImageFor(Teams::None, Mint, Choco));
+
+	// 아직 텍스처를 꽂지 않은 HUD도 조용히 넘어가야 한다(에셋을 지정하기 전의 블루프린트).
+	TestNull(TEXT("그림을 정하지 않았으면 nullptr"), FGameHudMath::CharacterImageFor(Teams::Mint, nullptr, Choco));
 
 	return true;
 }

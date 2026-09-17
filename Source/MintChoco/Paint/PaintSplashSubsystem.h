@@ -25,6 +25,8 @@ struct FPaintSplashRequest
 	/** Velocity of the ball at the contact, cm/s, pointing into the surface. */
 	FVector IncidentVelocity = FVector::ZeroVector;
 	float BallRadius = 6.0f;
+	/** Radius of the ball's own splat, cm; a droplet landing inside it leaves no mark. 0 when unknown. */
+	float SplatRadius = 0.0f;
 	uint8 PaintId = 0;
 	int32 Seed = 0;
 	/** False for a contact whose splat would not stick (a pawn, a movable mesh): the droplets still fly but leave no marks. */
@@ -58,6 +60,8 @@ private:
 
 	TWeakObjectPtr<UPaintSubsystem> Paint;
 	FVector ImpactPoint = FVector::ZeroVector;
+	/** Landings closer than this to the contact leave no mark: the ball's splat already covers them. */
+	float MarkClearance = 0.0f;
 	uint8 PaintId = 0;
 	uint32 LockGens = 0;
 	int32 Seed = 0;
@@ -82,6 +86,12 @@ class MINTCHOCO_API UPaintSplashSubsystem : public UWorldSubsystem
 
 public:
 	static UPaintSplashSubsystem* Get(const UObject* WorldContextObject);
+
+	/**
+	 * Allocates the landing handlers a volley is about to ask for, so the first contacts do not
+	 * build them under fire. UWarmupSubsystem calls it; a machine that draws no marks keeps none.
+	 */
+	void Prewarm();
 
 	/**
 	 * Books the landings of one contact. Returns the handler the effect should report to, or null

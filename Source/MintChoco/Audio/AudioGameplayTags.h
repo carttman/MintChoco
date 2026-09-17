@@ -75,12 +75,36 @@ namespace AudioTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_World_Balloon_Hit);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_World_Balloon_Pop);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_World_Balloon_Inflate);
+
+	/**
+	 * 꿀벌이 날아다니는 동안의 루프. 벌 액터가 태어날 때 켜고, 터지거나 수명이 다해 사라질 때
+	 * 액터와 함께 멈춘다. 소리는 꿀벌 프로필의 뱅크가 정한다.
+	 *
+	 * 지정한 사운드 웨이브는 반드시 Looping이어야 한다 — 아니면 한 번 울리고 끝나며, 그것을
+	 * FItemProfileAssetTest가 잡는다.
+	 */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_World_Bee_Loop);
+
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_World_JumpPad);
 
 	//~ 매치 진행
 
-	/** 카운트다운 초읽기 한 번(3, 2, 1 각각). */
+	/**
+	 * 카운트다운 초읽기 한 번. 전용 소리가 없는 숫자는 전부 이것으로 난다 — 경기 끝
+	 * 10초 카운트다운도 여기 해당한다.
+	 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_Match_CountdownTick);
+
+	/**
+	 * 경기 시작 카운트다운의 숫자별 소리("3", "2", "1"). 뱅크에 없으면 공용 틱으로 내려가므로
+	 * 채우지 않아도 조용해지지 않는다.
+	 *
+	 * 경기 끝 10초 카운트다운은 이 소리를 쓰지 않는다. 시작을 알리는 목소리가 경기가 끝나는
+	 * 자리에서 나면 어긋나기 때문이다(FGameHudMath::CountdownTickTag).
+	 */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_Match_Countdown_3);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_Match_Countdown_2);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_Match_Countdown_1);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_Match_Start);
 
 	/** 남은 시간이 경고선 아래로 내려가는 순간 한 번. */

@@ -60,6 +60,29 @@ float FUnitAnimMath::BoardLeanFromTurn(float GroundSpeed, float YawRateDegreesPe
 	return FMath::Clamp(Lean, -Limit, Limit) * (MaxDegrees < 0.0f ? -1.0f : 1.0f);
 }
 
+FRotator FUnitAnimMath::HeroDiveTilt(const FVector& Velocity, double BodyYaw, float CurrentTiltYaw, float MaxPitchDegrees)
+{
+	if (Velocity.IsNearlyZero())
+	{
+		return FRotator::ZeroRotator;
+	}
+
+	const FRotator DiveRotation = Velocity.Rotation();
+
+	// 수평 성분이 없으면(착지점 위까지 건너간 뒤의 수직 낙하) 향할 방향이 없다. Rotation()은 그럴 때
+	// 요를 0으로 주는데, 그것은 "방향 없음"이 아니라 세계의 +X라 그대로 쓰면 마지막 순간에 몸이 홱 돈다.
+	constexpr double HeadingThreshold = 1.0;
+	const float Yaw = Velocity.Size2D() > HeadingThreshold
+		? static_cast<float>(FRotator::NormalizeAxis(DiveRotation.Yaw - BodyYaw))
+		: CurrentTiltYaw;
+
+	// 내려가는 다이브는 피치가 음수라 그대로 앞으로 숙이는 각이 된다.
+	const float Limit = FMath::Abs(MaxPitchDegrees);
+	const float Pitch = FMath::Clamp(static_cast<float>(DiveRotation.Pitch), -Limit, Limit);
+
+	return FRotator(Pitch, Yaw, 0.0f);
+}
+
 // ---------------------------------------------------------------- UUnitAnimInstance
 
 void UUnitAnimInstance::NativeInitializeAnimation()
@@ -83,7 +106,7 @@ void UUnitAnimInstance::NativeUninitializeAnimation()
 	if (AUnit* const Bound = BoundUnit.Get())
 	{
 		Bound->SetBoardShown(false);
-		Bound->SetMeshLean(0.0f);
+		Bound->SetMeshOffset(FRotator::ZeroRotator);
 	}
 	BindWeapons(nullptr);
 	Super::NativeUninitializeAnimation();
@@ -187,11 +210,48 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		{
 			BoardLean = 0.0f;
 		}
-		Unit->SetMeshLean(BoardLean);
 
 		// 유닛에게 묻는다: 원격 폰의 단계는 무브먼트가 아니라 복제된 값에서 온다.
 		HeroLandingPhase = Unit->GetHeroLandingPhase();
 		bIsHeroLanding = HeroLandingPhase != EHeroLandingPhase::None;
+
+		// 내리꽂는 동안에는 메시가 다이브 방향을 본다. 캡슐은 히어로 랜딩 내내 돌지 않으므로
+		// (입력이 잠긴 동안 ShouldFaceControlRotation이 거짓) 이 각만큼이 곧 몸과 궤적의 차이다.
+		// 속도도 보이는 몸의 요도 이 머신이 보는 값이라, 보드 기울기와 같은 경로로 모두가 같은 그림을 본다.
+		const bool bDiving = HeroLandingPhase == EHeroLandingPhase::Dive;
+
+		// 내리꽂기는 반드시 착지로만 끝난다(중단 경로는 전부 상승·정지에서만 듣는다). 그 착지에서
+		// UUnitMovementComponent::FinishHeroLandingDive가 캡슐을 꽂은 쪽으로 돌려세우므로, 메시가
+		// 들고 있던 요는 그 프레임에 놓아야 한다. 보간해 되돌리면 같은 각을 둘이 함께 빼 몸이
+		// 지나쳤다가 돌아온다. 숙인 각은 그대로 남아 부드럽게 선다.
+		if (!bDiving && LastHeroLandingPhase == EHeroLandingPhase::Dive)
+		{
+			HeroDiveTilt.Yaw = 0.0;
+		}
+
+		// 애님이 실제로 보는 단계. 무브먼트 쪽 추적과 나란히 놓으면, 단계가 묶인 것인지
+		// 단계는 풀렸는데 애님 그래프만 갇힌 것인지 갈린다.
+		UE_CLOG(HeroLandingPhase != LastHeroLandingPhase, LogMintChoco, Verbose,
+			TEXT("[히어로랜딩][애님] 단계 %d -> %d (%s)"),
+			static_cast<int32>(LastHeroLandingPhase), static_cast<int32>(HeroLandingPhase), *GetNameSafe(Unit));
+
+		LastHeroLandingPhase = HeroLandingPhase;
+
+		const FRotator TargetDiveTilt = bDiving
+			? FUnitAnimMath::HeroDiveTilt(Unit->GetVelocity(), BodyYaw, HeroDiveTilt.Yaw, HeroDiveTiltMaxPitch)
+			: FRotator::ZeroRotator;
+		HeroDiveTilt = HeroDiveTiltInterpSpeed > 0.0f
+			? FMath::RInterpTo(HeroDiveTilt, TargetDiveTilt, DeltaSeconds, HeroDiveTiltInterpSpeed)
+			: TargetDiveTilt;
+		// 거의 돌아왔으면 딱 맞춘다. 아래의 같은 값 검사가 걸려 메시 트랜스폼을 다시 쓰지 않게 된다.
+		if (TargetDiveTilt.IsNearlyZero() && HeroDiveTilt.IsNearlyZero(0.05f))
+		{
+			HeroDiveTilt = FRotator::ZeroRotator;
+		}
+
+		// 메시 회전의 창구는 여기 하나다. 보드 기울기와 다이브 기울기가 따로 쓰면 서로를 덮는다.
+		Unit->SetMeshOffset(FRotator(HeroDiveTilt.Pitch, HeroDiveTilt.Yaw, BoardLean));
+
 		bIsFiring = Unit->GetPaintWeapon() && Unit->GetPaintWeapon()->IsTriggerHeld();
 
 		const UItemSlotComponent* const Slot = Unit->GetItemSlot();
@@ -227,8 +287,10 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		bIsStunned = false;
 		bDashAnimationActive = false;
 		BoardLean = 0.0f;
+		HeroDiveTilt = FRotator::ZeroRotator;
 		bBodyYawInitialized = false;
 		HeroLandingPhase = EHeroLandingPhase::None;
+		LastHeroLandingPhase = EHeroLandingPhase::None;
 		bIsHeroLanding = false;
 		bIsFiring = false;
 		bRecentlyFired = false;

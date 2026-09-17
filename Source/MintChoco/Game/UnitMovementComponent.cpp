@@ -14,6 +14,46 @@
 #include "Items/ItemGameplayTags.h"
 #include "Items/ItemProfile.h"
 #include "Items/ItemSlotComponent.h"
+#include "MintChoco.h"
+
+namespace
+{
+	/**
+	 * 히어로 랜딩 단계 기계의 추적 로그용. 평소에는 Verbose라 꺼져 있고, 재현할 때만
+	 * 콘솔에서 `Log LogMintChoco Verbose`로 켠다.
+	 *
+	 * 단계는 서버·소유 클라이언트·구경하는 클라이언트가 각자 다른 경로로 갖는다(각자 계산 /
+	 * 무브 재생 / 복제). 그래서 어느 머신의 줄인지 모르면 순서를 읽을 수 없어 역할을 같이 찍는다.
+	 */
+	const TCHAR* HeroPhaseName(EHeroLandingPhase Phase)
+	{
+		switch (Phase)
+		{
+		case EHeroLandingPhase::None:     return TEXT("None");
+		case EHeroLandingPhase::Rise:     return TEXT("Rise");
+		case EHeroLandingPhase::Hover:    return TEXT("Hover");
+		case EHeroLandingPhase::Dive:     return TEXT("Dive");
+		case EHeroLandingPhase::Approach: return TEXT("Approach");
+		case EHeroLandingPhase::Recover:  return TEXT("Recover");
+		default:                          return TEXT("?");
+		}
+	}
+
+	const TCHAR* NetRoleName(const ACharacter* Character)
+	{
+		if (!Character)
+		{
+			return TEXT("없음");
+		}
+		switch (Character->GetLocalRole())
+		{
+		case ROLE_Authority:       return Character->IsLocallyControlled() ? TEXT("호스트") : TEXT("서버");
+		case ROLE_AutonomousProxy: return TEXT("소유");
+		case ROLE_SimulatedProxy:  return TEXT("프록시");
+		default:                   return TEXT("?");
+		}
+	}
+}
 
 UUnitMovementComponent::UUnitMovementComponent()
 {
@@ -22,6 +62,7 @@ UUnitMovementComponent::UUnitMovementComponent()
 	bWantsHeroLanding = 0;
 	bHeroLandingArmed = 1;
 	bWantsHeroDive = 0;
+	bHeroDiveYawSet = 0;
 
 	// 엔진의 컨트롤 회전 추종을 켜 두고 PhysicsRotation에서 게이트로 막는다.
 	bUseControllerDesiredRotation = true;
@@ -178,7 +219,12 @@ void UUnitMovementComponent::SetWantsSpeedBoost(bool bNewWantsSpeedBoost)
 
 void UUnitMovementComponent::SetWantsHeroLanding(bool bNewWantsHeroLanding)
 {
-	bWantsHeroLanding = bNewWantsHeroLanding ? 1 : 0;
+	const uint8 NewValue = bNewWantsHeroLanding ? 1 : 0;
+	UE_CLOG(NewValue != bWantsHeroLanding, LogMintChoco, Verbose,
+		TEXT("[히어로랜딩][%s] 의도 %d -> %d (단계 %s, 장전 %d)"),
+		NetRoleName(CharacterOwner), bWantsHeroLanding, NewValue, HeroPhaseName(HeroPhase), bHeroLandingArmed);
+
+	bWantsHeroLanding = NewValue;
 }
 
 bool UUnitMovementComponent::IsSpeedBoostAllowed() const
@@ -290,6 +336,8 @@ void UUnitMovementComponent::UpdateCharacterStateBeforeMovement(float DeltaSecon
 	}
 	else
 	{
+		UE_CLOG(!bHeroLandingArmed, LogMintChoco, Verbose, TEXT("[히어로랜딩][%s] 재장전. 단계 %s"),
+			NetRoleName(CharacterOwner), HeroPhaseName(HeroPhase));
 		bHeroLandingArmed = 1;
 
 		// 어빌리티가 상승·정지 중에 끝났다(상한, 취소). 내리꽂기는 착지까지 그대로 둔다:
@@ -319,18 +367,27 @@ void UUnitMovementComponent::SetHeroPhase(EHeroLandingPhase NewPhase)
 		return;
 	}
 
+	UE_LOG(LogMintChoco, Verbose, TEXT("[히어로랜딩][%s] 단계 %s -> %s (모드 %d, 의도 %d, 장전 %d)"),
+		NetRoleName(CharacterOwner), HeroPhaseName(HeroPhase), HeroPhaseName(NewPhase),
+		static_cast<int32>(MovementMode), bWantsHeroLanding, bHeroLandingArmed);
+
 	HeroPhase = NewPhase;
 	OnHeroLandingPhaseChanged.Broadcast(NewPhase);
 }
 
 void UUnitMovementComponent::StartHeroLanding()
 {
+	UE_LOG(LogMintChoco, Verbose, TEXT("[히어로랜딩][%s] 시작. 의도 %d, 장전 %d, 모드 %d"),
+		NetRoleName(CharacterOwner), bWantsHeroLanding, bHeroLandingArmed, static_cast<int32>(MovementMode));
+
 	SetHeroPhase(EHeroLandingPhase::Rise);
 	HeroPhaseTime = 0.0f;
 	// 지난 발동에서 남은 요청으로 정지 단계를 건너뛰지 않도록.
 	bWantsHeroDive = 0;
 	HeroTakeoff = UpdatedComponent->GetComponentLocation();
 	HeroDiveTarget = HeroTakeoff;
+	// 아직 어디로 꽂을지 모른다. 지난 발동의 방향이 남아 이번 착지를 돌려세우면 안 된다.
+	bHeroDiveYawSet = 0;
 	HeroCharge = 0.0f;
 	Velocity = FVector::ZeroVector;
 	SetMovementMode(MOVE_Custom, CustomMode_HeroLanding);
@@ -338,9 +395,14 @@ void UUnitMovementComponent::StartHeroLanding()
 
 void UUnitMovementComponent::AbortHeroLanding()
 {
+	UE_CLOG(HeroPhase != EHeroLandingPhase::None, LogMintChoco, Verbose,
+		TEXT("[히어로랜딩][%s] 중단. 단계 %s에서 걷어낸다."),
+		NetRoleName(CharacterOwner), HeroPhaseName(HeroPhase));
+
 	SetHeroPhase(EHeroLandingPhase::None);
 	HeroPhaseTime = 0.0f;
-	bWantsHeroLanding = 0;
+	// 의도를 내리는 것도 추적에 남아야 순서를 읽을 수 있다. 값은 직접 쓰던 것과 같다.
+	SetWantsHeroLanding(false);
 	bWantsHeroDive = 0;
 	if (MovementMode == MOVE_Custom && CustomMovementMode == CustomMode_HeroLanding)
 	{
@@ -356,15 +418,20 @@ void UUnitMovementComponent::Launch(const FVector& LaunchVelocity)
 	case EHeroLandingPhase::Hover:
 	case EHeroLandingPhase::Approach:
 	case EHeroLandingPhase::Dive:
-		// 공중에서는 무시한다. 단계를 걷어내고 던져지게 두면 착지가 오지 않아 단계 전환이
-		// 통째로 사라지므로(내리꽂기 → 착지 → 경직), 그 전환을 보는 쪽도 함께 멈춘다.
-		return;
-
 	case EHeroLandingPhase::Recover:
-		// 내려선 뒤다. 던져지는 것 자체는 말이 되지만, 경직을 안고 가면 입력이 잠긴 채로
-		// 떠오른다. 여기서 풀어 주면 그 뒤는 평소의 낙하다.
-		AbortHeroLanding();
-		break;
+		// 히어로 랜딩이 도는 동안에는 무시한다. 공중에서 걷어내면 착지가 오지 않아 단계 전환이
+		// 통째로 사라지고(내리꽂기 → 착지 → 경직), 그 전환을 보는 쪽도 함께 멈춘다.
+		//
+		// 경직(Recover)도 같이 막는 이유가 있다. 여기서 걷어내면 Recover가 태어난 그 프레임에
+		// 죽어 버리는데, 애님 블루프린트의 착지 상태는 그 단계를 보고 들어오고 나간다
+		// (FHeroLandingParams::LandingRecoverTime). 한 번도 보이지 않은 단계를 보고 나갈 수는
+		// 없으므로 동작이 갇힌다 — 점프대 위로 내리꽂았을 때 실제로 그렇게 됐다.
+		//
+		// 대가는 착지 경직 0.5초 동안 점프대가 듣지 않는다는 것뿐이다. 그 시간은 원래
+		// 아무것도 할 수 없는 시간이다.
+		UE_LOG(LogMintChoco, Verbose, TEXT("[히어로랜딩][%s] 발사 무시. 단계 %s, 속도 %s"),
+			NetRoleName(CharacterOwner), HeroPhaseName(HeroPhase), *LaunchVelocity.ToCompactString());
+		return;
 
 	default:
 		break;
@@ -377,11 +444,25 @@ bool UUnitMovementComponent::FinishHeroLandingDive()
 {
 	if (HeroPhase != EHeroLandingPhase::Dive)
 	{
+		UE_LOG(LogMintChoco, Verbose, TEXT("[히어로랜딩][%s] 착지했지만 내리꽂기가 아니다(단계 %s). 넘어간다."),
+			NetRoleName(CharacterOwner), HeroPhaseName(HeroPhase));
 		return false;
 	}
+
+	UE_LOG(LogMintChoco, Verbose, TEXT("[히어로랜딩][%s] 내리꽂기 착지. 경직 %.2f초"),
+		NetRoleName(CharacterOwner), HeroParams.LandingRecoverTime);
 	// 곧바로 평소로 돌아가지 않는다. 착지 동작이 도는 동안은 움직일 수 없어야 하는데, 그 판단이
 	// 이미 단계에 걸려 있다(IsInputLocked). 시간은 UpdateCharacterStateBeforeMovement가 깎고,
 	// HeroPhaseTime은 저장 무브에 실리므로 보정 후 리플레이에서도 같은 지점에서 풀린다.
+	// 꽂은 쪽을 보고 선다. 내리꽂는 동안 캡슐은 전혀 돌지 않았고(입력이 잠긴 동안
+	// ShouldFaceControlRotation이 거짓) 그 차이는 메시가 들고 있었다. 여기서 캡슐이 그 각을
+	// 그대로 이어받으므로 세계 기준으로는 이 프레임에 아무것도 움직이지 않는다 — 대신 경직이
+	// 풀려 조작이 돌아온 뒤에도 방향이 유지된다. 메시 쪽은 단계가 바뀐 것을 보고 스스로 요를 놓는다.
+	if (bHeroDiveYawSet && UpdatedComponent)
+	{
+		MoveUpdatedComponent(FVector::ZeroVector, FRotator(0.0f, HeroDiveYaw, 0.0f), /*bSweep=*/false);
+	}
+
 	const bool bRecovers = HeroParams.LandingRecoverTime > 0.0f;
 	SetHeroPhase(bRecovers ? EHeroLandingPhase::Recover : EHeroLandingPhase::None);
 	HeroPhaseTime = 0.0f;
@@ -517,6 +598,15 @@ void UUnitMovementComponent::StartHeroDive(const FVector& Target, float DeltaTim
 	{
 		DiveDirection = FVector::DownVector;
 	}
+
+	// 꽂는 쪽을 기억해 뒀다가 착지하는 순간 몸을 그쪽으로 돌려세운다. 수평 성분이 없으면(바로
+	// 발밑) 향할 방향이 없으므로 세우지 않는다 — 0도로 돌려버리면 세계의 +X를 보게 된다.
+	if (!DiveDirection.IsNearlyZero() && DiveDirection.Size2D() > UE_KINDA_SMALL_NUMBER)
+	{
+		HeroDiveYaw = static_cast<float>(DiveDirection.Rotation().Yaw);
+		bHeroDiveYawSet = 1;
+	}
+
 	SetHeroPhase(EHeroLandingPhase::Dive);
 	Velocity = DiveDirection * HeroParams.DiveSpeed;
 	SetMovementMode(MOVE_Falling);
@@ -674,6 +764,8 @@ void FSavedMove_Unit::Clear()
 	SavedHeroPhaseTime = 0.0f;
 	SavedHeroTakeoff = FVector::ZeroVector;
 	SavedHeroDiveTarget = FVector::ZeroVector;
+	SavedHeroDiveYaw = 0.0f;
+	bSavedHeroDiveYawSet = 0;
 	SavedHeroApproachPoint = FVector::ZeroVector;
 }
 
@@ -739,6 +831,8 @@ void FSavedMove_Unit::SetMoveFor(ACharacter* C, float InDeltaTime, FVector const
 		SavedHeroPhaseTime = Movement->HeroPhaseTime;
 		SavedHeroTakeoff = Movement->HeroTakeoff;
 		SavedHeroDiveTarget = Movement->HeroDiveTarget;
+		SavedHeroDiveYaw = Movement->HeroDiveYaw;
+		bSavedHeroDiveYawSet = Movement->bHeroDiveYawSet;
 		SavedHeroApproachPoint = Movement->HeroApproachPoint;
 	}
 }
@@ -762,6 +856,8 @@ void FSavedMove_Unit::PrepMoveFor(ACharacter* C)
 		Movement->HeroPhaseTime = SavedHeroPhaseTime;
 		Movement->HeroTakeoff = SavedHeroTakeoff;
 		Movement->HeroDiveTarget = SavedHeroDiveTarget;
+		Movement->HeroDiveYaw = SavedHeroDiveYaw;
+		Movement->bHeroDiveYawSet = bSavedHeroDiveYawSet;
 		Movement->HeroApproachPoint = SavedHeroApproachPoint;
 	}
 }

@@ -9,6 +9,7 @@
 
 #include "Audio/AudioGameplayTags.h"
 #include "Audio/GameAudioSubsystem.h"
+#include "Game/BobMotion.h"
 #include "Game/TeamLook.h"
 #include "MintChoco.h"
 #include "Weapons/PaintProjectile.h"
@@ -42,7 +43,9 @@ void FBalloonState::Reset()
 
 ABalloon::ABalloon()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// 떠 있는 연출 틱. 터져서 메시가 숨은 동안에는 끈다(ApplyLook).
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 	bReplicates = true;
 	SetReplicatingMovement(false);
 
@@ -66,7 +69,26 @@ void ABalloon::BeginPlay()
 {
 	Super::BeginPlay();
 	BaseScale = Mesh ? Mesh->GetRelativeScale3D() : FVector::OneVector;
+	MeshBaseLocation = Mesh ? Mesh->GetRelativeLocation() : FVector::ZeroVector;
+
+	// 레벨에 놓인 풍선은 전부 같은 프레임에 여기를 지난다. 위상을 주지 않으면 맵의 풍선이 한
+	// 몸처럼 같이 오르내린다(상자는 각자 다른 시각에 스폰돼 저절로 어긋난다). 자리에서 뽑으므로
+	// 모든 머신이 같은 값을 내고, 터졌다 다시 부풀어도 위상이 튀지 않는다.
+	BobPhase = BobMotion::PhaseFromVector(GetActorLocation());
+
 	ApplyLook();
+}
+
+void ABalloon::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+	if (!Mesh)
+	{
+		return;
+	}
+	MotionTime += DeltaTime;
+	Mesh->SetRelativeLocation(
+		MeshBaseLocation + FVector(0.0f, 0.0f, BobMotion::Offset(MotionTime, BobAmplitude, BobFrequency, BobPhase)));
 }
 
 void ABalloon::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -184,6 +206,10 @@ void ABalloon::ApplyLook()
 	{
 		Collision->SetCollisionEnabled(bPopped ? ECollisionEnabled::NoCollision : ECollisionEnabled::QueryOnly);
 	}
+
+	// 터진 동안에는 메시가 숨으므로 흔들 것이 없다.
+	SetActorTickEnabled(!bPopped);
+
 	if (!Mesh)
 	{
 		return;

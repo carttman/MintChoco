@@ -14,10 +14,22 @@
 #include "Items/ItemPickup.h"
 #include "Items/ItemProfile.h"
 #include "Items/ItemSettings.h"
+#include "Interfaces/OnlineSessionInterface.h"
 #include "Items/ItemSpawnPoint.h"
 #include "Kismet/GameplayStatics.h"
 #include "MintChoco.h"
+#include "Online/OnlineSessionNames.h"
+#include "OnlineSessionSettings.h"
+#include "OnlineSubsystem.h"
+#include "OnlineSubsystemUtils.h"
+#include "Screen/ScreenFadeSubsystem.h"
 #include "TimerManager.h"
+
+namespace
+{
+	/** 돌아갈 로비. 세션을 만든 뒤 처음 가는 곳과 같아야 한다(UOnlineSessionsSubsystem). */
+	const TCHAR* const LobbyURL = TEXT("/Game/Maps/Lobby?listen");
+}
 
 AGameGameMode::AGameGameMode()
 {
@@ -243,7 +255,7 @@ void AGameGameMode::EndMatchByKnockout(int32 Team)
 	GetWorldTimerManager().ClearTimer(MatchTimer);
 
 	const float Fraction = State->GetWorldCoverage().GetFraction(static_cast<uint8>(Team));
-	State->SetMatchResult(Team);
+	FinishMatch(Team);
 
 	UE_LOG(LogMintChoco, Log, TEXT("KO 승리: %s (점유율 %.1f%%를 %.1f초 유지, 남은 시간 %.1f초)"),
 		Teams::GetDisplayName(Team), Fraction * 100.0f, State->GetKnockoutHoldSeconds(), State->GetRemainingTime());
@@ -300,7 +312,7 @@ void AGameGameMode::OnMatchTimeExpired()
 	const bool bDraw = RelativeMargin <= DrawMarginFraction;
 	const int32 Winner = bDraw ? Teams::None : BestTeam;
 
-	State->SetMatchResult(Winner);
+	FinishMatch(Winner);
 
 	UE_LOG(LogMintChoco, Log,
 		TEXT("경기 종료: %s (1위 %.2f%% vs 2위 %.2f%%, 상대 격차 %.1f%% / 무승부 기준 %.1f%%) | %s"),
@@ -310,6 +322,93 @@ void AGameGameMode::OnMatchTimeExpired()
 		RelativeMargin * 100.0f,
 		DrawMarginFraction * 100.0f,
 		*Coverage.ToString());
+}
+
+void AGameGameMode::FinishMatch(int32 Winner)
+{
+	AGameGameState* const State = GetGameState<AGameGameState>();
+	if (!State)
+	{
+		return;
+	}
+
+	// 이미 끝난 경기면 여기서 아무 일도 일어나지 않는다(SetMatchResult가 막는다). 그 경우
+	// 복귀 예약도 다시 걸지 않아야 하므로 확정 여부를 먼저 본다.
+	if (State->IsMatchEnded())
+	{
+		return;
+	}
+
+	State->SetMatchResult(Winner);
+
+	if (ReturnToLobbyDelay > 0.0f)
+	{
+		GetWorldTimerManager().SetTimer(ReturnToLobbyTimer, this, &AGameGameMode::ReturnToLobby, ReturnToLobbyDelay, false);
+
+		// 결과창의 카운트다운이 읽는 값. 타이머와 같은 순간을 가리켜야 숫자가 0이 되는 때와
+		// 실제로 떠나는 때가 맞는다.
+		State->SetReturnToLobbyTime(State->GetServerWorldTimeSeconds() + ReturnToLobbyDelay);
+	}
+}
+
+void AGameGameMode::ReturnToLobbyNow()
+{
+	// 예약해 둔 복귀는 더 볼 일이 없다. 트래블이 시작되면 이 월드와 함께 사라지지만,
+	// 페이드가 도는 동안에도 만료될 수 있으므로 여기서 거둔다.
+	GetWorldTimerManager().ClearTimer(ReturnToLobbyTimer);
+
+	ReturnToLobby();
+}
+
+void AGameGameMode::EndOnlineSession()
+{
+	IOnlineSubsystem* const Subsystem = Online::GetSubsystem(GetWorld());
+	const IOnlineSessionPtr Sessions = Subsystem ? Subsystem->GetSessionInterface() : nullptr;
+	if (!Sessions.IsValid() || !Sessions->GetNamedSession(NAME_GameSession))
+	{
+		// 세션 없이 도는 판(에디터에서 맵을 직접 열었을 때)이다. 끝낼 것이 없다.
+		return;
+	}
+
+	// 결과창의 나가기 버튼도 같은 일을 한다. 먼저 도달한 쪽이 끝내고 떠나므로, 여기 올 때는
+	// 이미 끝나 있을 수 있다. 그때 EndSession을 또 부르면 실패하니 상태를 먼저 본다.
+	const EOnlineSessionState::Type State = Sessions->GetSessionState(NAME_GameSession);
+	if (State != EOnlineSessionState::InProgress)
+	{
+		return;
+	}
+
+	if (!Sessions->EndSession(NAME_GameSession))
+	{
+		// 막히면 증상은 "로비에서 전원이 준비해도 시작되지 않는다"로만 나타난다. 그때 볼 줄이다.
+		UE_LOG(LogMintChoco, Warning,
+			TEXT("세션을 끝내지 못했습니다(상태 %s). 로비에서 다음 판이 시작되지 않을 수 있습니다."),
+			EOnlineSessionState::ToString(State));
+	}
+}
+
+void AGameGameMode::ReturnToLobby()
+{
+	UWorld* const World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	// 떠나기 전에 세션을 되돌린다. 결과와 무관하게 트래블한다 — 세션이 어떻든 결과창에
+	// 갇혀 있는 것보다는 로비에 있는 편이 낫다.
+	EndOnlineSession();
+
+	// 서버 트래블이라 접속한 전원이 함께 넘어간다. 가림막을 거치는 것이 이 프로젝트의 규칙이다.
+	if (UScreenFadeSubsystem* const Fade = UScreenFadeSubsystem::Get(World))
+	{
+		Fade->ServerTravelWithFade(LobbyURL);
+		return;
+	}
+
+	// 가림막이 없으면 화면이 튀지만, 결과창에 갇혀 있는 것보다는 낫다.
+	UE_LOG(LogMintChoco, Warning, TEXT("화면 가림막을 찾지 못해 페이드 없이 로비로 돌아갑니다."));
+	World->ServerTravel(LobbyURL);
 }
 
 int32 AGameGameMode::GetTeamOf(const AController* Player) const

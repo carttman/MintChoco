@@ -118,4 +118,34 @@ bool FBeeSteeringTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+/**
+ * 꿀벌의 프로필이 클라이언트까지 간다는 것. 조종과 효과는 서버만 하지만 클라이언트의 복사본도
+ * 제 비행음을 내야 하고, 그 뱅크는 프로필에만 있다.
+ *
+ * 복제를 떼도 리슨 호스트에서는 멀쩡히 들리기 때문에 손으로는 알아채기 어렵다. 소리가 클라이언트
+ * 한쪽에서만 사라지는 재현 어려운 버그라 여기서 못 박는다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FBeeProfileReplicationTest,
+	"MintChoco.Items.Bee.ProfileReplication",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FBeeProfileReplicationTest::RunTest(const FString& Parameters)
+{
+	const FProperty* const Profile = ABeeProjectile::StaticClass()->FindPropertyByName(TEXT("Profile"));
+	if (!TestNotNull(TEXT("꿀벌에 Profile 프로퍼티가 있다"), Profile))
+	{
+		return false;
+	}
+
+	TestTrue(TEXT("Profile이 복제로 표시돼 있다"), Profile->HasAnyPropertyFlags(CPF_Net));
+
+	// GetLifetimeReplicatedProps에 등록됐는지는 여기서 보지 않는다. 표시만 하고 등록을 빠뜨리면
+	// 엔진이 그 자리에서 verify로 죽으므로(RegisterReplicatedLifetimeProperty) 조용히 지나갈 수
+	// 없고, 확인하겠다고 여기서 그 함수를 부르면 실패가 아니라 런 전체가 죽는다. 조용한 쪽은
+	// 위의 표시가 사라지는 경우뿐이라 그것만 지킨다.
+
+	return true;
+}
+
 #endif

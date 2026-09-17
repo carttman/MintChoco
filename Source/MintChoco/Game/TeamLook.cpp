@@ -10,13 +10,13 @@
 
 namespace
 {
-	const FTeamLook NeutralLook = {FLinearColor(0.5f, 0.5f, 0.5f), FLinearColor(0.5f, 0.5f, 0.5f), 0.5f, 0.5f, 0.0f, 0.0f};
+	const FTeamLook NeutralLook = {FLinearColor(0.5f, 0.5f, 0.5f), FLinearColor(0.5f, 0.5f, 0.5f), 0.5f, 0.5f, 0.0f, 0.0f, 0.8f, 0.5f, 0.0f, 0.5f};
 
-	enum class ELookEntry : uint8 { Color, Subsurface, Surface, Count };
+	enum class ELookEntry : uint8 { Color, Subsurface, Surface, Surface2, Count };
 
 	FName EntryName(int32 TeamId, ELookEntry Entry)
 	{
-		static const TCHAR* const Suffixes[] = {TEXT("Color"), TEXT("Subsurface"), TEXT("Surface")};
+		static const TCHAR* const Suffixes[] = {TEXT("Color"), TEXT("Subsurface"), TEXT("Surface"), TEXT("Surface2")};
 		static FName Cache[Teams::Count][static_cast<int32>(ELookEntry::Count)];
 		if (!Teams::IsValidId(TeamId))
 		{
@@ -92,6 +92,13 @@ FTeamLook TeamLook::GetFrom(const UMaterialParameterCollection* Collection, int3
 		Look.Metallic = Value.B;
 		Look.WetCoat = Value.A;
 	}
+	if (ReadVector(*Collection, World, Surface2ParameterName(TeamId), Value))
+	{
+		Look.SecondRoughness = Value.R;
+		Look.SecondRoughnessWeight = Value.G;
+		Look.FuzzAmount = Value.B;
+		Look.FuzzRoughness = Value.A;
+	}
 	return Look;
 }
 
@@ -123,4 +130,9 @@ FName TeamLook::SubsurfaceParameterName(int32 TeamId)
 FName TeamLook::SurfaceParameterName(int32 TeamId)
 {
 	return EntryName(TeamId, ELookEntry::Surface);
+}
+
+FName TeamLook::Surface2ParameterName(int32 TeamId)
+{
+	return EntryName(TeamId, ELookEntry::Surface2);
 }

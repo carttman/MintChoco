@@ -66,6 +66,9 @@ void UGA_HeroLanding::OnItemActivated(AUnit& Unit, const UItemProfile& Profile)
 		return;
 	}
 
+	UE_LOG(LogMintChoco, Verbose, TEXT("[히어로랜딩][어빌리티] 발동(권한 %d, 로컬 %d). 상태 태그가 여기서 붙는다."),
+		IsAuthority() ? 1 : 0, Unit.IsLocallyControlled() ? 1 : 0);
+
 	Movement->SetHeroLandingParams(Landing->Landing);
 
 	// 의도는 움직임을 실제로 계산하는 쪽이 세운다. 원격 클라이언트의 폰이라면 서버는 무브에 실려
@@ -171,11 +174,16 @@ void UGA_HeroLanding::HandleLanded()
 		UE_LOG(LogMintChoco, Verbose, TEXT("%s: 히어로 랜딩 착지."), *GetNameSafe(Unit));
 	}
 
+	UE_LOG(LogMintChoco, Verbose, TEXT("[히어로랜딩][어빌리티] 착지 알림 받음(권한 %d). 아이템을 끝낸다."), IsAuthority() ? 1 : 0);
 	FinishItem();
 }
 
 void UGA_HeroLanding::OnItemEnded(AUnit& Unit, const UItemProfile& Profile)
 {
+	UE_LOG(LogMintChoco, Verbose, TEXT("[히어로랜딩][어빌리티] 종료(권한 %d). 상태 태그가 여기서 풀린다. 단계 %d"),
+		IsAuthority() ? 1 : 0,
+		Unit.GetUnitMovement() ? static_cast<int32>(Unit.GetUnitMovement()->GetHeroLandingPhase()) : -1);
+
 	Unit.OnHeroLandingFinished.Remove(LandedHandle);
 	LandedHandle.Reset();
 	DestroyMarker();

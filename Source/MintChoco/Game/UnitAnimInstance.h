@@ -41,6 +41,20 @@ struct MINTCHOCO_API FUnitAnimMath
 	 * MaxDegrees가 음수면 방향을 뒤집는다. LeanGravity가 0 이하면 0.
 	 */
 	static float BoardLeanFromTurn(float GroundSpeed, float YawRateDegreesPerSecond, float LeanGravity, float MaxDegrees);
+
+	/**
+	 * 히어로 랜딩 다이브 중 메시를 캡슐과 따로 돌릴 각(캡슐 축 기준, 도). 내리꽂는 동안 캡슐은 전혀
+	 * 돌지 않으므로(UUnitMovementComponent::ShouldFaceControlRotation이 입력 잠금에서 먼저 막힌다)
+	 * 뜬 자리에서 보던 쪽을 그대로 본 채 옆으로 미끄러진다. 그 차이를 메시가 메운다.
+	 *
+	 * 요는 다이브 방향과 몸이 보는 쪽(BodyYaw)의 차이이고, 피치는 다이브 벡터가 눕는 각을
+	 * ±|MaxPitchDegrees|로 자른 값이다(내려가므로 음수, 곧 앞으로 숙인다).
+	 *
+	 * 수평 성분이 없는 수직 낙하(착지점 위로 건너간 뒤의 StartHeroPlunge)에는 향할 방향이 없다.
+	 * 그때는 CurrentTiltYaw를 그대로 돌려준다 — 새로 구하면 몸이 세계 기준 0도로 홱 돈다.
+	 * 속도가 0이면 영 회전.
+	 */
+	static FRotator HeroDiveTilt(const FVector& Velocity, double BodyYaw, float CurrentTiltYaw, float MaxPitchDegrees);
 };
 
 /**
@@ -120,11 +134,19 @@ protected:
 	/**
 	 * 보드 기울기(도). 양수면 오른쪽으로 기운다. 보드 동작 중에만 보이는 몸이 도는 속도와 이동 속도만큼
 	 * 회전 안쪽으로 기울고(FUnitAnimMath::BoardLeanFromTurn), 돌지 않거나 보드에서 내리면 0으로
-	 * 돌아온다. 이 값으로 유닛이 메시를 굴린다(AUnit::SetMeshLean).
+	 * 돌아온다. 이 값은 다이브 기울기와 합쳐져 유닛의 메시 회전이 된다(AUnit::SetMeshOffset).
 	 * 애님 그래프가 따로 쓸 일은 없지만 디버깅용으로 읽을 수 있게 둔다.
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "Unit|Dash")
 	float BoardLean = 0.0f;
+
+	/**
+	 * 히어로 랜딩 다이브 기울기(도). 내리꽂는 동안 메시가 다이브 방향을 향하도록 돌아간 각이고,
+	 * 다이브가 아니면 0으로 돌아온다(FUnitAnimMath::HeroDiveTilt). 보드 기울기와 마찬가지로
+	 * 복제하지 않는다: 단계와 속도가 이미 복제되므로 머신마다 같은 값이 나온다.
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "Unit|HeroLanding")
+	FRotator HeroDiveTilt = FRotator::ZeroRotator;
 
 	/**
 	 * 히어로 랜딩 단계. None이면 평소.
@@ -262,6 +284,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning", meta = (ClampMin = "0"))
 	float BoardLeanInterpSpeed = 8.0f;
 
+	/**
+	 * 히어로 랜딩 다이브에서 앞으로 숙이는 최대 각(도). 다이브 방향에 그대로 맞추면 수직 낙하에서
+	 * 90도로 완전히 엎어지므로 여기서 자른다.
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning", meta = (ClampMin = "0", ClampMax = "90", ForceUnits = "deg"))
+	float HeroDiveTiltMaxPitch = 60.0f;
+
+	/** 다이브 기울기가 목표로 따라가는 속도(FInterpTo). 착지해서 다이브가 끝나면 같은 속도로 돌아온다. */
+	UPROPERTY(EditDefaultsOnly, Category = "Unit|Tuning", meta = (ClampMin = "0"))
+	float HeroDiveTiltInterpSpeed = 15.0f;
+
 private:
 	/** 소유 폰. 유닛이 아니면 이동·공중 값만 채우고 상태는 기본값으로 둔다. */
 	UPROPERTY(Transient)
@@ -273,6 +306,12 @@ private:
 	/** 지난 프레임에 보인 몸의 요(도)와 그 값이 유효한지. 보드 기울기의 회전 속도를 잰다. */
 	double LastBodyYaw = 0.0;
 	bool bBodyYawInitialized = false;
+
+	/**
+	 * 지난 프레임의 히어로 랜딩 단계. 내리꽂기가 끝나는 프레임을 잡으려는 것뿐이다: 그때 캡슐이
+	 * 꽂은 쪽으로 돌아서므로 메시는 들고 있던 요를 놓아야 한다.
+	 */
+	EHeroLandingPhase LastHeroLandingPhase = EHeroLandingPhase::None;
 
 	/** 보이는 몸의 요(도). 메시 월드 회전에서 기준 회전을 걷어 낸 값이다. 모든 머신에서 같은 식으로 잰다. */
 	double GetBodyYaw(const AUnit& InUnit) const;

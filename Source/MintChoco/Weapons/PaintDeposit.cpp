@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 
 #include "Game/Unit.h"
+#include "MintChoco.h"
 #include "Paint/PaintBrushProfile.h"
 #include "Paint/PaintSplashProfile.h"
 #include "Paint/PaintSplat.h"
@@ -61,11 +62,27 @@ bool FPaintDeposit::StrikeReceiver(const FHitResult& Hit, uint8 PaintId) const
 bool FPaintDeposit::StrikeUnit(const FHitResult& Hit, uint8 PaintId, float Charge) const
 {
 	AUnit* const Unit = Cast<AUnit>(Hit.GetActor());
-	if (!Unit || Unit->GetPaintId() == PaintId)
+	if (!Unit)
 	{
 		return false;
 	}
-	return Unit->TryApplyStun(StunSecondsFor(Charge), StunSuperArmorDuration);
+
+	// 아군 판정은 이 id 비교 하나뿐이다. 두 값을 나란히 찍어 두면, 팀이 아직 정해지지 않은
+	// 유닛이나 무기가 들고 있던 예약 id가 섞여 들어올 때 로그에서 바로 드러난다.
+	const int32 VictimPaintId = Unit->GetPaintId();
+	const int32 ShotPaintId = PaintId;
+	if (VictimPaintId == ShotPaintId)
+	{
+		UE_LOG(LogMintChoco, Verbose, TEXT("[스턴][적중] %s 통과: 같은 페인트 id %d."),
+			*GetNameSafe(Unit), VictimPaintId);
+		return false;
+	}
+
+	const float StunSeconds = StunSecondsFor(Charge);
+	const bool bStunned = Unit->TryApplyStun(StunSeconds, StunSuperArmorDuration);
+	UE_LOG(LogMintChoco, Verbose, TEXT("[스턴][적중] %s(페인트 id %d) ← 탄 id %d, 충전 %.2f, 스턴 %.2f초 → %s."),
+		*GetNameSafe(Unit), VictimPaintId, ShotPaintId, Charge, StunSeconds, bStunned ? TEXT("적용") : TEXT("거절"));
+	return bStunned;
 }
 
 bool FPaintDeposit::ApplyHit(UWorld* World, const FHitResult& Hit, const FVector& IncidentVelocity, uint8 PaintId, int32 Seed, float Charge, uint8 StarGen, float BallRadius) const
