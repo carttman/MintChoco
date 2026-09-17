@@ -136,7 +136,7 @@ public:
 	/** 서버 전용. 경기가 끝나는 서버 월드 시각을 정한다. */
 	void SetMatchEndTime(double InServerTime);
 
-	/** 서버 전용. 승팀을 확정한다. Teams::None은 무승부. */
+	/** 서버 전용. 승팀을 확정한다. 무승부는 없으므로 Teams::None으로 부르지 않는다. */
 	void SetMatchResult(int32 InWinningTeam);
 
 	/** 서버 전용. 전원이 로비로 떠나는 서버 월드 시각을 정한다. 0이면 예약 없음. */
@@ -168,13 +168,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Match")
 	bool IsMatchEnded() const { return bMatchEnded; }
 
-	/** 승팀. 경기 중이거나 무승부면 Teams::None. 둘의 구분은 IsMatchEnded로 한다. */
+	/** 승팀. 경기 중이면 Teams::None. 끝났는지는 IsMatchEnded로 본다. */
 	UFUNCTION(BlueprintPure, Category = "Match")
 	int32 GetWinningTeam() const { return WinningTeam; }
 
 	/**
-	 * 결과 화면에 그대로 띄우는 문구. 경기 전이면 빈 텍스트, 승팀이 있으면 "<팀> 팀 승리",
-	 * 끝났는데 승팀이 없으면 "무승부".
+	 * 결과 화면에 그대로 띄우는 문구. 끝났으면 "<팀> 팀 승리", 경기 전이면 빈 텍스트.
 	 *
 	 * 팀 이름은 Teams::GetDisplayName 한 곳에서 온다 — 팀 이름을 바꾸면 이 문구도 같이 바뀌고,
 	 * "초코"가 코드와 위젯 두 곳에 적히는 일이 없다. 위젯은 Txt_WinnerInfo의 Text를 여기에

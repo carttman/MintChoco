@@ -80,7 +80,7 @@ namespace MatchResultSubsystem
 
 	FAutoConsoleCommandWithWorldAndArgs GResultPreviewCommand(
 		TEXT("mc.Result.Preview"),
-		TEXT("경기 결과 연출을 지어낸 값으로 돌린다. mc.Result.Preview <민트 %> <초코 %> [이긴 팀 0|1|-1]. 인자 없이 부르면 멈춘다."),
+		TEXT("경기 결과 연출을 지어낸 값으로 돌린다. mc.Result.Preview <민트 %> <초코 %> [이긴 팀 0|1]. 이긴 팀을 생략하면 두 비율로 정한다. 인자 없이 부르면 멈춘다."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			UMatchResultSubsystem* const Result = World ? World->GetSubsystem<UMatchResultSubsystem>() : nullptr;
@@ -234,6 +234,15 @@ void UMatchResultSubsystem::Start(const FMatchResultInput& InResult, bool bInPre
 	const UPaintBarWidget* const BarDefaults = GetDefault<UPaintBarWidget>(MatchResultSubsystem::ResolveBarClass());
 	Result.LeftTeam = BarDefaults->GetLeftPaintId();
 	Result.RightTeam = BarDefaults->GetRightPaintId();
+
+	// 미리보기에서 이긴 팀을 생략하면 두 비율로 정한다. 실전과 같은 규칙이다 — 무승부는 없고,
+	// 완전히 같으면 앞 번호의 팀, 곧 민트가 가져간다.
+	if (bPreview && !Teams::IsValidId(Result.WinningTeam))
+	{
+		const bool bLeftWins = Result.LeftCoverage > Result.RightCoverage
+			|| (Result.LeftCoverage == Result.RightCoverage && Result.LeftTeam < Result.RightTeam);
+		Result.WinningTeam = bLeftWins ? Result.LeftTeam : Result.RightTeam;
+	}
 
 	Timeline = MakeTimeline();
 	BindSkipKeys();

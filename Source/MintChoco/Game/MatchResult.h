@@ -41,7 +41,7 @@ enum class EMatchResultPhase : uint8
 UENUM()
 enum class EMatchResultStep : uint8
 {
-	/** 제자리에서 계속 서 있는다. 무승부의 양쪽이 이것이다. */
+	/** 제자리에서 계속 서 있는다. 이긴 팀이 정해지지 않았을 때뿐이다. */
 	Stay,
 	/** 카메라 쪽으로 다가와 춤춘다. */
 	Approach,
@@ -62,7 +62,7 @@ struct MINTCHOCO_API FMatchResultInput
 	int32 LeftTeam = Teams::Mint;
 	int32 RightTeam = Teams::Choco;
 
-	/** 이긴 팀. 무승부면 Teams::None. */
+	/** 이긴 팀. 무승부가 없으므로 연출이 도는 동안에는 늘 실제 팀이다. */
 	int32 WinningTeam = Teams::None;
 
 	/** BarTeaser 단계에서 양쪽에 채워 보이는 비율. 격돌이 먼저 터지지 않게 ClashCoverage 아래여야 한다. */
@@ -129,7 +129,7 @@ struct MINTCHOCO_API FMatchResultMath
 	 */
 	static FMatchResultBarState MakeBarState(EMatchResultPhase Phase, const FMatchResultInput& Result);
 
-	/** 이 팀의 캐릭터가 Characters 단계에서 할 것. 무승부면 양쪽 다 Stay. */
+	/** 이 팀의 캐릭터가 Characters 단계에서 할 것. 이긴 팀이 없으면 양쪽 다 Stay. */
 	static EMatchResultStep GetStep(int32 SlotTeam, int32 WinningTeam);
 
 	/**

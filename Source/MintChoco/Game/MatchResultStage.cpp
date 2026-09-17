@@ -116,7 +116,7 @@ void AMatchResultStage::PlayFinish(int32 WinningTeam)
 	MoveRemaining = FMath::Max(Settings.CharacterSeconds, 0.0f);
 	SetActorTickEnabled(true);
 
-	// 움직이지 않는 마무리(무승부, 또는 이동 시간이 0)는 틱을 기다릴 것이 없다.
+	// 움직이지 않는 마무리(이긴 팀이 없거나 이동 시간이 0)는 틱을 기다릴 것이 없다.
 	if (MoveRemaining <= 0.0f)
 	{
 		AdvanceSlot(LeftState, LeftCharacter, LeftSlot, 0.0f);
@@ -263,7 +263,7 @@ void AMatchResultStage::ApplyFinish(const FSlotState& State, USkeletalMeshCompon
 		return;
 
 	default:
-		// 무승부. 서 있는 것을 그대로 둔다.
+		// 이긴 팀이 없다. 서 있는 것을 그대로 둔다.
 		return;
 	}
 }

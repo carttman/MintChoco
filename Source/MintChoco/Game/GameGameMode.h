@@ -110,19 +110,6 @@ protected:
 	float ReadyCheckInterval = 0.25f;
 
 	/**
-	 * 1위와 2위의 상대 격차가 이 값 이하면 무승부로 친다. 0.1 = 두 팀이 칠한 양의 10% 차이.
-	 *
-	 * 맵 전체 면적이 아니라 두 팀이 칠한 양의 합으로 나눈다. 맵의 대부분이 비어 있어도
-	 * 접전인지 압승인지가 그대로 드러나고, 나중에 사격 속도나 스플랫 크기를 올려
-	 * 도포량이 통째로 늘어도 이 값을 다시 손볼 필요가 없다.
-	 *
-	 * 절대 점유율로 비교하면 그때마다 기준을 옮겨야 한다. 지금은 0.17%가 "많이 칠한"
-	 * 수준이지만 도포량이 늘면 그 값은 의미를 잃는다.
-	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Match", meta = (ClampMin = "0.0", ClampMax = "1.0"))
-	float DrawMarginFraction = 0.1f;
-
-	/**
 	 * 결과 연출이 끝나고 이만큼 더 있다가 전원이 로비로 돌아간다(초). 연출 길이
 	 * (UMatchResultSubsystem::GetTotalSeconds)는 여기에 자동으로 더해지므로, 이 값은 연출이
 	 * 끝난 뒤의 여운만 뜻한다. 0이면 연출이 끝나는 즉시 떠난다.
@@ -181,7 +168,7 @@ private:
 	/** 단계 Playing. 아이템 스폰과 경기 타이머가 여기서 시작된다. */
 	void StartMatch();
 
-	/** 시간이 다 됐을 때. 커버리지를 다시 재고 더 많이 칠한 팀을 승팀으로 확정한다. 같으면 무승부. */
+	/** 시간이 다 됐을 때. 커버리지를 다시 재고 더 많이 칠한 팀을 승팀으로 확정한다. 같으면 민트가 이긴다. */
 	void OnMatchTimeExpired();
 
 	/**

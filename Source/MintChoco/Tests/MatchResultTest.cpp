@@ -160,17 +160,17 @@ bool FMatchResultBarStateTest::RunTest(const FString& Parameters)
 		TestFalse(TEXT("a half-painted board never clashes"), Fill.IsClashing());
 	}
 
-	// 무승부는 마무리를 걸지 않는다.
+	// 이긴 팀이 없으면 마무리를 걸지 않는다.
 	{
-		const FMatchResultInput Draw = MatchResultTest::MakeResult(0.45f, 0.45f, Teams::None);
-		const FMatchResultBarState State = FMatchResultMath::MakeBarState(EMatchResultPhase::Hold, Draw);
-		TestEqual(TEXT("a draw has nobody to push"), State.ForcedKnockoutTeam, Teams::None);
+		const FMatchResultInput NoWinner = MatchResultTest::MakeResult(0.45f, 0.45f, Teams::None);
+		const FMatchResultBarState State = FMatchResultMath::MakeBarState(EMatchResultPhase::Hold, NoWinner);
+		TestEqual(TEXT("no winner means nobody to push"), State.ForcedKnockoutTeam, Teams::None);
 	}
 
 	return true;
 }
 
-/** 승자는 다가오고 패자는 물러난다. 무승부는 둘 다 그대로. */
+/** 승자는 다가오고 패자는 물러난다. 이긴 팀이 없으면 둘 다 그대로. */
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FMatchResultStepTest,
 	"MintChoco.Match.Result.Step",
@@ -183,9 +183,9 @@ bool FMatchResultStepTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("the loser withdraws"),
 		FMatchResultMath::GetStep(Teams::Choco, Teams::Mint) == EMatchResultStep::Withdraw);
 
-	TestTrue(TEXT("a draw leaves mint standing"),
+	TestTrue(TEXT("no winner leaves mint standing"),
 		FMatchResultMath::GetStep(Teams::Mint, Teams::None) == EMatchResultStep::Stay);
-	TestTrue(TEXT("a draw leaves choco standing"),
+	TestTrue(TEXT("no winner leaves choco standing"),
 		FMatchResultMath::GetStep(Teams::Choco, Teams::None) == EMatchResultStep::Stay);
 
 	// 캐릭터 정의가 없어 비워 둔 자리는 승패와 무관하게 가만히 있는다.

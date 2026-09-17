@@ -248,16 +248,12 @@ FText AGameGameState::GetMatchResultText() const
 
 FText AGameGameState::MakeMatchResultText(bool bEnded, int32 InWinningTeam)
 {
-	// 경기 중에 팝업이 먼저 떠 있어도 빈 칸이지 "무승부"가 아니다. 둘을 가르는 것은 승팀 값이
-	// 아니라 끝났는지다 — 무승부의 승팀도 Teams::None이기 때문이다.
-	if (!bEnded)
+	// 무승부는 없다(AGameGameMode::OnMatchTimeExpired). 끝난 경기에는 반드시 승팀이 있으므로
+	// 빈 칸이 뜨는 경우는 둘뿐이다: 경기 중에 팝업이 먼저 떠 있는 것과, 승팀 값이 복제로
+	// 도착하기 전의 한 프레임.
+	if (!bEnded || !Teams::IsValidId(InWinningTeam))
 	{
 		return FText::GetEmpty();
-	}
-
-	if (!Teams::IsValidId(InWinningTeam))
-	{
-		return NSLOCTEXT("MintChoco.Match", "ResultDraw", "무승부");
 	}
 
 	return FText::Format(NSLOCTEXT("MintChoco.Match", "ResultWin", "{0} 팀 승리"),
@@ -289,7 +285,7 @@ void AGameGameState::HandleMatchEnded()
 {
 	DrawCoverageDebug();
 
-	// 승패는 보는 사람의 팀에 달렸다. 로컬 플레이어의 PlayerState가 팀을 안다; 없으면(관전, 데디) 무승부 취급.
+	// 승패는 보는 사람의 팀에 달렸다. 로컬 플레이어의 PlayerState가 팀을 안다; 없으면(관전, 데디) 어느 편도 아닌 소리를 낸다.
 	int32 LocalTeam = Teams::None;
 	if (const UWorld* const World = GetWorld())
 	{
@@ -345,8 +341,8 @@ void AGameGameState::DrawCoverageDebug() const
 		CoverageDebugKeyBase + 1 + Teams::Count, Duration, FColor::Silver,
 		FString::Printf(TEXT("  미도포  %6.2f%%"), WorldCoverage.GetFraction(PaintIdNone) * 100.0f));
 
-	// 승패는 절대 점유율이 아니라 두 팀 사이의 상대 격차로 갈린다(AGameGameMode::OnMatchTimeExpired).
-	// 무승부로 끝난 이유를 화면에서 바로 읽을 수 있도록 같은 값을 여기서도 보여준다.
+	// 승패는 더 많이 칠한 쪽으로 갈리고, 완전히 같으면 민트가 가져간다(AGameGameMode::OnMatchTimeExpired).
+	// 얼마나 접전이었는지를 화면에서 바로 읽을 수 있도록 두 팀 사이의 상대 격차를 같이 보여준다.
 	{
 		const float MintFraction = WorldCoverage.GetFraction(static_cast<uint8>(Teams::Mint));
 		const float ChocoFraction = WorldCoverage.GetFraction(static_cast<uint8>(Teams::Choco));
@@ -363,7 +359,7 @@ void AGameGameState::DrawCoverageDebug() const
 		GEngine->AddOnScreenDebugMessage(
 			CoverageDebugKeyBase + 3 + Teams::Count, Duration, TeamLook::GetDisplayColor(WinningTeam, GetWorld()),
 			FString::Printf(TEXT("  경기 종료 — %s (WinningTeam %d)"),
-				Teams::IsValidId(WinningTeam) ? Teams::GetDisplayName(WinningTeam) : TEXT("무승부"),
+				Teams::GetDisplayName(WinningTeam),
 				WinningTeam));
 	}
 }

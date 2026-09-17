@@ -77,10 +77,12 @@ bool FMatchResultTextTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("문구의 팀 이름은 Teams::GetDisplayName에서 온다"),
 		AGameGameState::MakeMatchResultText(true, Teams::Choco).ToString().Contains(Teams::GetDisplayName(Teams::Choco)));
 
-	TestEqual(TEXT("승팀이 없으면 무승부"),
-		AGameGameState::MakeMatchResultText(/*bEnded=*/true, Teams::None).ToString(), TEXT("무승부"));
+	// 무승부가 없어졌으니 "무승부" 문구도 없다. 끝났는데 승팀이 없는 것은 복제가 아직
+	// 도착하지 않은 한때뿐이고, 그때는 아무것도 띄우지 않는다.
+	TestTrue(TEXT("승팀이 없으면 빈 텍스트"),
+		AGameGameState::MakeMatchResultText(/*bEnded=*/true, Teams::None).IsEmpty());
 
-	// 경기 전에 팝업이 먼저 떠 있어도 "무승부"가 뜨면 안 된다. 승팀 값은 무승부와 같다.
+	// 경기 전에 팝업이 먼저 떠 있어도 승패 문구가 뜨면 안 된다.
 	TestTrue(TEXT("경기가 끝나기 전에는 빈 텍스트"),
 		AGameGameState::MakeMatchResultText(/*bEnded=*/false, Teams::None).IsEmpty());
 	TestTrue(TEXT("끝나지 않았으면 승팀이 있어도 빈 텍스트"),

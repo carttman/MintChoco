@@ -46,7 +46,7 @@ public:
 	/** 두 자리에 캐릭터를 세우고 서 있는 애니메이션을 돌린다. 연출이 시작될 때 한 번. */
 	void Prepare(const FMatchResultSlotCast& Left, const FMatchResultSlotCast& Right);
 
-	/** 이긴 쪽은 다가와 춤추고, 진 쪽은 물러나 멈추고 회색이 된다. 무승부면 둘 다 그대로 선다. */
+	/** 이긴 쪽은 다가와 춤추고, 진 쪽은 물러나 멈추고 회색이 된다. 이긴 팀이 없으면 둘 다 그대로 선다. */
 	void PlayFinish(int32 WinningTeam);
 
 	/** 캐릭터를 치우고 무대를 처음 상태로 되돌린다. */
