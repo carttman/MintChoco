@@ -93,10 +93,10 @@ bool FItemProfileAssetTest::RunTest(const FString& Parameters)
 				Item->AuraMaterial->CheckMaterialUsage_Concurrent(MATUSAGE_SkeletalMesh));
 		}
 
-		// 뱅크를 넣을 칸이 둘로 보인다: 프로필의 Sounds와, Burst 안의 Sounds. 파열음을 내는
-		// 것은 뒤쪽처럼 보이지만 MakeBurstParams가 프로필 값으로 덮어쓰므로 거기 넣은 뱅크는
-		// 통째로 버려지고, 발동음은 발동음대로 빈 기본 뱅크로 떨어진다. 양쪽 다 조용히 사라져
-		// 에셋만 보면 멀쩡해 보이므로, 잘못 넣은 것을 알아채는 곳은 여기뿐이다.
+		// 버스트를 쓰는 아이템은 파라미터를 만들 때 프로필의 Sounds를 싣는다. Burst 안의 Sounds에
+		// 넣은 값은 그래서 언제나 덮여 사라지고, 발동음은 발동음대로 빈 기본 뱅크로 떨어진다.
+		// 양쪽 다 조용해서 에셋만 보면 멀쩡해 보인다. 이제 그 칸은 에디터에 나오지도 않지만,
+		// 전에 넣어 둔 값이 남아 있는 에셋은 여기서 잡는다.
 		for (TFieldIterator<FStructProperty> It(Item->GetClass()); It; ++It)
 		{
 			if (It->Struct != FPaintBurstParams::StaticStruct())
@@ -108,9 +108,9 @@ bool FItemProfileAssetTest::RunTest(const FString& Parameters)
 			if (Burst.Sounds && !Item->Sounds)
 			{
 				AddError(FString::Printf(
-					TEXT("%s: %s.Sounds holds %s but the profile's own Sounds is empty. MakeBurstParams overwrites it ")
-					TEXT("with the profile's bank, so this one is discarded and the activate sound falls back to the ")
-					TEXT("project bank. Put the bank in the profile's Sounds instead."),
+					TEXT("%s: %s.Sounds holds %s but the profile's own Sounds is empty. The burst always takes the ")
+					TEXT("profile's bank, so this one is discarded and the activate sound falls back to the project ")
+					TEXT("bank. Put the bank in the profile's Sounds instead."),
 					*Name, *It->GetName(), *GetNameSafe(Burst.Sounds.Get())));
 			}
 		}

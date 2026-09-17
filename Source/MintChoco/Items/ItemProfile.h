@@ -81,11 +81,13 @@ public:
 	TObjectPtr<UTexture2D> Icon;
 
 	/**
-	 * 이 아이템만 다르게 낼 소리(Audio.Item.* : Pickup, Activate, Expire). 바꿀 태그만 넣는다;
+	 * 이 아이템만 다르게 낼 소리(Audio.Item.* : Pickup, Activate, Loop, Expire). 바꿀 태그만 넣는다;
 	 * 없는 태그는 프로젝트 기본 뱅크(UGameAudioSettings::Bank)로 내려간다. 비어 있으면 전부 기본.
 	 *
-	 * 아이템이 이 뱅크를 제 효과까지 들려 보내면 그쪽 태그도 덮을 수 있다. 꿀풍선이 그렇게
-	 * 파열음(Audio.World.Burst)을 제 것으로 낸다(UHoneyBalloonProfile::MakeBurstParams).
+	 * 아이템이 이 뱅크를 제 효과까지 들려 보내면 그쪽 태그도 덮을 수 있다. 버스트를 쓰는 셋
+	 * (꿀풍선, 히어로 랜딩, 벌)이 그렇게 파열음(Audio.World.Burst)을 제 것으로 낸다: 파라미터를
+	 * 만들 때 이 뱅크를 FPaintBurstParams::Sounds에 싣는다. 그래서 아이템 소리의 출처는 어느
+	 * 경우에도 이 칸 하나다.
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity")
 	TObjectPtr<USoundBank> Sounds;

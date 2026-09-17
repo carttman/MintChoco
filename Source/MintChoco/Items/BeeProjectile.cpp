@@ -529,6 +529,8 @@ void ABeeProjectile::OnDetonate()
 	FPaintBurstParams Burst = Profile->Burst;
 	Burst.PaintId = GetPaintId();
 	Burst.Seed = FMath::Rand();
+	// 히어로 랜딩과 같은 이유로 뱅크를 싣는다. 아이템 소리의 출처는 프로필의 Sounds 하나다.
+	Burst.Sounds = Profile->Sounds;
 	APaintBurst::Spawn(*World, Origin, Burst);
 
 	FItemAreaEffect::Apply(*World, Origin, Profile->StunRadius, GetTeam(), GetInstigatorUnit(), /*bKnockback=*/false);
