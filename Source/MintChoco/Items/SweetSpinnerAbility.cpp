@@ -48,11 +48,18 @@ void UGA_SweetSpinner::OnItemActivated(AUnit& Unit, const UItemProfile& Profile)
 
 	StartYaw = static_cast<float>(Unit.GetActorRotation().Yaw);
 
-	// 회전 구간에서만 쏜다. 애니메이션에 표시가 없으면 지속시간 전체가 구간이다.
-	float SpinStart = 0.0f;
-	float SpinEnd = 0.0f;
-	Spinner->GetVolleyWindow(SpinStart, SpinEnd);
-	VolleyCount = Spinner->GetVolleyCount(SpinEnd - SpinStart);
+	// 회전 구간에서만 쏜다. 애니메이션에 표시가 없으면 회전 구간 전체가 구간이다.
+	float WindowStart = 0.0f;
+	float WindowEnd = 0.0f;
+	Spinner->GetVolleyWindow(WindowStart, WindowEnd);
+
+	// 발 수는 회전 구간 전체로 센다. 여러 바퀴를 돌면 그 사이의 표시 밖 구간도 타이머는 지나가고,
+	// 쏠지 말지는 발마다 IsInVolleyWindow가 정한다.
+	const float SpinStart = Spinner->GetStartPhaseLength();
+	SpinLoopLength = Spinner->GetSpinLoopLength();
+	LoopVolleyStart = WindowStart - SpinStart;
+	LoopVolleyEnd = WindowEnd - SpinStart;
+	VolleyCount = Spinner->GetVolleyCount(Spinner->GetSpinPhaseLength());
 
 	// 준비 동작이 있으면 그동안은 쏘지 않는다. 애니메이션은 어빌리티가 켜지는 순간부터 도므로
 	// 시퀀스의 시각이 곧 여기서의 대기 시간이다.
@@ -65,6 +72,21 @@ void UGA_SweetSpinner::OnItemActivated(AUnit& Unit, const UItemProfile& Profile)
 	}
 
 	StartVolleys();
+}
+
+bool UGA_SweetSpinner::IsInVolleyWindow(int32 ActionNumber) const
+{
+	if (!Spinner || SpinLoopLength <= UE_KINDA_SMALL_NUMBER)
+	{
+		return true;
+	}
+
+	// 타이머는 회전이 시작될 때 첫 발을 쏘고(UAbilityTask_Repeat::Activate) 그 뒤로 간격마다 쏘므로,
+	// 이번 발의 시각은 곱셈 하나로 나온다. 바퀴 안의 시각은 그것을 한 바퀴 길이로 나눈 나머지다.
+	const float TimeInSpin = ActionNumber * Spinner->VolleyInterval;
+	const float TimeInLoop = FMath::Fmod(TimeInSpin, SpinLoopLength);
+	return TimeInLoop >= LoopVolleyStart - UE_KINDA_SMALL_NUMBER
+		&& TimeInLoop <= LoopVolleyEnd + UE_KINDA_SMALL_NUMBER;
 }
 
 void UGA_SweetSpinner::SchedulePosePhases(AUnit& Unit)
@@ -182,6 +204,13 @@ void UGA_SweetSpinner::HandleVolley(int32 ActionNumber)
 		return;
 	}
 
+	// 이번 발이 이번 바퀴의 발사 구간 밖이면 건너뛴다. 여러 바퀴를 돌 때 바퀴 사이의 도입부가
+	// 여기로 걸러진다.
+	if (!IsInVolleyWindow(ActionNumber))
+	{
+		return;
+	}
+
 	// 원점과 방향 모두 손에서 온다: 애니메이션이 도는 대로 탄이 나가므로 따로 맞출 것이 없다.
 	FVector Origin;
 	FVector Flat;
@@ -189,14 +218,15 @@ void UGA_SweetSpinner::HandleVolley(int32 ActionNumber)
 	{
 		// 손 소켓을 못 쓴다. 예전 방식으로 돈다: 캐릭터 중심의 손 높이에서 계산한 요로.
 		//
-		// 캐릭터마다 조용히 달라지면 원인을 찾기 어려우므로 첫 발에서 한 번 알린다. 소켓이
+		// 캐릭터마다 조용히 달라지면 원인을 찾기 어려우므로 이번 사용에 한 번만 알린다. 소켓이
 		// 있는데도 여기로 왔다면 손이 몸 중심 바로 위아래라 수평 방향을 뽑지 못한 것이다.
 		const USkeletalMeshComponent* const Mesh = Unit->GetMesh();
-		UE_CLOG(ActionNumber == 0, LogMintChoco, Warning,
+		UE_CLOG(!bWarnedHandMuzzle, LogMintChoco, Warning,
 			TEXT("%s: 손 소켓 '%s'로 쏘지 못해 캐릭터 중심에서 쏩니다(메시 %s, 소켓·본 있음: %s)."),
 			*GetNameSafe(Unit), *Spinner->HandSocket.ToString(),
 			*GetNameSafe(Mesh ? Mesh->GetSkeletalMeshAsset() : nullptr),
 			(Mesh && Mesh->DoesSocketExist(Spinner->HandSocket)) ? TEXT("예") : TEXT("아니오"));
+		bWarnedHandMuzzle = true;
 
 		Flat = FRotator(0.0f, SweetSpinner::VolleyYawDegrees(StartYaw, ActionNumber, VolleyCount, Spinner->Turns), 0.0f).Vector();
 		Origin = Unit->GetActorLocation();

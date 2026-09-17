@@ -35,6 +35,16 @@ bool SweetSpinner::FindVolleyWindow(const UAnimSequenceBase* Sequence, float& Ou
 	return false;
 }
 
+float SweetSpinner::ComposeSpinPhase(float LoopLength, int32 Loops, float Remaining)
+{
+	const float SafeRemaining = FMath::Max(Remaining, 0.0f);
+	if (LoopLength <= UE_KINDA_SMALL_NUMBER)
+	{
+		return SafeRemaining;
+	}
+	return FMath::Min(LoopLength * FMath::Max(Loops, 1), SafeRemaining);
+}
+
 void SweetSpinner::ComposeVolleyWindow(float StartLength, float SpinLength, float InnerStart, float InnerEnd,
 	float Duration, float& OutStart, float& OutEnd)
 {
@@ -76,20 +86,32 @@ float USweetSpinnerProfile::GetStartPhaseLength() const
 
 float USweetSpinnerProfile::GetSpinPhaseLength() const
 {
-	// 회전 클립이 없으면 남은 시간 전부가 회전이다(예전 동작).
+	// 회전 클립이 없으면 남은 시간 전부가 회전이다(예전 동작). 바퀴 수도 그때는 뜻이 없다.
 	const float Remaining = FMath::Max(Duration - GetStartPhaseLength(), 0.0f);
-	return SpinAnimation ? FMath::Min(SpinAnimation->GetPlayLength(), Remaining) : Remaining;
+	if (!SpinAnimation)
+	{
+		return Remaining;
+	}
+
+	return SweetSpinner::ComposeSpinPhase(SpinAnimation->GetPlayLength(), SpinLoops, Remaining);
+}
+
+float USweetSpinnerProfile::GetSpinLoopLength() const
+{
+	return SpinAnimation ? SpinAnimation->GetPlayLength() : GetSpinPhaseLength();
 }
 
 void USweetSpinnerProfile::GetVolleyWindow(float& OutStart, float& OutEnd) const
 {
-	const float SpinLength = GetSpinPhaseLength();
+	// 표시는 클립 안의 시각이므로 한 바퀴를 기준으로 잰다. 여러 바퀴를 돌면 이 구간이 바퀴마다
+	// 되풀이되고, 그 되풀이는 쏘는 쪽(UGA_SweetSpinner)이 맞춘다.
+	const float LoopLength = GetSpinLoopLength();
 
 	float InnerStart = 0.0f;
-	float InnerEnd = SpinLength;
+	float InnerEnd = LoopLength;
 	SweetSpinner::FindVolleyWindow(SpinAnimation, InnerStart, InnerEnd);
 
-	SweetSpinner::ComposeVolleyWindow(GetStartPhaseLength(), SpinLength, InnerStart, InnerEnd, Duration, OutStart, OutEnd);
+	SweetSpinner::ComposeVolleyWindow(GetStartPhaseLength(), LoopLength, InnerStart, InnerEnd, Duration, OutStart, OutEnd);
 }
 
 float USweetSpinnerProfile::GetEffectPhaseLength() const
@@ -128,7 +150,8 @@ void USweetSpinnerProfile::LogUnsetReferences(const UObject* Owner) const
 	// 세 구간의 합이 지속시간을 넘으면 뒤가 잘린다. 효과가 끝나는 순간 상태 태그가 내려가
 	// 자세도 산탄도 함께 멈추므로, 뿌리는 도중에 애니메이션이 끊기고 평소 자세로 돌아간다.
 	const float StartLength = StartAnimation ? StartAnimation->GetPlayLength() : 0.0f;
-	const float SpinLength = SpinAnimation ? SpinAnimation->GetPlayLength() : 0.0f;
+	// 바퀴 수만큼이 실제로 돌려는 길이다. 여기서 Duration으로 자르면 경고가 영영 울리지 않는다.
+	const float SpinLength = SpinAnimation ? SpinAnimation->GetPlayLength() * FMath::Max(SpinLoops, 1) : 0.0f;
 	const float EndLength = EndAnimation ? EndAnimation->GetPlayLength() : 0.0f;
 	const float Total = StartLength + SpinLength + EndLength;
 

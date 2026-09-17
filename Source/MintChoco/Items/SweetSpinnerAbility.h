@@ -75,12 +75,21 @@ private:
 	UFUNCTION()
 	void EnterEndPose();
 
-	/** 회전 구간이 시작될 때. 여기서부터 VolleyInterval 간격으로 산탄이 나간다. */
+	/** 회전 구간이 시작될 때. 여기서부터 VolleyInterval 간격으로 발이 돈다. */
 	UFUNCTION()
 	void StartVolleys();
 
 	UFUNCTION()
 	void HandleVolley(int32 ActionNumber);
+
+	/**
+	 * ActionNumber번째 발이 이번 바퀴의 발사 구간 안인가. 표시가 없으면 언제나 참이다.
+	 *
+	 * 구간은 회전 클립 안의 시각이라 바퀴마다 되풀이된다. 바퀴마다 타이머를 새로 걸지 않고 회전
+	 * 구간 전체를 한 타이머로 훑은 뒤 여기서 거르는 이유는 반올림 때문이다: 발 수는 간격으로 나눠
+	 * 반올림한 값이라, 바퀴마다 다시 걸면 그 오차가 바퀴 수만큼 쌓여 발사가 애니메이션에서 밀린다.
+	 */
+	bool IsInVolleyWindow(int32 ActionNumber) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<const USweetSpinnerProfile> Spinner;
@@ -88,4 +97,14 @@ private:
 	/** 발동 순간 캐릭터가 보던 요. 첫 발이 여기서 나간다. */
 	float StartYaw = 0.0f;
 	int32 VolleyCount = 1;
+
+	/** 회전 한 바퀴의 길이(초). 0이면 바퀴를 나눌 수 없어 전부 쏜다. */
+	float SpinLoopLength = 0.0f;
+
+	/** 한 바퀴 안에서 산탄이 나가는 구간(초, 바퀴가 시작한 때부터). */
+	float LoopVolleyStart = 0.0f;
+	float LoopVolleyEnd = 0.0f;
+
+	/** 손 소켓 경고를 한 번만 내기 위한 표시. 첫 발이 구간 밖이라 걸러질 수 있어 번호로는 못 센다. */
+	bool bWarnedHandMuzzle = false;
 };
