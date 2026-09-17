@@ -10,6 +10,7 @@
 #include "Items/ItemProfile.h"
 #include "Items/ItemSettings.h"
 #include "MintChoco.h"
+#include "Paint/PaintSubsystem.h"
 #include "Screen/ScreenFadeSubsystem.h"
 #include "Weapons/PaintProjectile.h"
 #include "Weapons/ProjectilePoolSubsystem.h"
@@ -114,6 +115,11 @@ void UWarmupSubsystem::BeginWarmup(UWorld* World)
 	{
 		PrewarmProjectilePool(World);
 	}
+	// 아이템을 먼저 끌어온 뒤라야 그 아이템의 붓까지 예열 대상에 들어온다.
+	if (Settings.bPrewarmPaint)
+	{
+		PrewarmPaint(World);
+	}
 
 	// PSO는 렌더 스레드가 뒤에서 만든다. 큐가 빌 때까지만 기다린다.
 	if (Settings.bWaitForPSOPrecache && PipelineStateCache::IsPSOPrecachingEnabled())
@@ -214,5 +220,13 @@ void UWarmupSubsystem::PrewarmProjectilePool(UWorld* World)
 		{
 			Pool->Prewarm(Class, Entry.Count);
 		}
+	}
+}
+
+void UWarmupSubsystem::PrewarmPaint(UWorld* World)
+{
+	if (UPaintSubsystem* const Paint = World->GetSubsystem<UPaintSubsystem>())
+	{
+		Paint->Prewarm();
 	}
 }
