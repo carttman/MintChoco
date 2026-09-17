@@ -61,6 +61,20 @@ public:
 	 */
 	void EndMatchByKnockout(int32 Team);
 
+	/**
+	 * 예약된 복귀를 앞당겨 지금 바로 로비로 간다. 결과창의 나가기 버튼이 서버에서만 부른다.
+	 *
+	 * 하는 일은 자동 복귀와 똑같다 — 세션을 끝내고 페이드를 거쳐 전원을 데려간다. 버튼이
+	 * 스스로 세션을 끝내던 것을 여기로 모은 이유가 있다: 세션을 되돌리는 코드가 UI에 달려
+	 * 있으면 복귀 경로가 하나 더 생길 때마다 빼먹게 되고, 실제로 그렇게 한 번 깨졌다
+	 * (자동 복귀가 그 버튼을 지나쳐 다음 판이 시작되지 않았다).
+	 *
+	 * 여러 번 불려도 안전하다. 두 번째 트래블은 UScreenFadeSubsystem이 막고, 두 번째
+	 * 세션 종료는 EndOnlineSession이 상태를 보고 넘어간다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Match")
+	void ReturnToLobbyNow();
+
 protected:
 	/** 아이템이 나오는 주기(초). 0 이하면 아이템이 나오지 않는다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Items", meta = (ClampMin = "0.0", ForceUnits = "s"))
@@ -169,6 +183,17 @@ private:
 
 	/** 서버 전용. 전원을 로비로 데려간다. 트래블은 페이드를 거친다(직접 ServerTravel은 화면이 튄다). */
 	void ReturnToLobby();
+
+	/**
+	 * 서버 전용. 온라인 세션을 InProgress에서 되돌린다. 로비를 떠날 때가 아니라 로비로
+	 * 돌아가기 직전에 부른다.
+	 *
+	 * 빼먹으면 다음 판이 영영 시작되지 않는다: 로비의 시작 경로(BP_LobbyGameMode)는
+	 * StartSession이 성공했을 때만 트래블하는데, 엔진은 이미 InProgress인 세션을 다시
+	 * 시작해 주지 않는다("Can't start a match multiple times"). 전원이 준비해도 아무 일도
+	 * 일어나지 않고, 실패한 이유는 화면 어디에도 나타나지 않는다.
+	 */
+	void EndOnlineSession();
 
 	FTimerHandle ReadyCheckTimer;
 	FTimerHandle CountdownTimer;
