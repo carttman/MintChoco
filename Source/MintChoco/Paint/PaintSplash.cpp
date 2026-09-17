@@ -83,6 +83,9 @@ void PaintSplash::GenerateDroplets(const UPaintSplashProfile& Profile, const FSp
 
 	const FRandomStream Stream(SplashSeed(Input.Seed));
 	const float TangentialSpeed = static_cast<float>(Tangential.Size());
+	// What the contact has to throw with. A skim carries nearly all its speed in the plane, and
+	// spending none of it left a fast graze splashing like a ball that had just dropped in place.
+	const float LaunchSpeed = NormalSpeed + Profile.TangentialLaunchShare * TangentialSpeed;
 	const FVector Forward = TangentialSpeed > 1.0f ? Tangential / TangentialSpeed : SeededTangent(Normal, Stream);
 	const FVector Side = FVector::CrossProduct(Normal, Forward).GetSafeNormal();
 	const float BallRadius = FMath::Max(Input.BallRadius, 0.1f);
@@ -117,7 +120,7 @@ void PaintSplash::GenerateDroplets(const UPaintSplashProfile& Profile, const FSp
 			const float Heading = Plan.Group == EDropletGroup::Side && (Index % 2) == 1 ? -Plan.HeadingDeg : Plan.HeadingDeg;
 			const float Azimuth = Heading + Fan;
 			const float Elevation = FMath::Clamp(Stream.FRandRange(Plan.Settings.ElevationDeg.Min, Plan.Settings.ElevationDeg.Max), 0.0f, 89.0f);
-			const float Speed = NormalSpeed * Stream.FRandRange(Plan.Settings.SpeedScale.Min, Plan.Settings.SpeedScale.Max);
+			const float Speed = LaunchSpeed * Stream.FRandRange(Plan.Settings.SpeedScale.Min, Plan.Settings.SpeedScale.Max);
 			const float RadiusScale = RadiusMin + (RadiusMax - RadiusMin) * FMath::Pow(Stream.FRand(), RadiusBias);
 
 			const FVector InPlane = Forward * FMath::Cos(FMath::DegreesToRadians(Azimuth)) + Side * FMath::Sin(FMath::DegreesToRadians(Azimuth));

@@ -83,8 +83,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch", meta = (ClampMin = "0", ForceUnits = "cm/s"))
 	float MinNormalSpeed = 400.0f;
 
+	/**
+	 * Share of the contact's in-plane speed that counts toward how fast the droplets leave. At 0
+	 * only the approach along the normal throws them, so a pellet skimming into the floor at full
+	 * speed splashes as weakly as one that merely dropped onto it; at 1 a grazing contact throws
+	 * as hard as a head-on one. It moves nothing on a head-on hit, which has no in-plane speed.
+	 * MinNormalSpeed still gates on the normal alone: a ball rolling along the ground never splashes.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch", meta = (ClampMin = "0", ClampMax = "1"))
+	float TangentialLaunchShare = 0.5f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch", meta = (ClampMin = "1", ForceUnits = "cm/s"))
-	float MaxDropletSpeed = 600.0f;
+	float MaxDropletSpeed = 900.0f;
 
 	/** Share of the droplets that fly on across the ball's travel on a head-on hit ... */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Launch", meta = (ClampMin = "0", ClampMax = "1"))
