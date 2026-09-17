@@ -3,6 +3,7 @@
 #include "Game/GameGameMode.h"
 #include "Game/GameGameState.h"
 #include "Game/GameHudWidget.h"
+#include "Game/TeamTypes.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
 
@@ -48,6 +49,38 @@ bool FMatchPhaseTest::RunTest(const FString& Parameters)
 	TestFalse(TEXT("no warning at 31"), FGameHudMath::IsTimerWarning(EMatchPhase::Playing, 31.0f, 30.0f));
 	TestTrue(TEXT("warning at 30"), FGameHudMath::IsTimerWarning(EMatchPhase::Playing, 30.0f, 30.0f));
 	TestTrue(TEXT("warning at 5"), FGameHudMath::IsTimerWarning(EMatchPhase::Playing, 5.0f, 30.0f));
+
+	return true;
+}
+
+/**
+ * 결과 화면 문구. 팀 이름을 코드와 위젯 양쪽에 적으면 한쪽만 고쳐져 어긋나므로, 문구가
+ * Teams::GetDisplayName에서 온다는 것까지 여기서 못 박는다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMatchResultTextTest,
+	"MintChoco.Match.ResultText",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FMatchResultTextTest::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("민트가 이기면 민트 팀 승리"),
+		AGameGameState::MakeMatchResultText(/*bEnded=*/true, Teams::Mint).ToString(), TEXT("민트 팀 승리"));
+	TestEqual(TEXT("초코가 이기면 초코 팀 승리"),
+		AGameGameState::MakeMatchResultText(/*bEnded=*/true, Teams::Choco).ToString(), TEXT("초코 팀 승리"));
+
+	// 팀 이름의 출처가 하나라는 것. 이름을 바꾸면 문구도 따라와야 한다.
+	TestTrue(TEXT("문구의 팀 이름은 Teams::GetDisplayName에서 온다"),
+		AGameGameState::MakeMatchResultText(true, Teams::Choco).ToString().Contains(Teams::GetDisplayName(Teams::Choco)));
+
+	TestEqual(TEXT("승팀이 없으면 무승부"),
+		AGameGameState::MakeMatchResultText(/*bEnded=*/true, Teams::None).ToString(), TEXT("무승부"));
+
+	// 경기 전에 팝업이 먼저 떠 있어도 "무승부"가 뜨면 안 된다. 승팀 값은 무승부와 같다.
+	TestTrue(TEXT("경기가 끝나기 전에는 빈 텍스트"),
+		AGameGameState::MakeMatchResultText(/*bEnded=*/false, Teams::None).IsEmpty());
+	TestTrue(TEXT("끝나지 않았으면 승팀이 있어도 빈 텍스트"),
+		AGameGameState::MakeMatchResultText(/*bEnded=*/false, Teams::Mint).IsEmpty());
 
 	return true;
 }

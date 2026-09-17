@@ -182,6 +182,29 @@ void AGameGameState::SetMatchResult(int32 InWinningTeam)
 	HandleMatchEnded();
 }
 
+FText AGameGameState::GetMatchResultText() const
+{
+	return MakeMatchResultText(bMatchEnded, WinningTeam);
+}
+
+FText AGameGameState::MakeMatchResultText(bool bEnded, int32 InWinningTeam)
+{
+	// 경기 중에 팝업이 먼저 떠 있어도 빈 칸이지 "무승부"가 아니다. 둘을 가르는 것은 승팀 값이
+	// 아니라 끝났는지다 — 무승부의 승팀도 Teams::None이기 때문이다.
+	if (!bEnded)
+	{
+		return FText::GetEmpty();
+	}
+
+	if (!Teams::IsValidId(InWinningTeam))
+	{
+		return NSLOCTEXT("MintChoco.Match", "ResultDraw", "무승부");
+	}
+
+	return FText::Format(NSLOCTEXT("MintChoco.Match", "ResultWin", "{0} 팀 승리"),
+		FText::FromString(Teams::GetDisplayName(InWinningTeam)));
+}
+
 float AGameGameState::GetRemainingTime() const
 {
 	if (MatchEndServerTime <= 0.0)

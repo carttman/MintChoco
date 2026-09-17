@@ -330,6 +330,16 @@ private:
 	TMap<FGameplayTag, TObjectPtr<UNiagaraComponent>> EffectComponents;
 
 	/**
+	 * 상태 태그별로 켜 둔 지속음(Audio.Item.Loop). 이펙트와 같은 수명이고 같은 신호를 따른다:
+	 * 태그가 오르면 켜고 내려가면 끈다. 태그별이라 두 버프가 겹치면 두 루프가 같이 돈다.
+	 *
+	 * 노티파이가 트는 AnimationSounds와는 따로 둔다. 저쪽은 애님 클립의 구간에 묶여 있어
+	 * 자세가 바뀌면 같이 끝나지만, 이쪽은 효과가 끝날 때까지 살아 있어야 한다.
+	 */
+	UPROPERTY(Transient)
+	TMap<FGameplayTag, TObjectPtr<UAudioComponent>> EffectSounds;
+
+	/**
 	 * 효과가 도는 아이템들의 오라. 이펙트와 같은 이유로 복제하지 않는다: 태그가 모든 머신에
 	 * 복제되므로 각자 세우면 같은 그림이 나온다.
 	 */

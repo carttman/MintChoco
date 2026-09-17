@@ -156,6 +156,10 @@ void UGA_HeroLanding::HandleLanded()
 		FPaintBurstParams Burst = Landing->Burst;
 		Burst.PaintId = GetPaintId();
 		Burst.Seed = FMath::Rand();
+		// 착지음을 아이템 것으로 내려면 뱅크가 파라미터에 실려야 한다: APaintBurst는 프로필을
+		// 모르고 복제받은 파라미터만 본다. 아이템 소리의 출처는 어느 아이템에서나 프로필의
+		// Sounds 하나다(UHoneyBalloonProfile::MakeBurstParams와 같은 규칙).
+		Burst.Sounds = Landing->Sounds;
 		// 파열 반경은 v² ÷ (980 × 중력배율)이라 속도의 제곱에 비례한다. 반경을 Scale배로
 		// 하려면 속도는 √Scale배다.
 		Burst.Speed *= FMath::Sqrt(Scale);

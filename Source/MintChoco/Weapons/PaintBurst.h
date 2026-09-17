@@ -77,8 +77,13 @@ struct MINTCHOCO_API FPaintBurstParams
 	 *
 	 * BurstFX와 같은 복제를 탄다: 초기 복제로 실린 이 참조가 각 머신의 BeginPlay 전에 도착해,
 	 * 소리도 연출과 같은 자리에서 한 번씩 난다.
+	 *
+	 * 일부러 에디터에 내놓지 않는다. 채우는 것은 언제나 아이템 프로필의 Sounds이고(버스트를 쓰는
+	 * 셋 모두 — 꿀풍선, 히어로 랜딩, 벌 — 파라미터를 만들 때 그 값을 싣는다), 여기에 편집 칸이
+	 * 있으면 "소리를 넣는 칸"이 둘로 보여 어느 쪽이 먹는지 헷갈린다. 실제로 그렇게 넣은 뱅크는
+	 * 조용히 덮여 사라진다. 아이템 소리의 출처는 프로필의 Sounds 하나뿐이다.
 	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Burst")
+	UPROPERTY(BlueprintReadWrite, Category = "Burst")
 	TObjectPtr<const USoundBank> Sounds;
 };
 

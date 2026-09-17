@@ -21,6 +21,7 @@ namespace AudioTags
 	UE_DEFINE_GAMEPLAY_TAG(Audio_Item_Announce, "Audio.Item.Announce");
 	UE_DEFINE_GAMEPLAY_TAG(Audio_Item_Pickup, "Audio.Item.Pickup");
 	UE_DEFINE_GAMEPLAY_TAG(Audio_Item_Activate, "Audio.Item.Activate");
+	UE_DEFINE_GAMEPLAY_TAG(Audio_Item_Loop, "Audio.Item.Loop");
 	UE_DEFINE_GAMEPLAY_TAG(Audio_Item_Expire, "Audio.Item.Expire");
 
 	UE_DEFINE_GAMEPLAY_TAG(Audio_World_Burst, "Audio.World.Burst");
@@ -28,6 +29,7 @@ namespace AudioTags
 	UE_DEFINE_GAMEPLAY_TAG(Audio_World_Balloon_Hit, "Audio.World.Balloon.Hit");
 	UE_DEFINE_GAMEPLAY_TAG(Audio_World_Balloon_Pop, "Audio.World.Balloon.Pop");
 	UE_DEFINE_GAMEPLAY_TAG(Audio_World_Balloon_Inflate, "Audio.World.Balloon.Inflate");
+	UE_DEFINE_GAMEPLAY_TAG(Audio_World_Bee_Loop, "Audio.World.Bee.Loop");
 	UE_DEFINE_GAMEPLAY_TAG(Audio_World_JumpPad, "Audio.World.JumpPad");
 
 	UE_DEFINE_GAMEPLAY_TAG(Audio_Match_CountdownTick, "Audio.Match.CountdownTick");

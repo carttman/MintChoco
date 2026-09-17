@@ -39,6 +39,13 @@ bool FHoneyBalloonBurstParamsTest::RunTest(const FString& Parameters)
 	UHoneyBalloonProfile* const Plain = NewObject<UHoneyBalloonProfile>();
 	TestNull(TEXT("뱅크가 없으면 비어 나간다"), Plain->MakeBurstParams(0, 0).Sounds.Get());
 
+	// Burst 안에도 뱅크 칸이 있지만 여기서 덮인다: 프로필의 것이 유일한 출처다. 에셋에서 그 칸을
+	// 채우는 것은 소리가 조용히 사라지는 실수이고, FItemProfileAssetTest가 그것을 잡는다 —
+	// 언젠가 이 규칙이 바뀌면 그 검사도 같이 바뀌어야 하므로 여기에 못 박아 둔다.
+	UHoneyBalloonProfile* const MisSlotted = NewObject<UHoneyBalloonProfile>();
+	MisSlotted->Burst.Sounds = Bank;
+	TestNull(TEXT("Burst 안에 넣은 뱅크는 프로필 값으로 덮인다"), MisSlotted->MakeBurstParams(0, 0).Sounds.Get());
+
 	return true;
 }
 

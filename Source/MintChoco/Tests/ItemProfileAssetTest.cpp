@@ -6,7 +6,11 @@
 #include "Animation/AnimSequenceBase.h"
 #include "Materials/MaterialInterface.h"
 #include "Modules/ModuleManager.h"
+#include "Sound/SoundBase.h"
+#include "UObject/UnrealType.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/SoundBank.h"
 #include "Items/BeeProfile.h"
 #include "Items/BeeProjectile.h"
 #include "Items/ChocolateFountain.h"
@@ -22,6 +26,7 @@
 #include "Items/PaintRain.h"
 #include "Items/SpeedStarProfile.h"
 #include "Items/SweetSpinnerProfile.h"
+#include "Weapons/PaintBurst.h"
 #include "Weapons/PaintGunProfile.h"
 #include "Weapons/PaintballProfile.h"
 
@@ -86,6 +91,49 @@ bool FItemProfileAssetTest::RunTest(const FString& Parameters)
 		{
 			TestTrue(*FString::Printf(TEXT("%s: AuraMaterial is usable on a skeletal mesh"), *Name),
 				Item->AuraMaterial->CheckMaterialUsage_Concurrent(MATUSAGE_SkeletalMesh));
+		}
+
+		// 버스트를 쓰는 아이템은 파라미터를 만들 때 프로필의 Sounds를 싣는다. Burst 안의 Sounds에
+		// 넣은 값은 그래서 언제나 덮여 사라지고, 발동음은 발동음대로 빈 기본 뱅크로 떨어진다.
+		// 양쪽 다 조용해서 에셋만 보면 멀쩡해 보인다. 이제 그 칸은 에디터에 나오지도 않지만,
+		// 전에 넣어 둔 값이 남아 있는 에셋은 여기서 잡는다.
+		for (TFieldIterator<FStructProperty> It(Item->GetClass()); It; ++It)
+		{
+			if (It->Struct != FPaintBurstParams::StaticStruct())
+			{
+				continue;
+			}
+
+			const FPaintBurstParams& Burst = *It->ContainerPtrToValuePtr<FPaintBurstParams>(Item);
+			if (Burst.Sounds && !Item->Sounds)
+			{
+				AddError(FString::Printf(
+					TEXT("%s: %s.Sounds holds %s but the profile's own Sounds is empty. The burst always takes the ")
+					TEXT("profile's bank, so this one is discarded and the activate sound falls back to the project ")
+					TEXT("bank. Put the bank in the profile's Sounds instead."),
+					*Name, *It->GetName(), *GetNameSafe(Burst.Sounds.Get())));
+			}
+		}
+
+		// 계속 돌아야 하는 소리는 웨이브 자체가 Looping이어야 한다. 루핑이 아닌 것을 꽂으면 한 번
+		// 울리고 조용해지는데, 재생 쪽에서 보면 정상이라 로그에도 아무것도 남지 않는다.
+		// 루프로 도는 태그를 새로 만들면 여기에 같이 넣는다.
+		for (const FGameplayTag& LoopTag : {
+			AudioTags::Audio_Item_Loop.GetTag(),
+			AudioTags::Audio_World_Bee_Loop.GetTag()})
+		{
+			const FSoundEvent* const Loop = Item->Sounds ? Item->Sounds->Find(LoopTag) : nullptr;
+			if (!Loop)
+			{
+				continue;
+			}
+
+			const FString Label = LoopTag.ToString();
+			if (TestNotNull(*FString::Printf(TEXT("%s: %s has a sound"), *Name, *Label), Loop->Sound.Get()))
+			{
+				TestTrue(*FString::Printf(TEXT("%s: %s sound %s loops"), *Name, *Label, *GetNameSafe(Loop->Sound.Get())),
+					Loop->Sound->IsLooping());
+			}
 		}
 
 		if (const USweetSpinnerProfile* const Spinner = Cast<USweetSpinnerProfile>(Item))

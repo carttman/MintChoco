@@ -100,6 +100,7 @@ public:
 	virtual void PostInitializeComponents() override;
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaTime) override;
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	//~ IPaintHitReceiver
 	virtual void ReceivePaintHit_Implementation(float HitPower, uint8 PaintId, const FHitResult& Hit) override;
@@ -128,7 +129,15 @@ private:
 	bool IsBlocked(const FVector& Direction) const;
 	void Expire();
 
-	UPROPERTY(Transient)
+	/**
+	 * 복제한다. 조종과 효과는 서버만 하지만, 클라이언트의 복사본도 제 소리를 내려면 뱅크를
+	 * 알아야 한다(비행음). SetProfile은 SpawnActorDeferred와 FinishSpawning 사이에서 불리므로
+	 * Team·InitialVelocity와 같은 초기 묶음에 실려 클라이언트의 BeginPlay 전에 도착한다.
+	 *
+	 * 떼면 클라이언트에서만 벌이 조용해진다 — 리슨 호스트에서는 멀쩡해서 알아채기 어렵다.
+	 * FBeeProfileReplicationTest가 등록을 지킨다.
+	 */
+	UPROPERTY(Replicated, Transient)
 	TObjectPtr<const UBeeProfile> Profile;
 
 	TWeakObjectPtr<AUnit> Target;
