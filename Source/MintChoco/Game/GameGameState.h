@@ -151,6 +151,20 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Match")
 	int32 GetWinningTeam() const { return WinningTeam; }
 
+	/**
+	 * 결과 화면에 그대로 띄우는 문구. 경기 전이면 빈 텍스트, 승팀이 있으면 "<팀> 팀 승리",
+	 * 끝났는데 승팀이 없으면 "무승부".
+	 *
+	 * 팀 이름은 Teams::GetDisplayName 한 곳에서 온다 — 팀 이름을 바꾸면 이 문구도 같이 바뀌고,
+	 * "초코"가 코드와 위젯 두 곳에 적히는 일이 없다. 위젯은 Txt_WinnerInfo의 Text를 여기에
+	 * 바인딩하면 되고, 팝업이 언제 생기든 값이 맞는다.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Match")
+	FText GetMatchResultText() const;
+
+	/** 위의 규칙만 떼어낸 것. 월드도 인스턴스도 없이 테스트한다(LeaderPastLine과 같은 이유). */
+	static FText MakeMatchResultText(bool bEnded, int32 InWinningTeam);
+
 	/** 경기가 끝났을 때 서버와 모든 클라이언트에서 한 번씩 불린다. 결과 UI를 여기에 붙인다. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Match")
 	void BP_OnMatchEnded(int32 InWinningTeam);
