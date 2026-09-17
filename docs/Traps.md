@@ -71,6 +71,16 @@ before anything else.
   material parameter only reaches the one instance written; a collection is live at runtime and
   reaches every paint material at once, which is what makes a sweep possible. `mc.Paint.Style
   <coat> <fuzz> <rough> <flow> [normal]` writes it; omitted arguments keep their current value.
+- **No material reads the collection by hand. `MF_PaintStyle` applies it**, taking a look's raw
+  `WetCoat` / `FuzzAmount` / `Roughness` and returning `Coat` / `Fuzz` / `Roughness` with
+  `Style.rgb` already applied. The raw scalars are deliberately not outputs, so there is no way to
+  take a value out of it the style has not touched - which is the whole point, because the hand
+  wiring it replaced is exactly what drifted. `Flow` (`Style.a`) and `NormalStrength` (`Style2.r`)
+  stay out of it: each has a single consumer, inside `MF_PaintHeightField` and `MF_PaintOverlay`,
+  and `MF_PaintOverlay` must never reach `MF_PaintStyle` or the test below goes vacuous for every
+  layered master at once.
+- Output order on `MF_PaintStyle` is load-bearing, the same rule `MF_TeamLook` carries: call nodes
+  address outputs by index, so never reorder or delete them.
 
 ### Impact splash (droplets, secondary marks, phantom score)
 
@@ -168,6 +178,8 @@ before anything else.
 | Background shows through where two teams meet | Sequential layer blends lerp twice. Carry the coverage already consumed (`S`) through the stack and use `alpha = cov / (1 − S)` per blend. |
 | Paint reads as a matte sticker with glossy reflections | Flat team colors with a wet roughness. The fix is per-team looks with albedo texture and roughness designed together; for cream/ice cream go Substrate (slab with SSS MFP + fuzz) rather than overwriting attributes. |
 | Paint on an art mesh lands in the wrong place | The atlas is projected from the mesh bounds, so the mesh's LOD 0 must be CPU-readable (Allow CPU Access) and its Nanite fallback close to the real surface; a curved art mesh with a decimated fallback shifts by the decimation error. Check `paint atlas baked: N of M texels covered` in LogPaint. |
+| One paint or ink surface ignores `mc.Paint.Style` while the rest follow | It calls `MF_TeamLook` raw and applies its own coat or roughness instead of routing them through `MF_PaintStyle`, so it renders the pre-sweep look forever and nothing on screen says so. The side splat drifted this way for a whole commit, at coat 1.0 against the floor's 0.66. `MintChoco.Paint.Materials.LookStyle` fails with the material's name (and its master's, for an instance). A material that is team-tinted without belonging to the look declares a `PaintStyleExempt` scalar instead of being excused by folder. |
+| A knob in `MPC_PaintStyle` moves nothing | Nothing reads that entry. `Style2` (NormalStrength) sat unread from the day it was added, so `mc.Paint.Style`'s last argument changed a number in memory and no pixel. `MintChoco.Paint.Materials.LookStyleCollection` fails by entry name. |
 | Debug cells show in the editor, coverage text does not | `DrawDebugString` rides on a player's HUD, so the text is play-only; cells draw through the line batcher and work in the editor viewport with Realtime on (`bDrawDebugCells`, rebuilt when the actor moves). |
 | A plane-cut liquid (ink bottle) looks hollow or cut open from above | The two-sided "backface = surface" trick has no top geometry: from above you see the shaded inner walls below the waterline. `UInkBottleComponent` places a real disc (`SM_InkSurface`, `M_InkSurface`) on the cut plane every tick; the disc material clips outside `BottleRadius` and ripples via WPO with the same wave as the walls. Keep the fill clamped off the end caps (`SurfaceFillMargin`) or the disc z-fights them. |
 | The camera boom snags on another player, or a player stays translucent | Units ignore `ECC_Camera` on capsule and mesh (set again in `AUnit::PostInitializeComponents`, so a Blueprint override cannot bring it back). Overlap is detected by `CameraProbe`, a sphere on the local player's camera that overlaps other units' capsules only; the overlapped unit swaps every mesh slot to `CameraFadeMaterial` (`M_UnitCameraFade`, set on `BP_Unit`) until EndOverlap, `UpdateCameraProbe` (unpossess) or the prober's `EndPlay` restores it. |
