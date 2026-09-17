@@ -47,6 +47,25 @@ namespace
 {
 	/** 총 메시에 있는 총구 소켓. 발사 지점과 총구 화염이 같이 쓴다. */
 	const FName GunMuzzleSocketName(TEXT("Muzzle"));
+
+	/**
+	 * 로그에 찍을 이 머신의 역할. 스턴 로그에서 이것이 핵심이다 — 서버에 "적용" 줄이 없는데
+	 * 클라이언트에만 태그가 서면 원인이 스턴 경로가 아니라 복제·GE 쪽에 있다는 뜻이다.
+	 */
+	const TCHAR* NetRoleName(const APawn* Pawn)
+	{
+		if (!Pawn)
+		{
+			return TEXT("없음");
+		}
+		switch (Pawn->GetLocalRole())
+		{
+		case ROLE_Authority:       return Pawn->IsLocallyControlled() ? TEXT("호스트") : TEXT("서버");
+		case ROLE_AutonomousProxy: return TEXT("소유");
+		case ROLE_SimulatedProxy:  return TEXT("프록시");
+		default:                   return TEXT("?");
+		}
+	}
 }
 
 AUnit::AUnit(const FObjectInitializer& ObjectInitializer)
@@ -446,14 +465,38 @@ bool AUnit::TryApplyStun()
 
 bool AUnit::TryApplyStun(float StunSeconds, float SuperArmorSeconds)
 {
-	if (!HasAuthority() || StunSeconds <= 0.0f || IsStunned() || HasSuperArmor())
+	// 걸리지 않은 이유는 걸린 사실만큼 중요하다. 거절을 조용히 false로만 돌려주면
+	// "맞았는데 안 걸렸다"와 "맞지도 않았는데 걸렸다"가 로그에서 구분되지 않는다.
+	const TCHAR* Refusal = nullptr;
+	if (!HasAuthority())
 	{
+		Refusal = TEXT("권한 없음");
+	}
+	else if (StunSeconds <= 0.0f)
+	{
+		Refusal = TEXT("지속시간 0");
+	}
+	else if (IsStunned())
+	{
+		Refusal = TEXT("이미 스턴");
+	}
+	else if (HasSuperArmor())
+	{
+		Refusal = TEXT("슈퍼아머");
+	}
+	if (Refusal)
+	{
+		UE_LOG(LogMintChoco, Verbose, TEXT("[스턴][%s] %s 거절: %s (요청 %.2f초)."),
+			NetRoleName(this), *GetNameSafe(this), Refusal, StunSeconds);
 		return false;
 	}
 
 	FActiveGameplayEffectHandle Handle;
 	if (!ApplyStatusEffect(UGE_Stunned::StaticClass(), ItemTags::State_Status_Stunned, StunSeconds, Handle))
 	{
+		// 여기까지 왔다면 길이도 권한도 멀쩡하다. 남은 이유는 ASC나 GE 설정뿐이라 경고다.
+		UE_LOG(LogMintChoco, Warning, TEXT("[스턴][%s] %s: 스턴 GE를 적용하지 못했다(%.2f초)."),
+			NetRoleName(this), *GetNameSafe(this), StunSeconds);
 		return false;
 	}
 
@@ -464,7 +507,10 @@ bool AUnit::TryApplyStun(float StunSeconds, float SuperArmorSeconds)
 		Removed->AddUObject(this, &AUnit::HandleStunEnded);
 	}
 
-	UE_LOG(LogMintChoco, Verbose, TEXT("%s: 스턴 %.2f초, 이어서 슈퍼아머 %.2f초."), *GetNameSafe(this), StunSeconds, SuperArmorSeconds);
+	// 실제로 걸린 순간은 항상 남긴다. 드문 사건이라 시끄럽지 않고, 간헐적인 제보는
+	// 재현될 때 로그가 이미 켜져 있어야만 잡힌다.
+	UE_LOG(LogMintChoco, Log, TEXT("[스턴][%s] %s 적용: %.2f초, 이어서 슈퍼아머 %.2f초."),
+		NetRoleName(this), *GetNameSafe(this), StunSeconds, SuperArmorSeconds);
 	return true;
 }
 
@@ -496,6 +542,12 @@ void AUnit::HandleStunEnded(const FGameplayEffectRemovalInfo& RemovalInfo)
 void AUnit::HandleStunTagChanged(const FGameplayTag Tag, int32 NewCount)
 {
 	const bool bStunned = NewCount > 0;
+
+	// 태그는 모든 머신에서 선다. 서버에 "적용" 줄이 없는데 여기만 켜졌다면 원인은
+	// TryApplyStun이 아니라 복제나 다른 GE에 있다 — 그 갈림은 이 한 줄로만 난다.
+	UE_LOG(LogMintChoco, Log, TEXT("[스턴][%s] %s 태그 %s (중첩 %d)."),
+		NetRoleName(this), *GetNameSafe(this), bStunned ? TEXT("켜짐") : TEXT("꺼짐"), NewCount);
+
 	if (bStunned)
 	{
 		// 누르고 있던 방아쇠는 놓는다. 차지 중이었다면 발사되지 않는다(부분 충전 발사도 없다).
