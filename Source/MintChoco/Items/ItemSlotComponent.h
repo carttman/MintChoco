@@ -288,6 +288,17 @@ private:
 	void StartEffectFeedback(const UItemProfile& Item, const FGameplayTag& Tag);
 	void StopEffectFeedback(const FGameplayTag& Tag);
 
+	/**
+	 * 스폰한 이펙트에 이 폰의 팀 색을 넣는다(User.TintColor). 다른 이펙트와 같은 규칙이라,
+	 * 그 파라미터를 선언하지 않은 시스템은 조용히 무시된다 — 팀 색을 쓰지 않는 아이템 연출도
+	 * 그대로 둘 수 있다.
+	 *
+	 * 반드시 활성화 **전에** 부른다. 이미 켜진 컴포넌트에 넣은 유저 파라미터는 다음 틱으로
+	 * 미뤄지는데(SetVariable_Deferred), 첫 틱에 한 번 터지고 마는 연출은 그 한 장이 에셋
+	 * 기본색으로 태어난다.
+	 */
+	void TintTeamFX(UNiagaraComponent* FX) const;
+
 	/** 스택의 맨 위 오라를 캐릭터 메시의 오버레이에 맞춘다. 데디케이티드 서버는 지나간다. */
 	void UpdateAura();
 

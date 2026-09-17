@@ -21,6 +21,7 @@
 
 #include "Audio/AudioGameplayTags.h"
 #include "Audio/GameAudioSubsystem.h"
+#include "Game/TeamLook.h"
 #include "Game/Unit.h"
 #include "Game/UnitMovementComponent.h"
 #include "Ink/InkBottleComponent.h"
@@ -456,9 +457,15 @@ void UItemSlotComponent::PlayUseFeedback(const UItemProfile& Item)
 	// 즉발 아이템에는 끌 시점이 없으므로 스스로 정리되게 둔다(지속형은 태그가 내려갈 때 끈다).
 	if (Item.ActivateFX)
 	{
-		UNiagaraFunctionLibrary::SpawnSystemAttached(
+		// 꺼진 채로 낳아 팀 색을 넣고 켠다. 이유는 TintTeamFX 주석에 있다.
+		UNiagaraComponent* const FX = UNiagaraFunctionLibrary::SpawnSystemAttached(
 			Item.ActivateFX, AttachTo, NAME_None, FVector::ZeroVector, FRotator::ZeroRotator,
-			EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true);
+			EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true, /*bAutoActivate=*/false);
+		if (FX)
+		{
+			TintTeamFX(FX);
+			FX->Activate();
+		}
 	}
 }
 
@@ -644,9 +651,12 @@ void UItemSlotComponent::StartEffectFeedback(const UItemProfile& Item, const FGa
 		UNiagaraComponent* const FX = UNiagaraFunctionLibrary::SpawnSystemAttached(
 			Item.ActivateFX, AttachTo, NAME_None, Item.ActivateFXOffset, FRotator::ZeroRotator,
 			FVector(Item.ActivateFXScale), EAttachLocation::SnapToTarget, /*bAutoDestroy=*/true,
-			ENCPoolMethod::None);
+			ENCPoolMethod::None, /*bAutoActivate=*/false);
 		if (FX)
 		{
+			// 꺼진 채로 낳아 팀 색을 넣고 켠다. 이유는 TintTeamFX 주석에 있다.
+			TintTeamFX(FX);
+			FX->Activate();
 			EffectComponents.Add(Tag, FX);
 		}
 	}
@@ -662,6 +672,18 @@ void UItemSlotComponent::StartEffectFeedback(const UItemProfile& Item, const FGa
 			EffectSounds.Add(Tag, Loop);
 		}
 	}
+}
+
+void UItemSlotComponent::TintTeamFX(UNiagaraComponent* FX) const
+{
+	// 팀은 유닛만 가진다. 아이템 슬롯이 다른 폰에 붙는 날이 오면 여기서 조용히 빠진다.
+	const AUnit* const Unit = Cast<AUnit>(GetOwner());
+	if (!FX || !Unit)
+	{
+		return;
+	}
+
+	FX->SetVariableLinearColor(TeamLook::NiagaraTintParameter, TeamLook::GetColor(Unit->GetPaintId(), GetWorld()));
 }
 
 void UItemSlotComponent::StopEffectFeedback(const FGameplayTag& Tag)
