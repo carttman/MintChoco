@@ -64,6 +64,14 @@ public:
 	TArray<FWarmupProjectileEntry> ProjectilePool;
 
 	/**
+	 * 붓 머티리얼마다 가짜 스탬프를 한 번씩 찍고 사이드 스플랫을 한 번 띄운다. 붓은 캔버스로
+	 * 렌더 타겟에 그리는 경로라 PSO 프리캐싱이 닿지 않는다. 미리 한 번 그려 보는 것 외에
+	 * 파이프라인 상태를 만들어 둘 방법이 없어서, 첫 발사의 히칭은 이 단계로만 사라진다.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Warmup|Steps")
+	bool bPrewarmPaint = true;
+
+	/**
 	 * 워밍업 전체의 상한(초). 넘으면 경고를 남기고 가림막을 놓아 준다. 어떤 단계가 영영
 	 * 끝나지 않아도 로딩 화면에 갇히지 않게 하는 안전장치다.
 	 *
