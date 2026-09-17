@@ -1077,6 +1077,13 @@ void AUnit::HandleDashStateChanged(bool bDashing)
 		}
 	}
 
+	// 보드 위에서는 쏘지 못하니, 그 시간을 잉크가 차는 시간으로 돌려준다. 회복을 돌리는 것은
+	// 서버뿐이지만 이 알림은 소유 클라이언트에도 오므로, 양쪽 잉크통이 같은 속도로 찬다.
+	if (InkTank)
+	{
+		InkTank->SetDashing(bDashing);
+	}
+
 	UpdateDashEffects(bDashing);
 }
 
