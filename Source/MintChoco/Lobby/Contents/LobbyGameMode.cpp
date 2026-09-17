@@ -58,13 +58,14 @@ void ALobbyGameMode::TryStartGame()
 	BP_TryStartGame();
 }
 
-bool ALobbyGameMode::AreAllReady(const TArray<const APlayerState*>& PlayerStates)
+bool ALobbyGameMode::AreAllReady(const TArray<const APlayerState*>& PlayerStates, int32 MinPlayers)
 {
 	int32 Counted = 0;
 	for (const APlayerState* const PlayerState : PlayerStates)
 	{
 		const ALobbyPlayerState* const Lobby = Cast<ALobbyPlayerState>(PlayerState);
 		// 게임 맵에서 따라온 옛 PlayerState(엔진이 곧 지운다)나 관전자는 준비 판정에서 뺀다.
+		// 머릿수에도 들어가지 않으므로, 관전자를 데려와 최소 인원을 채울 수는 없다.
 		if (!Lobby || Lobby->IsInactive() || Lobby->IsSpectator())
 		{
 			continue;
@@ -75,7 +76,7 @@ bool ALobbyGameMode::AreAllReady(const TArray<const APlayerState*>& PlayerStates
 		}
 		++Counted;
 	}
-	return Counted > 0;
+	return Counted >= FMath::Max(MinPlayers, 1);
 }
 
 bool ALobbyGameMode::AreAllPlayersReady() const
@@ -91,5 +92,5 @@ bool ALobbyGameMode::AreAllPlayersReady() const
 	{
 		PlayerStates.Add(PlayerState);
 	}
-	return AreAllReady(PlayerStates);
+	return AreAllReady(PlayerStates, MinPlayersToStart);
 }
