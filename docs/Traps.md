@@ -28,13 +28,14 @@ before anything else.
   two surfaces' pairs. Rectangles drawn into the shared scratch buffer are copied back with
   `TransitionAndCopyTexture`; both targets must share the pixel format
   (`UPaintSubsystem::CreatePaintBuffer`).
-- Paint thickness is `DisplacementScaling.Magnitude` in **world cm** (the overlay divides by
-  the primitive scale along the normal), and it is the only knob: `UPaintableComponent` reads
-  it off the surface material and writes the shader's `PaintMaxHeight` from it. The two can
-  only disagree where no MID exists - the editor viewport, a material preview, the defaults a
-  new instance starts from - and `MintChoco.Paint.Materials.PaintHeight` guards those. A
-  `PaintMaxHeight` above the magnitude does not thicken anything; it only tilts the shading
-  normal past the silhouette, which reads as sparkle.
+- Paint thickness is `PaintMaxHeight` in **world cm** (the overlay divides by the primitive
+  scale along the normal). The masters bake it into `DisplacementScaling.Magnitude` (9) and
+  `UPaintableComponent` reads it back off the surface material into the shader's
+  `PaintMaxHeight`. They can only disagree where no MID exists - the editor
+  viewport, a material preview, the defaults a new instance starts from - and
+  `MintChoco.Paint.Materials.PaintHeight` guards those. A `PaintMaxHeight` above the magnitude
+  does not thicken anything; it only tilts the shading normal past the silhouette, which reads
+  as sparkle.
 - Pixel-frequency carriers through a layer stack: Anisotropy (1), Refraction (2, Break exposes
   RG only), PixelDepthOffset (1), Opacity (1), Tangent (3) — every look layer must pass each one
   through Break → Make. In use: Anisotropy / Refraction.rg / PixelDepthOffset = per-team signed
@@ -90,13 +91,19 @@ before anything else.
   no traces) stamped as `bScoreOnly` splats: cells only, no picture, no sound. The visible droplets
   are per machine: `UPaintballProfile::PlayImpactEffect` books a `UPaintSplashLandingHandler`,
   spawns `ImpactFX` 1 cm off the surface, and `UPaintSplashSubsystem::ConfigureEffect` hands the
-  Niagara system `User.Drop{0..3}Offset/Velocity/Radius`, `User.DropletCount` and
-  `User.LandingHandler`. `NS_PaintSplash` (CPU emitter, stock modules only) reports each
+  Niagara system `User.Drop{0..15}` (Vector4: launch velocity, radius), `User.DropletCount`
+  (= the largest `MaxMarkDroplets`, 8) and `User.LandingHandler`. `NS_PaintSplash` (CPU emitter,
+  stock modules only) reports each
   collision through `ExportParticleDataToBlueprint` (Position = landing, Velocity = collision
   normal, Size = launch speed) and the handler stamps a `bDrawOnly` splat with the profile's
   `DropletBrush`: picture only, never a cell. Score and picture therefore differ by design; the
   phantom radius is `DropletBrush->ComputeRadius(DropletSplatVolume, speed) *
   PhantomCellRadiusScale`, and a cell is claimed only when its centre falls inside that stamp.
+  `GenerateDroplets` throws `DropletCount` (16) droplets sorted largest first in three heading
+  groups (`Forward` on across the ball's travel, `Side`, `Back` toward where it came from; the
+  forward share grows with the tangential share of the approach) - no jet any more, its landing
+  left a circle inside the main splat. The largest `MaxScoreDroplets` (4) score, the largest
+  `MaxMarkDroplets` (8) fly and mark; the blob draws all 16.
 - No secondary marks: check `mc.PaintSplash.Marks` (0 disables them), that the paintball's
   `ImpactFX` is `NS_PaintSplash` and its `Deposit.Splash` profile has a `DropletBrush` with a
   material (`MintChoco.Paint.Weapons.ProfileAssets` covers both), that the surface passes
@@ -112,21 +119,41 @@ before anything else.
   why the component is placed 1 cm along the normal.
 - The blob: `NS_PaintSplash`'s `Blob` emitter is one local-space mesh particle (a 100 cm cube,
   `Particles.Scale` = `User.BlobScale`, pivot lifted 50 mesh units so the cube stands on the
-  plane) whose material `M_PaintSplashBlob` ray-marches four droplets on drag-damped parabolas
-  plus a crown torus with the team look. Each droplet is a round cone from its head to a tail:
-  while the cohesion holds (C++ `PaintSplash::Cohesion`, `CohesionRadius` smooth-min fading over
-  `CohesionDecay`) the tail roots on the crown ring at the droplet's azimuth, so the splash reads
-  as fingers rising off the rim; as it pinches off the tail slides `TailSeconds` (material scalar,
-  0.06) behind the head and thins to a point, leaving teardrops. `CrownAt` defines the ring.
+  plane) whose material `M_PaintSplashBlob` ray-marches the 16 droplets on drag-damped parabolas
+  with the team look (no crown: the surface ripple below replaced the torus). Each droplet is a
+  round cone from its head to a tail: while the cohesion holds (C++ `PaintSplash::Cohesion`,
+  `CohesionRadius` smooth-min fading over `CohesionDecay`) and the strand is shorter than four
+  ball radii, the tail roots on the puddle rim spreading under it (`PuddleSpread` × the in-plane
+  speed), so the splash reads as fingers pulling off the puddle; then it pinches off, trails the
+  head by at most three radii (`TailSeconds`, material scalar 0.06) and thins to a point. A head
+  under the contact plane has landed and is dropped. Every strand gets its bounding sphere's ray
+  interval once per pixel, so a ray marches only through the strands it can meet (the cube is
+  mostly empty). The start offset is `PaintSplash::LaunchOffset` in both C++ and HLSL.
   `UPaintSplashSubsystem::BuildBlobMaterial` makes a MID per splash (`PaintSplashBlob` names:
-  `Drop0..3` xyz offset + w radius, `Vel0..3`, `Phys`, `Crown`, `MarchMax`, `TeamId`) and
-  `PaintSplash::BlobScale` sizes the cube. `Droplets` keeps fixed bounds (±450 cm) because its
+  `Drop0..15` xyz velocity + w radius, `Phys`, `BallRadius`, `PuddleSpread`, `MarchMax`, `TeamId`)
+  and `PaintSplash::BlobScale` sizes the cube. The slab matches the floor paint pin for pin
+  (`MF_TeamLook` outputs 6..9 for the second roughness and fuzz, coat roughness 0.12, SSS MFP
+  scale 0.1 because thin strands would glow with the floor's 1.0); the remaining tone difference
+  is geometry - the floor paint is relief-shaded, the strands are smooth. `Droplets` keeps fixed bounds (±450 cm) because its
   sprite renderer is disabled: an emitter with no enabled particle renderer and dynamic bounds
   trips the "only Emitter sourced renderers" warning and has no bounds at all. No blob: `Splash.BlobMaterial` unset, the material
   missing the Niagara mesh particles usage (`ProfileAssets` test), or `User.BlobScale` zero -
   a zero-scale mesh particle silently stops the entire system, droplets and marks included.
   Pixel Depth Offset must be wired by hand in the material editor (the MCP tool cannot), or the
   blob intersects geometry at the cube's surface instead of the fluid's.
+- A droplet that vanishes in mid-air instead of landing hit `MaxLifetime` (1.8 s) or `MaxTravel`
+  (400 cm), and both are per-profile. A floor contact is where it shows: the droplet has to arc
+  up and come all the way back down, while a wall contact lands almost at once. A grazing hit is
+  the other half - the forward group keeps `SlideScale` of the ball's in-plane speed, so on a fast
+  shot it crosses `MaxTravel` before gravity returns it. Both caps also gate the score
+  (`PaintSplash::PhantomLandings` drops a landing past either), so widening them widens what a
+  splash is credited for; `MaxTravel` additionally clamps how wide the blob's cube may grow.
+- The warmup fires one throwaway impact effect per splashing ball
+  (`UWarmupSubsystem::PrewarmSplash`, `bPrewarmSplash`) because the blob's ray-march material is
+  only wired when droplets actually fly - a contact under `MinNormalSpeed` throws none and leaves
+  `User.BlobMaterial` unset, warming nothing. The screen is under the fade hold throughout, so the
+  spawn at the origin is never seen. `UPaintSplashSubsystem::Prewarm` allocates the landing
+  handlers in the same step.
 - `APaintSplashTestActor` (Blueprintable) fires a fixed contact on a timer without a weapon:
   drop one in a scratch level with `Paintball` set, Simulate, and watch the marks.
 

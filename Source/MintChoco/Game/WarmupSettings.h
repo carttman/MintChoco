@@ -72,6 +72,14 @@ public:
 	bool bPrewarmPaint = true;
 
 	/**
+	 * 착지 핸들러를 미리 만들어 두고, 스플래시를 쓰는 공마다 착탄 이펙트를 한 번 터뜨린다.
+	 * 첫 착탄의 값은 거의 전부 블롭의 레이마치 셰이더인데 그 머티리얼은 방울이 실제로 날 때만
+	 * 배선되므로, 붓과 같은 이유로 진짜 한 번 터뜨려 보는 것 외에 예열할 방법이 없다.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Warmup|Steps")
+	bool bPrewarmSplash = true;
+
+	/**
 	 * 워밍업 전체의 상한(초). 넘으면 경고를 남기고 가림막을 놓아 준다. 어떤 단계가 영영
 	 * 끝나지 않아도 로딩 화면에 갇히지 않게 하는 안전장치다.
 	 *

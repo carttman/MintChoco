@@ -60,6 +60,9 @@ private:
 	/** 붓과 사이드 스플랫을 한 번씩 그려 본다. 자세한 이유는 UPaintSubsystem::Prewarm에. */
 	void PrewarmPaint(UWorld* World);
 
+	/** 착지 핸들러를 미리 만들고, 스플래시를 쓰는 공마다 착탄 이펙트를 한 번 터뜨려 본다. */
+	void PrewarmSplash(UWorld* World);
+
 	/**
 	 * 미리 로드한 에셋을 붙잡아 둔다. 소프트 참조는 아무도 안 쥐면 다시 내려갈 수 있고,
 	 * 그러면 경기 중 동기 로드가 그대로 돌아온다.

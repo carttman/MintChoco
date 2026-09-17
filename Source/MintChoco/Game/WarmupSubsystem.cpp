@@ -2,17 +2,23 @@
 
 #include "Engine/World.h"
 #include "GameFramework/GameStateBase.h"
+#include "Engine/HitResult.h"
 #include "PipelineStateCache.h"
 #include "UObject/UObjectGlobals.h"
+#include "UObject/UObjectIterator.h"
 
 #include "Game/GameGameState.h"
+#include "Game/TeamTypes.h"
 #include "Game/WarmupSettings.h"
 #include "Items/ItemProfile.h"
 #include "Items/ItemSettings.h"
 #include "MintChoco.h"
+#include "Paint/PaintSplashProfile.h"
+#include "Paint/PaintSplashSubsystem.h"
 #include "Paint/PaintSubsystem.h"
 #include "Screen/ScreenFadeSubsystem.h"
 #include "Weapons/PaintProjectile.h"
+#include "Weapons/PaintballProfile.h"
 #include "Weapons/ProjectilePoolSubsystem.h"
 
 namespace
@@ -119,6 +125,10 @@ void UWarmupSubsystem::BeginWarmup(UWorld* World)
 	if (Settings.bPrewarmPaint)
 	{
 		PrewarmPaint(World);
+	}
+	if (Settings.bPrewarmSplash)
+	{
+		PrewarmSplash(World);
 	}
 
 	// PSO는 렌더 스레드가 뒤에서 만든다. 큐가 빌 때까지만 기다린다.
@@ -229,4 +239,36 @@ void UWarmupSubsystem::PrewarmPaint(UWorld* World)
 	{
 		Paint->Prewarm();
 	}
+}
+
+void UWarmupSubsystem::PrewarmSplash(UWorld* World)
+{
+	UPaintSplashSubsystem* const Splash = UPaintSplashSubsystem::Get(World);
+	if (!Splash)
+	{
+		return;
+	}
+	Splash->Prewarm();
+
+	// 첫 착탄의 값은 거의 전부 블롭의 레이마치 셰이더이고, 그 머티리얼은 방울이 실제로 날 때만
+	// 배선되므로 진짜 한 번 터뜨리는 수밖에 없다. 워밍업이 도는 내내 화면은 가림막에 덮여 있어
+	// 원점에 터진 것을 아무도 보지 못한다. 공 프로필은 폰이 로드될 때 함께 와 있다.
+	int32 Fired = 0;
+	for (TObjectIterator<UPaintballProfile> It; It; ++It)
+	{
+		const UPaintSplashProfile* const Profile = It->Deposit.Splash;
+		if (!Profile || !It->ImpactFX)
+		{
+			continue;
+		}
+
+		// MinNormalSpeed 아래로 닿은 접촉은 방울을 하나도 던지지 않아 블롭까지 가지 못한다.
+		FHitResult Hit;
+		Hit.ImpactNormal = FVector::UpVector;
+		Hit.Normal = Hit.ImpactNormal;
+		It->PlayImpactEffect(*World, Hit, -Hit.ImpactNormal * (Profile->MinNormalSpeed + 1.0f), Teams::Mint, /*Seed=*/0);
+		++Fired;
+	}
+
+	UE_LOG(LogMintChoco, Verbose, TEXT("워밍업: 스플래시 이펙트 %d개 예열."), Fired);
 }

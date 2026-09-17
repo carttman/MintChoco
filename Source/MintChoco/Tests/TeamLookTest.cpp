@@ -46,6 +46,13 @@ bool FTeamLookCollectionTest::RunTest(const FString& Parameters)
 			const FLinearColor& S = Surface->DefaultValue;
 			TestTrue(*FString::Printf(TEXT("%s: Surface components are in 0..1"), *Name), IsUnit(S.R) && IsUnit(S.G) && IsUnit(S.B) && IsUnit(S.A));
 		}
+		const FCollectionVectorParameter* const Surface2 = Collection->GetVectorParameterByName(TeamLook::Surface2ParameterName(Team));
+		if (TestNotNull(*FString::Printf(TEXT("%s: Surface2 entry"), *Name), Surface2))
+		{
+			const FLinearColor& S = Surface2->DefaultValue;
+			TestTrue(*FString::Printf(TEXT("%s: Surface2 components are in 0..1"), *Name), IsUnit(S.R) && IsUnit(S.G) && IsUnit(S.B) && IsUnit(S.A));
+			TestEqual(*FString::Printf(TEXT("%s: TeamLook::Get reads the asset fuzz"), *Name), TeamLook::Get(Team).FuzzAmount, S.B);
+		}
 
 		// 접근자가 내장값이 아니라 에셋을 읽는지: 값이 에셋과 같아야 한다.
 		const FTeamLook Look = TeamLook::Get(Team);
@@ -72,6 +79,7 @@ bool FTeamLookFallbackTest::RunTest(const FString& Parameters)
 	const FTeamLook Choco = TeamLook::GetFrom(nullptr, Teams::Choco);
 	TestTrue(TEXT("without a collection both teams are the same neutral grey"), Mint.Color.Equals(Choco.Color));
 	TestTrue(TEXT("that grey is achromatic"), Mint.Color.R == Mint.Color.G && Mint.Color.G == Mint.Color.B);
+	TestEqual(TEXT("without a collection both teams share the neutral fuzz"), Mint.FuzzAmount, Choco.FuzzAmount);
 
 	const FTeamLook Nobody = TeamLook::GetFrom(nullptr, 5);
 	TestTrue(TEXT("an invalid id is neutral grey"), Nobody.Color.R == Nobody.Color.G && Nobody.Color.G == Nobody.Color.B);
@@ -80,6 +88,7 @@ bool FTeamLookFallbackTest::RunTest(const FString& Parameters)
 	TestEqual(TEXT("MintColor"), TeamLook::ColorParameterName(Teams::Mint), FName(TEXT("MintColor")));
 	TestEqual(TEXT("ChocoSurface"), TeamLook::SurfaceParameterName(Teams::Choco), FName(TEXT("ChocoSurface")));
 	TestEqual(TEXT("MintSubsurface"), TeamLook::SubsurfaceParameterName(Teams::Mint), FName(TEXT("MintSubsurface")));
+	TestEqual(TEXT("ChocoSurface2"), TeamLook::Surface2ParameterName(Teams::Choco), FName(TEXT("ChocoSurface2")));
 	TestEqual(TEXT("no team has no entry name"), TeamLook::ColorParameterName(Teams::None), FName(NAME_None));
 	return true;
 }
