@@ -98,25 +98,82 @@ bool FBoardLeanMeshTest::RunTest(const FString& Parameters)
 		return static_cast<float>(FVector::DotProduct(Mesh->GetComponentQuat().GetUpVector(), Unit->GetActorForwardVector()));
 	};
 
-	Unit->SetMeshLean(15.0f);
+	Unit->SetMeshOffset(FRotator(0.0f, 0.0f, 15.0f));
 	TestEqual(TEXT("positive lean tips the head right by sin(15)"), UpTowardRight(), FMath::Sin(FMath::DegreesToRadians(15.0f)), 1e-3f);
 	TestEqual(TEXT("leaning does not pitch forward"), UpTowardForward(), 0.0f, 1e-3f);
 	TestTrue(TEXT("network smoothing target follows the lean"),
 		Unit->GetBaseRotationOffset().Equals(Mesh->GetRelativeRotation().Quaternion(), 1e-3f));
 	TestTrue(TEXT("leaning keeps the mesh where it was"), Mesh->GetRelativeLocation().Equals(RestLocation, 1e-3f));
 
-	Unit->SetMeshLean(-15.0f);
+	Unit->SetMeshOffset(FRotator(0.0f, 0.0f, -15.0f));
 	TestEqual(TEXT("negative lean tips the head left"), UpTowardRight(), -FMath::Sin(FMath::DegreesToRadians(15.0f)), 1e-3f);
 
 	// 여러 번 기울여도 기울기가 쌓이지 않는다: 기준은 처음 자세다.
-	Unit->SetMeshLean(10.0f);
-	Unit->SetMeshLean(10.0f);
+	Unit->SetMeshOffset(FRotator(0.0f, 0.0f, 10.0f));
+	Unit->SetMeshOffset(FRotator(0.0f, 0.0f, 10.0f));
 	TestEqual(TEXT("repeated leans do not accumulate"), UpTowardRight(), FMath::Sin(FMath::DegreesToRadians(10.0f)), 1e-3f);
 
-	Unit->SetMeshLean(0.0f);
+	Unit->SetMeshOffset(FRotator(0.0f, 0.0f, 0.0f));
 	TestTrue(TEXT("zero restores the rest rotation"), Mesh->GetRelativeRotation().Quaternion().Equals(RestRotation.Quaternion(), 1e-4f));
 	TestTrue(TEXT("zero restores the smoothing target"), Unit->GetBaseRotationOffset().Equals(RestRotation.Quaternion(), 1e-4f));
 	TestEqual(TEXT("upright again"), UpTowardRight(), 0.0f, 1e-4f);
+
+	return true;
+}
+
+/**
+ * 히어로 랜딩 다이브 기울기: 내리꽂는 방향과 몸이 보는 쪽의 차이를 메시가 메운다. 히어로 랜딩
+ * 내내 캡슐은 전혀 돌지 않으므로, 이 값이 0이면 몸이 등지는 쪽으로 미끄러지는 그림이 된다.
+ *
+ * 가장 중요한 것은 수직 낙하 줄이다: 향할 방향이 없을 때 요를 다시 구하면 떨어지는 마지막
+ * 순간에 몸이 아무 쪽으로나 홱 돌아버린다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FHeroDiveTiltTest,
+	"MintChoco.Anim.HeroDiveTilt",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FHeroDiveTiltTest::RunTest(const FString& Parameters)
+{
+	constexpr double Speed = 3000.0;
+	constexpr double MaxPitch = 60.0;
+
+	// 몸이 보는 쪽(+X)으로 45도 내리꽂는다: 돌 요는 없고 그만큼 숙인다.
+	const FRotator Forward = FUnitAnimMath::HeroDiveTilt(
+		FRotator(-45.0f, 0.0f, 0.0f).Vector() * Speed, /*BodyYaw=*/0.0, /*CurrentTiltYaw=*/0.0f, MaxPitch);
+	TestEqual(TEXT("앞으로 꽂으면 돌 요가 없다"), Forward.Yaw, 0.0, 1e-3);
+	TestEqual(TEXT("45도 다이브는 45도 숙인다"), Forward.Pitch, -45.0, 1e-3);
+	TestEqual(TEXT("다이브는 굴리지 않는다"), Forward.Roll, 0.0, 1e-4);
+
+	// 같은 다이브인데 몸이 오른쪽을 보고 있다. 메시는 그 차이만큼 되돌린다.
+	const FRotator Sideways = FUnitAnimMath::HeroDiveTilt(
+		FRotator(-45.0f, 0.0f, 0.0f).Vector() * Speed, /*BodyYaw=*/90.0, 0.0f, MaxPitch);
+	TestEqual(TEXT("몸이 90도 돌아 있으면 메시가 -90도 돌아 맞춘다"), Sideways.Yaw, -90.0, 1e-3);
+	TestEqual(TEXT("도는 것과 숙이는 것은 따로 논다"), Sideways.Pitch, -45.0, 1e-3);
+
+	// 뒤쪽으로 꽂으면 몸을 반바퀴 돌린다.
+	const FRotator Backward = FUnitAnimMath::HeroDiveTilt(
+		FVector(-1.0f, 0.0f, -1.0f).GetSafeNormal() * Speed, /*BodyYaw=*/0.0, 0.0f, MaxPitch);
+	TestEqual(TEXT("뒤로 꽂으면 180도"), FMath::Abs(Backward.Yaw), 180.0, 1e-3);
+
+	// 수직에 가까운 깊은 다이브는 상한에서 멈춘다. 안 그러면 완전히 엎어진 채 땅에 박힌다.
+	const FRotator Steep = FUnitAnimMath::HeroDiveTilt(
+		FRotator(-80.0f, 0.0f, 0.0f).Vector() * Speed, 0.0, 0.0f, MaxPitch);
+	TestEqual(TEXT("깊은 다이브는 상한에서 잘린다"), Steep.Pitch, -MaxPitch, 1e-3);
+
+	// 수직 낙하(높은 곳으로 건너간 뒤의 StartHeroPlunge): 향할 방향이 없으므로 보던 각을 그대로 둔다.
+	const FRotator Plunge = FUnitAnimMath::HeroDiveTilt(
+		FVector(0.0f, 0.0f, -Speed), /*BodyYaw=*/0.0, /*CurrentTiltYaw=*/37.0f, MaxPitch);
+	TestEqual(TEXT("수직 낙하는 보던 요를 그대로 유지한다"), Plunge.Yaw, 37.0, 1e-3);
+	TestEqual(TEXT("수직 낙하도 상한까지만 숙인다"), Plunge.Pitch, -MaxPitch, 1e-3);
+
+	// 몸이 어디를 보고 있든 마찬가지다. 방향이 없으면 보던 것을 이어가는 것이 전부다.
+	TestEqual(TEXT("수직 낙하는 몸의 요를 다시 재지 않는다"),
+		FUnitAnimMath::HeroDiveTilt(FVector(0.0f, 0.0f, -Speed), /*BodyYaw=*/125.0, 37.0f, MaxPitch).Yaw, 37.0, 1e-3);
+
+	// 멈춰 있으면 기울일 일도 없다(호버에서 다이브로 넘어가는 첫 프레임).
+	TestTrue(TEXT("속도가 0이면 영 회전"),
+		FUnitAnimMath::HeroDiveTilt(FVector::ZeroVector, 0.0, 37.0f, MaxPitch).IsNearlyZero());
 
 	return true;
 }

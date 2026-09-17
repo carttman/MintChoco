@@ -207,14 +207,16 @@ public:
 	void SetBoardShown(bool bShown);
 
 	/**
-	 * 메시를 캐릭터의 앞 축을 중심으로 굴린다(도). 양수면 오른쪽으로 기운다. 0이면 블루프린트가 놓은
-	 * 원래 자세로 돌아간다. 애님 인스턴스가 보드 동작 중 몸이 도는 속도와 이동 속도만큼 매 프레임 넣는다
-	 * (UUnitAnimInstance::BoardLean).
+	 * 메시를 캡슐 축 기준으로 돌린다(도). 롤은 앞 축을 중심으로 굴리고(양수면 오른쪽), 피치는 앞으로
+	 * 숙이며(음수면 앞), 요는 몸이 보는 쪽을 메시만 돌린다. 영 회전이면 블루프린트가 놓은 원래 자세다.
 	 *
-	 * 연출이라 복제하지 않는다. 머신마다 자기가 보는 몸의 요 회전과 속도에서 같은 값을 낸다. 캡슐과 카메라는
-	 * 그대로이고, 메시에 붙은 것(보드, 총, 잉크병, 외곽선)만 함께 기운다.
+	 * 애님 인스턴스가 매 프레임 한 번만 부른다: 보드 기울기(UUnitAnimInstance::BoardLean)와 히어로
+	 * 랜딩 다이브 기울기(HeroDiveTilt)를 합친 값이다. 둘이 따로 부르면 서로를 덮으므로 창구는 하나다.
+	 *
+	 * 연출이라 복제하지 않는다. 머신마다 자기가 보는 몸의 회전과 속도에서 같은 값을 낸다. 캡슐과 카메라는
+	 * 그대로이고, 메시에 붙은 것(보드, 총, 잉크병, 외곽선)만 함께 돈다.
 	 */
-	void SetMeshLean(float RollDegrees);
+	void SetMeshOffset(const FRotator& Offset);
 
 	/**
 	 * 히어로 랜딩 단계. 애님 블루프린트가 이 값으로 준비·시작 자세를 고른다.
@@ -536,12 +538,12 @@ private:
 	/** 애님 인스턴스가 세우는 보드 상태. 실제로 보이는지는 카메라 페이드까지 봐야 안다. */
 	bool bBoardShown = false;
 
-	/** 기울이기 전 메시의 기준 회전(캡슐 대비). 처음 기울일 때 한 번 잡는다. */
+	/** 돌리기 전 메시의 기준 회전(캡슐 대비). 처음 돌릴 때 한 번 잡는다. */
 	FQuat MeshRestRotation = FQuat::Identity;
 	bool bMeshRestCaptured = false;
 
-	/** 지금 메시에 걸린 기울기(도). 같은 값이면 트랜스폼을 다시 쓰지 않는다. */
-	float MeshLeanDegrees = 0.0f;
+	/** 지금 메시에 걸린 회전(도). 같은 값이면 트랜스폼을 다시 쓰지 않는다. */
+	FRotator MeshOffset = FRotator::ZeroRotator;
 
 	/** 총을 숨기는 타이머. 발사마다 다시 걸려 마지막 한 발에서만 만료된다. */
 	FTimerHandle GunHideTimer;

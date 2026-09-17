@@ -22,6 +22,7 @@ UUnitMovementComponent::UUnitMovementComponent()
 	bWantsHeroLanding = 0;
 	bHeroLandingArmed = 1;
 	bWantsHeroDive = 0;
+	bHeroDiveYawSet = 0;
 
 	// 엔진의 컨트롤 회전 추종을 켜 두고 PhysicsRotation에서 게이트로 막는다.
 	bUseControllerDesiredRotation = true;
@@ -331,6 +332,8 @@ void UUnitMovementComponent::StartHeroLanding()
 	bWantsHeroDive = 0;
 	HeroTakeoff = UpdatedComponent->GetComponentLocation();
 	HeroDiveTarget = HeroTakeoff;
+	// 아직 어디로 꽂을지 모른다. 지난 발동의 방향이 남아 이번 착지를 돌려세우면 안 된다.
+	bHeroDiveYawSet = 0;
 	HeroCharge = 0.0f;
 	Velocity = FVector::ZeroVector;
 	SetMovementMode(MOVE_Custom, CustomMode_HeroLanding);
@@ -382,6 +385,15 @@ bool UUnitMovementComponent::FinishHeroLandingDive()
 	// 곧바로 평소로 돌아가지 않는다. 착지 동작이 도는 동안은 움직일 수 없어야 하는데, 그 판단이
 	// 이미 단계에 걸려 있다(IsInputLocked). 시간은 UpdateCharacterStateBeforeMovement가 깎고,
 	// HeroPhaseTime은 저장 무브에 실리므로 보정 후 리플레이에서도 같은 지점에서 풀린다.
+	// 꽂은 쪽을 보고 선다. 내리꽂는 동안 캡슐은 전혀 돌지 않았고(입력이 잠긴 동안
+	// ShouldFaceControlRotation이 거짓) 그 차이는 메시가 들고 있었다. 여기서 캡슐이 그 각을
+	// 그대로 이어받으므로 세계 기준으로는 이 프레임에 아무것도 움직이지 않는다 — 대신 경직이
+	// 풀려 조작이 돌아온 뒤에도 방향이 유지된다. 메시 쪽은 단계가 바뀐 것을 보고 스스로 요를 놓는다.
+	if (bHeroDiveYawSet && UpdatedComponent)
+	{
+		MoveUpdatedComponent(FVector::ZeroVector, FRotator(0.0f, HeroDiveYaw, 0.0f), /*bSweep=*/false);
+	}
+
 	const bool bRecovers = HeroParams.LandingRecoverTime > 0.0f;
 	SetHeroPhase(bRecovers ? EHeroLandingPhase::Recover : EHeroLandingPhase::None);
 	HeroPhaseTime = 0.0f;
@@ -517,6 +529,15 @@ void UUnitMovementComponent::StartHeroDive(const FVector& Target, float DeltaTim
 	{
 		DiveDirection = FVector::DownVector;
 	}
+
+	// 꽂는 쪽을 기억해 뒀다가 착지하는 순간 몸을 그쪽으로 돌려세운다. 수평 성분이 없으면(바로
+	// 발밑) 향할 방향이 없으므로 세우지 않는다 — 0도로 돌려버리면 세계의 +X를 보게 된다.
+	if (!DiveDirection.IsNearlyZero() && DiveDirection.Size2D() > UE_KINDA_SMALL_NUMBER)
+	{
+		HeroDiveYaw = static_cast<float>(DiveDirection.Rotation().Yaw);
+		bHeroDiveYawSet = 1;
+	}
+
 	SetHeroPhase(EHeroLandingPhase::Dive);
 	Velocity = DiveDirection * HeroParams.DiveSpeed;
 	SetMovementMode(MOVE_Falling);
@@ -674,6 +695,8 @@ void FSavedMove_Unit::Clear()
 	SavedHeroPhaseTime = 0.0f;
 	SavedHeroTakeoff = FVector::ZeroVector;
 	SavedHeroDiveTarget = FVector::ZeroVector;
+	SavedHeroDiveYaw = 0.0f;
+	bSavedHeroDiveYawSet = 0;
 	SavedHeroApproachPoint = FVector::ZeroVector;
 }
 
@@ -739,6 +762,8 @@ void FSavedMove_Unit::SetMoveFor(ACharacter* C, float InDeltaTime, FVector const
 		SavedHeroPhaseTime = Movement->HeroPhaseTime;
 		SavedHeroTakeoff = Movement->HeroTakeoff;
 		SavedHeroDiveTarget = Movement->HeroDiveTarget;
+		SavedHeroDiveYaw = Movement->HeroDiveYaw;
+		bSavedHeroDiveYawSet = Movement->bHeroDiveYawSet;
 		SavedHeroApproachPoint = Movement->HeroApproachPoint;
 	}
 }
@@ -762,6 +787,8 @@ void FSavedMove_Unit::PrepMoveFor(ACharacter* C)
 		Movement->HeroPhaseTime = SavedHeroPhaseTime;
 		Movement->HeroTakeoff = SavedHeroTakeoff;
 		Movement->HeroDiveTarget = SavedHeroDiveTarget;
+		Movement->HeroDiveYaw = SavedHeroDiveYaw;
+		Movement->bHeroDiveYawSet = bSavedHeroDiveYawSet;
 		Movement->HeroApproachPoint = SavedHeroApproachPoint;
 	}
 }
