@@ -47,7 +47,8 @@ struct MINTCHOCO_API FPaintBarWave
  * 둘이 만나면 ClashEffects가 돈다. 판정선은 양 끝에서 KoLine 만큼 들어온 고정 자리다. 게이지 길이와 선을
  * AGameGameState 와 같은 값(ClashCoverage, KnockoutLine)으로 재므로 상대 게이지가 선에 닿는 순간이 곧
  * 서버가 세기 시작하는 순간이다. 상대가 선에 다가오면 빨갛게 점멸하고, 링은 GameState 가 복제한 카운트다운을
- * 그대로 보여 준다.
+ * 그대로 보여 준다. 경기가 끝나면 그 순간의 그림에서 멈춘다 - 이어지는 KO 마무리와 결과 화면은
+ * UMatchResultBarWidget 이 자기 그림으로 따로 그린다.
  *
  * 액체는 BarMaterial(M_UI_PaintBar) 한 장으로 그리고, 판정선·글자·링·격돌 연출은 NativePaint에서 그린다.
  * 트리가 비어 있으면 BarSize 크기의 SizeBox를 루트로 만들어 그대로 배치할 수 있다. GameState 가 없는 곳
@@ -68,21 +69,6 @@ public:
 	void SetCoverageOverride(const FPaintBarPreview& InOverride);
 
 	FVector2D GetBarSize() const { return BarSize; }
-
-	/**
-	 * 바의 크기를 바꾼다. 결과 연출은 경기 중 HUD 보다 큰 바를 쓴다. 위젯 블루프린트를 따로 만들지
-	 * 않고 C++ 에서 바로 얹을 수 있도록 열어 둔 문이다.
-	 */
-	void SetBarSize(const FVector2D& InBarSize);
-
-	/** 값이 바뀔 때 게이지가 따라가는 시간. 느리게 두면 차오르는 것이 보인다. */
-	void SetFillSmoothingSeconds(float InSeconds) { FillSmoothingSeconds = FMath::Max(InSeconds, 0.0f); }
-
-	/**
-	 * 경기의 격돌 문턱과 판정선을 넘겨준다. 커버리지 미리보기를 켜면 바가 AGameGameState 에서
-	 * 떨어져 나가므로(FindRuleSource), 경기와 같은 자로 재려면 부르는 쪽이 값을 들려 보내야 한다.
-	 */
-	void SetMatchRules(float InClashCoverage, float InKoLine);
 
 	int32 GetLeftPaintId() const { return LeftPaintId; }
 	int32 GetRightPaintId() const { return RightPaintId; }

@@ -11,7 +11,7 @@
 class AMatchResultStage;
 class UAnimSequence;
 class UMaterialInterface;
-class UPaintBarWidget;
+class UMatchResultBarWidget;
 class UTexture2D;
 
 /**
@@ -46,7 +46,7 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Timing", meta = (ClampMin = "0", ForceUnits = "s"))
 	float BarRealSeconds = 1.5f;
 
-	/** KO 마무리(더 밀기 + 탁해지기)가 올라오는 시간. 바의 KoBlendSeconds와 같게 둔다. */
+	/** 마무리(더 밀기 + 탁해지기)가 올라오는 시간. 바의 FinishBlendSeconds와 같게 둔다. */
 	UPROPERTY(Config, EditAnywhere, Category = "Timing", meta = (ClampMin = "0", ForceUnits = "s"))
 	float BarFinishSeconds = 0.6f;
 
@@ -82,12 +82,12 @@ public:
 	float BarFillSmoothingSeconds = 0.45f;
 
 	/**
-	 * 결과 바로 쓸 위젯. 경기 중 HUD와 같은 WBP_PaintBar를 쓰는 것이 기본이다 - 액체 머티리얼
-	 * (BarMaterial)과 물결·격돌 설정이 그 블루프린트에만 있어서, 맨 UPaintBarWidget으로 만들면
-	 * 판정선과 링만 그려지고 액체가 통째로 비어 보인다. 크기와 따라가는 속도만 여기서 덮어쓴다.
+	 * 결과 바로 쓸 위젯. UMatchResultBarWidget 을 부모로 둔 블루프린트라야 한다 - 액체 머티리얼
+	 * (BarMaterial)과 물결·격돌 설정이 블루프린트에 있어서, 맨 C++ 클래스로 만들면 판정선과 글자만
+	 * 그려지고 액체가 통째로 비어 보인다. 크기와 따라가는 속도만 여기서 덮어쓴다.
 	 */
 	UPROPERTY(Config, EditAnywhere, Category = "Bar")
-	TSoftClassPtr<UPaintBarWidget> BarWidgetClass;
+	TSoftClassPtr<UMatchResultBarWidget> BarWidgetClass;
 
 	//~ 테두리
 

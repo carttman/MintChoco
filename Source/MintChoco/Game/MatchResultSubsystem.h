@@ -12,7 +12,7 @@ class APlayerController;
 class UInputComponent;
 class UMatchResultConfettiWidget;
 class UMatchResultFrameWidget;
-class UPaintBarWidget;
+class UMatchResultBarWidget;
 
 /**
  * 경기가 끝난 뒤의 결과 연출을 이 머신에서 돌리는 감독.
@@ -116,7 +116,7 @@ private:
 	TObjectPtr<AMatchResultStage> Stage;
 
 	UPROPERTY(Transient)
-	TObjectPtr<UPaintBarWidget> Bar;
+	TObjectPtr<UMatchResultBarWidget> Bar;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMatchResultFrameWidget> Frame;

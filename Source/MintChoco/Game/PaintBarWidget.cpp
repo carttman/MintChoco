@@ -128,19 +128,6 @@ void UPaintBarWidget::SynchronizeProperties()
 	BarBrush.ImageSize = FVector2f(BarSize);
 }
 
-void UPaintBarWidget::SetBarSize(const FVector2D& InBarSize)
-{
-	BarSize = InBarSize;
-	// 루트 SizeBox와 브러시가 크기를 따로 들고 있다. 이미 만들어진 뒤에도 맞도록 같은 경로를 탄다.
-	SynchronizeProperties();
-}
-
-void UPaintBarWidget::SetMatchRules(float InClashCoverage, float InKoLine)
-{
-	Rules.ClashCoverage = FMath::Max(InClashCoverage, 0.01f);
-	Rules.KoLine = FMath::Clamp(InKoLine, 0.0f, 0.45f);
-}
-
 void UPaintBarWidget::SetCoverageOverride(const FPaintBarPreview& InOverride)
 {
 	if (InOverride.bLoopDemo && !CoverageOverride.bLoopDemo)
@@ -181,6 +168,22 @@ void UPaintBarWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 	const float DeltaTime = FMath::Max(InDeltaTime, 0.0f);
 	LocalSize = FVector2f(MyGeometry.GetLocalSize());
+
+	// 규칙은 GameState 것이다. 없는 곳(샘플 맵, 미리보기)에서만 Rules 의 대체값으로 로컬 시계를 돌린다.
+	const AGameGameState* const GameState = FindRuleSource();
+
+	// 경기가 끝나면 이 바는 그 순간의 그림에서 멈춘다. 물결도 게이지도 그대로다. 이어지는 KO 마무리는
+	// 결과 연출이 자기 바(UMatchResultBarWidget)로 따로 그린다. 커버리지 미리보기를 켠 바는
+	// FindRuleSource 가 nullptr 이라 여기 걸리지 않는다.
+	if (GameState && GameState->IsMatchEnded())
+	{
+		// 다 센 시계에 남은 초는 없다. 링은 가득 찬 채로 남는다.
+		LeftSide.RingNumber = 0;
+		RightSide.RingNumber = 0;
+		UpdateMaterial();
+		return;
+	}
+
 	WaveTime += DeltaTime;
 
 	const FVector2f RawCoverage = ReadCoverage(DeltaTime);
@@ -199,8 +202,6 @@ void UPaintBarWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	bHasCoverage = true;
 
 	// 판정은 복제된 값 그대로 하고, 그림은 따라가는 값으로 그린다. 따라가는 값도 같은 식을 거치므로 두 게이지는 정확히 맞닿는다.
-	// 규칙은 GameState 것이다. 없는 곳(샘플 맵, 미리보기)에서만 Rules 의 대체값으로 로컬 시계를 돌린다.
-	const AGameGameState* const GameState = FindRuleSource();
 	const float ClashCoverage = GameState ? GameState->GetClashCoverage() : Rules.ClashCoverage;
 	const float KoHoldSeconds = GameState ? GameState->GetKnockoutHoldSeconds() : Rules.PreviewKoHoldSeconds;
 	KoLine = FMath::Clamp(GameState ? GameState->GetKnockoutLine() : Rules.KoLine, 0.0f, 1.0f);
@@ -283,16 +284,16 @@ UPaintBarWidget::FKoStatus UPaintBarWidget::MakeKoStatus(FSideState& Side, const
 	FKoStatus Status;
 	if (GameState)
 	{
-		// 서버가 센 시각을 그대로 보여 준다. 링이 차는 속도와 숫자가 모든 머신에서 같다.
+		// 서버가 센 시각을 그대로 보여 준다. 링이 차는 속도와 숫자가 모든 머신에서 같다. KO 가 나는
+		// 순간 경기가 끝나 이 바는 NativeTick 에서 멈추므로, 여기서 KO 마무리가 걸릴 일은 없다.
 		Status.bCounting = GameState->IsKnockoutPending() && GameState->GetKnockoutTeam() == OpponentPaintId;
 		Status.Progress = Status.bCounting ? GameState->GetKnockoutProgress() : 0.0f;
 		Status.SecondsLeft = Status.bCounting ? FMath::CeilToInt(GameState->GetKnockoutRemaining()) : 0;
-		Status.bKnockedOut = GameState->IsMatchEnded() && GameState->WasEndedByKnockout() && GameState->GetWinningTeam() == OpponentPaintId;
 		return Status;
 	}
 
-	// 결과 연출은 판정선과 무관하게 이긴 팀을 들려 보낸다. GameState 분기와 같은 규칙이다:
-	// 한쪽의 플래그는 '상대가 이겼다'를 뜻하므로 진 쪽 액체가 탁해지고 이긴 쪽 게이지가 더 밀린다.
+	// 미리보기가 판정선과 무관하게 이긴 팀을 들려 보낸다. 한쪽의 플래그는 '상대가 이겼다'를 뜻하므로
+	// 진 쪽 액체가 탁해지고 이긴 쪽 게이지가 더 밀린다.
 	if (const FPaintBarPreview* const Preview = FindCoveragePreview())
 	{
 		if (Teams::IsValidId(Preview->ForcedKnockoutTeam))

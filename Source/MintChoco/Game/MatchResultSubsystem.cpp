@@ -12,11 +12,11 @@
 
 #include "Game/GameGameState.h"
 #include "Game/GameHudWidget.h"
+#include "Game/MatchResultBarWidget.h"
 #include "Game/MatchResultConfettiWidget.h"
 #include "Game/MatchResultFrameWidget.h"
 #include "Game/MatchResultSettings.h"
 #include "Game/MatchResultStage.h"
-#include "Game/PaintBarWidget.h"
 #include "Game/Unit.h"
 #include "Paint/PaintableComponent.h"
 #include "Screen/ScreenFadeSettings.h"
@@ -71,11 +71,23 @@ namespace MatchResultSubsystem
 		return Pop;
 	}
 
-	TSubclassOf<UPaintBarWidget> ResolveBarClass()
+	TSubclassOf<UMatchResultBarWidget> ResolveBarClass()
 	{
 		const UMatchResultSettings& Settings = UMatchResultSettings::Get();
 		UClass* const Configured = Settings.BarWidgetClass.LoadSynchronous();
-		return Configured ? Configured : UPaintBarWidget::StaticClass();
+		if (Configured && Configured->IsChildOf(UMatchResultBarWidget::StaticClass()))
+		{
+			return Configured;
+		}
+
+		// 맨 C++ 클래스에는 액체 머티리얼이 없어 판정선과 글자만 남는다. 조용히 그러지 않도록 짚어 준다.
+		if (!Settings.BarWidgetClass.IsNull())
+		{
+			UE_LOG(LogMintChoco, Warning,
+				TEXT("결과 바: BarWidgetClass(%s)를 쓸 수 없다. 부모가 UMatchResultBarWidget 인 위젯 블루프린트라야 한다."),
+				*Settings.BarWidgetClass.ToString());
+		}
+		return UMatchResultBarWidget::StaticClass();
 	}
 
 	FAutoConsoleCommandWithWorldAndArgs GResultPreviewCommand(
@@ -231,7 +243,7 @@ void UMatchResultSubsystem::Start(const FMatchResultInput& InResult, bool bInPre
 	Result.TeaserCoverage = UMatchResultSettings::Get().TeaserCoverage;
 
 	// 어느 팀이 어느 자리인지는 바가 정한다. 캐릭터도 같은 값을 따라 좌우가 늘 게이지와 맞는다.
-	const UPaintBarWidget* const BarDefaults = GetDefault<UPaintBarWidget>(MatchResultSubsystem::ResolveBarClass());
+	const UMatchResultBarWidget* const BarDefaults = GetDefault<UMatchResultBarWidget>(MatchResultSubsystem::ResolveBarClass());
 	Result.LeftTeam = BarDefaults->GetLeftPaintId();
 	Result.RightTeam = BarDefaults->GetRightPaintId();
 
@@ -506,7 +518,7 @@ void UMatchResultSubsystem::CreateBar()
 	}
 
 	const UMatchResultSettings& Settings = UMatchResultSettings::Get();
-	Bar = CreateWidget<UPaintBarWidget>(Controller, MatchResultSubsystem::ResolveBarClass());
+	Bar = CreateWidget<UMatchResultBarWidget>(Controller, MatchResultSubsystem::ResolveBarClass());
 	if (!Bar)
 	{
 		return;
@@ -515,7 +527,7 @@ void UMatchResultSubsystem::CreateBar()
 	Bar->SetBarSize(Settings.BarSize);
 	Bar->SetFillSmoothingSeconds(Settings.BarFillSmoothingSeconds);
 
-	// 미리보기 값을 넣는 순간 바는 GameState 에서 떨어져 나가므로, 격돌 문턱과 판정선은 여기서 넘겨준다.
+	// 결과 바는 경기를 읽지 않으므로, 격돌 문턱과 판정선은 여기서 넘겨준다.
 	if (const AGameGameState* const State = World->GetGameState<AGameGameState>())
 	{
 		Bar->SetMatchRules(State->GetClashCoverage(), State->GetKnockoutLine());
@@ -588,14 +600,7 @@ void UMatchResultSubsystem::PushBar()
 	}
 
 	const FMatchResultBarState State = FMatchResultMath::MakeBarState(Phase, Result);
-
-	FPaintBarPreview Preview;
-	Preview.bEnabled = true;
-	Preview.bLoopDemo = false;
-	Preview.LeftCoverage = State.LeftCoverage;
-	Preview.RightCoverage = State.RightCoverage;
-	Preview.ForcedKnockoutTeam = State.ForcedKnockoutTeam;
-	Bar->SetCoverageOverride(Preview);
+	Bar->SetShownCoverage(State.LeftCoverage, State.RightCoverage, State.ForcedKnockoutTeam);
 }
 
 void UMatchResultSubsystem::SetMatchVisualsHidden(bool bHidden)

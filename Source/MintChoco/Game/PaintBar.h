@@ -67,8 +67,9 @@ struct MINTCHOCO_API FPaintBarPreview
 	 * KO 마무리(이긴 쪽 게이지를 더 밀고 진 쪽 액체를 탁하게)를 이 팀이 이긴 것처럼 바로 건다.
 	 * 판정선을 넘긴 채 버티는 시계를 기다리지 않는다. Teams::None 이면 걸지 않는다.
 	 *
-	 * 결과 연출은 최종 비율이 판정선 밖이어도 같은 마무리를 써야 하므로 이 문이 필요하다. 경기 중에는
-	 * 쓰이지 않는다 - 그때는 AGameGameState 가 판정한 값이 그대로 온다.
+	 * 시계를 기다리지 않고 마무리 모양만 보려는 문이다(디자이너 미리보기, 샘플 맵). 경기 중에는
+	 * 쓰이지 않는다 - 그때의 바는 경기가 끝나는 순간 멈추고, 결과 화면은 UMatchResultBarWidget 이
+	 * 자기 그림으로 따로 그린다.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Paint Bar", meta = (ClampMin = "-1", ClampMax = "6", EditCondition = "bEnabled && !bLoopDemo"))
 	int32 ForcedKnockoutTeam = Teams::None;
