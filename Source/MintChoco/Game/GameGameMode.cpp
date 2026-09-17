@@ -15,9 +15,14 @@
 #include "Items/ItemPickup.h"
 #include "Items/ItemProfile.h"
 #include "Items/ItemSettings.h"
+#include "Interfaces/OnlineSessionInterface.h"
 #include "Items/ItemSpawnPoint.h"
 #include "Kismet/GameplayStatics.h"
 #include "MintChoco.h"
+#include "Online/OnlineSessionNames.h"
+#include "OnlineSessionSettings.h"
+#include "OnlineSubsystem.h"
+#include "OnlineSubsystemUtils.h"
 #include "Screen/ScreenFadeSubsystem.h"
 #include "TimerManager.h"
 
@@ -368,7 +373,6 @@ void AGameGameMode::FinishMatch(int32 Winner)
 	}
 }
 
-
 #if !UE_BUILD_SHIPPING
 void AGameGameMode::DebugFinishMatch()
 {
@@ -378,6 +382,42 @@ void AGameGameMode::DebugFinishMatch()
 }
 #endif
 
+void AGameGameMode::ReturnToLobbyNow()
+{
+	// 예약해 둔 복귀는 더 볼 일이 없다. 트래블이 시작되면 이 월드와 함께 사라지지만,
+	// 페이드가 도는 동안에도 만료될 수 있으므로 여기서 거둔다.
+	GetWorldTimerManager().ClearTimer(ReturnToLobbyTimer);
+
+	ReturnToLobby();
+}
+
+void AGameGameMode::EndOnlineSession()
+{
+	IOnlineSubsystem* const Subsystem = Online::GetSubsystem(GetWorld());
+	const IOnlineSessionPtr Sessions = Subsystem ? Subsystem->GetSessionInterface() : nullptr;
+	if (!Sessions.IsValid() || !Sessions->GetNamedSession(NAME_GameSession))
+	{
+		// 세션 없이 도는 판(에디터에서 맵을 직접 열었을 때)이다. 끝낼 것이 없다.
+		return;
+	}
+
+	// 결과창의 나가기 버튼도 같은 일을 한다. 먼저 도달한 쪽이 끝내고 떠나므로, 여기 올 때는
+	// 이미 끝나 있을 수 있다. 그때 EndSession을 또 부르면 실패하니 상태를 먼저 본다.
+	const EOnlineSessionState::Type State = Sessions->GetSessionState(NAME_GameSession);
+	if (State != EOnlineSessionState::InProgress)
+	{
+		return;
+	}
+
+	if (!Sessions->EndSession(NAME_GameSession))
+	{
+		// 막히면 증상은 "로비에서 전원이 준비해도 시작되지 않는다"로만 나타난다. 그때 볼 줄이다.
+		UE_LOG(LogMintChoco, Warning,
+			TEXT("세션을 끝내지 못했습니다(상태 %s). 로비에서 다음 판이 시작되지 않을 수 있습니다."),
+			EOnlineSessionState::ToString(State));
+	}
+}
+
 void AGameGameMode::ReturnToLobby()
 {
 	UWorld* const World = GetWorld();
@@ -385,6 +425,10 @@ void AGameGameMode::ReturnToLobby()
 	{
 		return;
 	}
+
+	// 떠나기 전에 세션을 되돌린다. 결과와 무관하게 트래블한다 — 세션이 어떻든 결과창에
+	// 갇혀 있는 것보다는 로비에 있는 편이 낫다.
+	EndOnlineSession();
 
 	// 서버 트래블이라 접속한 전원이 함께 넘어간다. 가림막을 거치는 것이 이 프로젝트의 규칙이다.
 	if (UScreenFadeSubsystem* const Fade = UScreenFadeSubsystem::Get(World))

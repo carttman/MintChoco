@@ -519,12 +519,27 @@ bool FHeroLandingLaunchTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("착지는 그대로 온다"), Movement->FinishHeroLandingDive());
 	TestEqual(TEXT("착지 뒤는 경직 단계다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::Recover);
 
-	// 경직 중이라면 이야기가 다르다. 이미 땅에 있으므로 던져지는 것 자체는 말이 되지만,
-	// 경직을 안고 가면 입력이 잠긴 채로 떠오른다.
+	// 경직 중에도 무시한다. 여기가 이 테스트의 핵심이다.
+	//
+	// 예전에는 받아 주고 경직을 풀었다. 이미 땅에 있으니 던져지는 것 자체는 말이 되고, 경직을
+	// 안고 떠오르는 것도 막을 수 있어서였다. 그런데 그러면 Recover가 태어난 그 프레임에 죽는다.
+	// 애님 블루프린트의 착지 상태는 그 단계를 보고 들어오고 나가므로(LandingRecoverTime), 한 번도
+	// 보이지 않은 단계를 기다리며 갇힌다 — 점프대 위로 내리꽂았을 때 동작이 반복되며 움직일 수
+	// 없게 됐다. 아예 던지지 않으면 "잠긴 채로 떠오르는" 일도 "갇히는" 일도 없다.
 	Movement->Launch(FVector(0.0f, 0.0f, 1200.0f));
-	TestFalse(TEXT("경직 중에는 던져진 속도를 받는다"), Movement->PendingLaunchVelocity.IsNearlyZero());
-	TestEqual(TEXT("받으면서 경직은 푼다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::None);
+	TestTrue(TEXT("경직 중에도 던져진 속도를 쌓아 두지 않는다"), Movement->PendingLaunchVelocity.IsNearlyZero());
+	TestEqual(TEXT("경직 단계가 살아남는다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::Recover);
+
+	// 경직은 제 시간을 다 쓰고 스스로 풀린다. 애님이 그 단계를 볼 수 있다는 뜻이다.
+	Movement->UpdateCharacterStateBeforeMovement(0.25f);
+	TestEqual(TEXT("경직이 발사에 잘려 나가지 않았다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::Recover);
+	Movement->UpdateCharacterStateBeforeMovement(0.25f);
+	TestEqual(TEXT("제 시간을 다 쓰면 풀린다"), Movement->GetHeroLandingPhase(), EHeroLandingPhase::None);
 	TestTrue(TEXT("풀리면 다시 움직일 수 있다"), Movement->GetMaxSpeed() > 0.0f);
+
+	// 히어로 랜딩이 끝나면 점프대는 평범하게 듣는다. 가드가 그 밖까지 번지면 안 된다.
+	Movement->Launch(FVector(0.0f, 0.0f, 1200.0f));
+	TestFalse(TEXT("히어로 랜딩이 끝나면 발사가 예약된다"), Movement->PendingLaunchVelocity.IsNearlyZero());
 
 	return true;
 }

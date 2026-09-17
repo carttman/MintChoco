@@ -58,6 +58,33 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ink", meta = (ClampMin = "0"))
 	float RefillDelayAfterSpend = 0.5f;
 
+	/**
+	 * 보드(대시)를 타는 동안 회복이 몇 배로 빨라지는가.
+	 *
+	 * 보드 위에서는 쏘지 못한다(AUnit::HandleDashStateChanged가 방아쇠를 놓는다). 그래서 이 시간은
+	 * 언제나 순수한 회복 시간이고, 잉크가 마르면 한 바퀴 달려오는 것이 곧 재장전이 된다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ink", meta = (ClampMin = "1", ForceUnits = "x"))
+	float DashRefillMultiplier = 3.0f;
+
+	/**
+	 * 보드를 타기 시작했다/내렸다고 알린다. 대시 플래그가 실제로 바뀐 머신(소유 클라이언트와
+	 * 서버)에서 AUnit이 부른다 — 회복을 돌리는 것은 서버뿐이지만, 소유자도 같은 값을 들고 있어야
+	 * 예측이 어긋나지 않는다.
+	 *
+	 * 잉크통이 유닛을 되짚어 보지 않는 이유는 그래야 이 컴포넌트를 아무 폰에나 붙일 수 있기
+	 * 때문이다. 대시를 아는 쪽이 밀어 넣는다.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Ink")
+	void SetDashing(bool bNewDashing);
+
+	UFUNCTION(BlueprintPure, Category = "Ink")
+	bool IsDashing() const { return bDashing; }
+
+	/** 지금의 회복 속도(초당 탱크 비율). 보드 중에는 DashRefillMultiplier가 곱해진다. */
+	UFUNCTION(BlueprintPure, Category = "Ink")
+	float GetRefillPerSecond() const;
+
 private:
 	UFUNCTION()
 	void OnRep_Ink();
@@ -70,4 +97,7 @@ private:
 
 	/** Seconds of refill still paused by the last spend. */
 	float RefillPause = 0.0f;
+
+	/** 보드를 타는 중. 복제하지 않는다: 이 값을 쓰는 회복은 서버에서만 돌고, 소유자는 제 대시를 안다. */
+	bool bDashing = false;
 };

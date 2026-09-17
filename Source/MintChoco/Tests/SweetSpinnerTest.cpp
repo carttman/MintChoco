@@ -196,4 +196,46 @@ bool FSweetSpinnerRecoveryTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+/**
+ * 바퀴 수(SpinLoops). 회전 클립은 애님 그래프에서 루프하므로, 회전 구간을 클립 여러 배로 잡는
+ * 것이 곧 같은 속도로 그만큼 더 도는 것이다. 늘어난 구간은 지속시간 안으로 잘린다.
+ *
+ * 프로필의 Turns가 아니라 여기가 실제 회전량이다: 산탄 방향은 손 소켓에서 오고, Turns는 소켓을
+ * 찾지 못했을 때의 폴백에만 쓰인다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FSweetSpinnerSpinLoopsTest,
+	"MintChoco.Items.SweetSpinner.SpinLoops",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FSweetSpinnerSpinLoopsTest::RunTest(const FString& Parameters)
+{
+	// 한 바퀴 1.5초를 세 바퀴: 4.5초. 남은 시간이 넉넉하면 그대로 나온다.
+	TestEqual(TEXT("세 바퀴는 클립 세 배"), SweetSpinner::ComposeSpinPhase(1.5f, 3, 13.5f), 4.5f, 1e-3f);
+
+	// 한 바퀴가 기본값이고, 그때는 예전과 같은 클립 한 번이다.
+	TestEqual(TEXT("한 바퀴는 클립 한 번"), SweetSpinner::ComposeSpinPhase(1.5f, 1, 13.5f), 1.5f, 1e-3f);
+
+	// 0이나 음수 바퀴도 한 바퀴로 친다. 회전이 아예 없는 아이템은 클립을 비우는 쪽이다.
+	TestEqual(TEXT("0바퀴는 한 바퀴로"), SweetSpinner::ComposeSpinPhase(1.5f, 0, 13.5f), 1.5f, 1e-3f);
+
+	// 남은 시간이 모자라면 들어가는 만큼만 돈다. 그 자리에서 태그가 내려간다.
+	TestEqual(TEXT("남은 시간 안으로 잘린다"), SweetSpinner::ComposeSpinPhase(1.5f, 10, 4.0f), 4.0f, 1e-3f);
+
+	// 클립이 없으면 남은 시간 전부가 회전이다(예전 동작). 바퀴 수는 뜻이 없다.
+	TestEqual(TEXT("클립이 없으면 남은 시간 전부"), SweetSpinner::ComposeSpinPhase(0.0f, 5, 4.0f), 4.0f, 1e-3f);
+
+	// 남은 시간이 음수여도 구간이 거꾸로 되지는 않는다.
+	TestEqual(TEXT("남은 시간이 없으면 0"), SweetSpinner::ComposeSpinPhase(1.5f, 3, -2.0f), 0.0f, 1e-3f);
+
+	// 클립이 없는 프로필은 바퀴 수를 올려도 그대로다: 지속시간 전체가 한 바퀴다.
+	USweetSpinnerProfile* const Profile = NewObject<USweetSpinnerProfile>();
+	Profile->Duration = 2.0f;
+	Profile->SpinLoops = 4;
+	TestEqual(TEXT("클립 없는 프로필의 회전 구간"), Profile->GetSpinPhaseLength(), 2.0f, 1e-3f);
+	TestEqual(TEXT("클립 없는 프로필의 한 바퀴"), Profile->GetSpinLoopLength(), 2.0f, 1e-3f);
+
+	return true;
+}
+
 #endif

@@ -21,6 +21,14 @@ namespace SweetSpinner
 	MINTCHOCO_API float VolleyYawDegrees(float StartYaw, int32 Index, int32 Count, float Turns);
 
 	/**
+	 * 회전 구간의 길이(초). 한 바퀴 × 바퀴 수이고, 남은 시간 안으로 잘린다. 자세 시퀀스는 애님
+	 * 그래프에서 루프하므로 구간을 여러 배로 잡는 것이 곧 그만큼 더 도는 것이다.
+	 *
+	 * 한 바퀴가 0이면(회전 클립이 없으면) 남은 시간 전부가 회전이다 — 예전 동작이다.
+	 */
+	MINTCHOCO_API float ComposeSpinPhase(float LoopLength, int32 Loops, float Remaining);
+
+	/**
 	 * 시퀀스에서 회전 구간 표시(UAnimNotifyState_SpinnerVolley)를 찾아 시작·끝 시각(초)을 준다.
 	 * 표시가 없거나 길이가 0이면 거짓이고, 그때는 회전 클립 전체가 발사 구간이다.
 	 */
@@ -91,7 +99,7 @@ public:
 	TObjectPtr<UAnimSequenceBase> StartAnimation;
 
 	/**
-	 * 도는 동안의 동작. 전신을 덮는다. 이 클립의 길이가 곧 회전 구간의 길이이고, 산탄은 이
+	 * 도는 동안의 동작. 전신을 덮는다. 이 클립의 길이가 곧 회전 한 바퀴의 길이이고, 산탄은 이
 	 * 구간에서만 나간다.
 	 *
 	 * 클립 안에 Spinner Volley Window를 얹으면 그 안에서만 쏜다(도입부가 붙어 있는 클립을 다듬을
@@ -99,6 +107,16 @@ public:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spinner|Animation")
 	TObjectPtr<UAnimSequenceBase> SpinAnimation;
+
+	/**
+	 * 회전 클립을 몇 바퀴 도는가. 1이면 클립 한 번으로 끝난다. 늘리면 같은 속도로 그만큼 더 돌고,
+	 * 발사 구간(Spinner Volley Window)도 바퀴마다 다시 온다 — 클립이 루프하는 그대로다.
+	 *
+	 * 회전이 길어지는 만큼 Duration에 자리가 있어야 한다. 모자라면 들어가는 만큼만 돌고 거기서
+	 * 태그가 내려간다. 회전 클립이 없으면 이 값은 쓰이지 않는다(지속시간 전체가 한 바퀴다).
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Spinner|Animation", meta = (ClampMin = "1"))
+	int32 SpinLoops = 1;
 
 	/**
 	 * 회전이 끝난 뒤의 마무리. 상체에만 얹히고 한 번만 돈다. 비어 있으면 회전 자세가 효과가 끝날
@@ -113,10 +131,16 @@ public:
 	/** 준비 구간의 길이(초). 시작 동작의 클립 길이이고, 없으면 0. */
 	float GetStartPhaseLength() const;
 
-	/** 회전 구간의 길이(초). 회전 클립 길이이고, 없으면 지속시간에서 준비 구간을 뺀 나머지 전부. */
+	/** 회전 구간 전체의 길이(초). 회전 클립 × SpinLoops이고, 지속시간 안으로 잘린다. */
 	float GetSpinPhaseLength() const;
 
-	/** 발사 구간(초). 회전 구간 안이고, 표시가 있으면 그 안이다. */
+	/** 회전 한 바퀴의 길이(초). 회전 클립 길이이고, 클립이 없으면 회전 구간 전체가 한 바퀴다. */
+	float GetSpinLoopLength() const;
+
+	/**
+	 * 첫 바퀴의 발사 구간(초, 아이템이 켜진 때부터). 회전 한 바퀴 안이고, 표시가 있으면 그 안이다.
+	 * 뒤 바퀴는 같은 구간이 GetSpinLoopLength()마다 되풀이된다.
+	 */
 	void GetVolleyWindow(float& OutStart, float& OutEnd) const;
 
 	/** 상태 태그가 걸려 있는 시간(초). 끝 동작이 있으면 회전이 끝나는 시각까지다. */

@@ -48,10 +48,11 @@ APaintProjectile* UProjectilePoolSubsystem::AcquireIdle(
 			}
 
 			bOutFresh = false;
+			// 깨우는 것(RestoreForReuse)은 Launch가 Init 뒤에 한다. 여기서 콜리전을 켜면 그
+			// 자리에서 초기 오버랩이 돌고, 그때 공은 아직 지난 사격의 PaintId·Profile을 들고 있다.
 			Recycled->SetActorTransform(Where, /*bSweep=*/false, nullptr, ETeleportType::ResetPhysics);
 			Recycled->SetOwner(Instigator);
 			Recycled->SetInstigator(Instigator);
-			Recycled->RestoreForReuse();
 			return Recycled;
 		}
 	}
@@ -83,9 +84,17 @@ APaintProjectile* UProjectilePoolSubsystem::Launch(
 
 	Projectile->Init(Profile, PaintId, Seed, Velocity, bCosmetic, DropAfterOverride, VisualOffset);
 
+	// 공이 세상에 나타나는 순간은 여기다. 새 공은 FinishSpawning이, 재활용한 공은 RestoreForReuse가
+	// 콜리전을 켜고, 그 순간 도는 초기 오버랩은 둘 다 Init이 끝난 뒤라 이번 사격의
+	// 값으로 판정된다. 총구는 슈터 안쪽이고 초코돔 안에서 터지는 탄도 있어, 순서가
+	// 뒤집히면 지난 사격의 PaintId로 쓴 사람을 기절시키거나 제 팀 돔에 삼켜진다.
 	if (bFresh)
 	{
 		Projectile->FinishSpawning(Where);
+	}
+	else
+	{
+		Projectile->RestoreForReuse();
 	}
 
 	++LiveCount;

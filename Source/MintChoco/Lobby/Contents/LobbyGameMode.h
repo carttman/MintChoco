@@ -45,12 +45,29 @@ public:
 	 * 항목을 BP_LobbyPlayerState로 캐스팅하는데, Seamless Travel 직후에는 아직 안 지워진 게임
 	 * PlayerState나 관전자가 섞여 있어 캐스팅이 실패하고 영원히 false가 된다. 여기서는
 	 * 로비 PlayerState만 세고, 비활성·관전자는 건너뛴다. 아무도 없으면 false.
+	 *
+	 * 센 사람이 MinPlayersToStart보다 적으면 전원이 준비해도 거짓이다.
 	 */
 	UFUNCTION(BlueprintPure, Category = "Lobby")
 	bool AreAllPlayersReady() const;
 
-	/** AreAllPlayersReady의 순수 판정. 테스트용. */
-	static bool AreAllReady(const TArray<const APlayerState*>& PlayerStates);
+	/**
+	 * 게임을 시작하는 데 필요한 최소 인원. 배포 빌드는 둘 이상이어야 하고, 그 밖의 빌드는
+	 * 혼자서도 시작된다 — 맵과 아이템은 혼자 확인하는 일이 대부분이기 때문이다.
+	 *
+	 * 에디터에서 만질 수 있는 UPROPERTY로 두지 않는다. 빌드에 따라 기본값이 달라지는 프로퍼티는
+	 * 누군가 한 번 건드리는 순간 그 값이 BP_LobbyGameMode의 CDO에 직렬화되고, 개발 빌드에서
+	 * 정해진 1이 배포 빌드까지 따라가 이 규칙을 경고 한 줄 없이 없앤다.
+	 */
+	static constexpr int32 MinPlayersToStart = UE_BUILD_SHIPPING ? 2 : 1;
+
+	/**
+	 * AreAllPlayersReady의 순수 판정. 테스트용.
+	 *
+	 * 최소 인원을 상수로 읽지 않고 인자로 받는 이유가 있다. 안에서 UE_BUILD_SHIPPING으로 갈라
+	 * 버리면 배포 쪽 분기는 영원히 테스트되지 않는다 — 테스트는 배포 빌드에서 돌지 않는다.
+	 */
+	static bool AreAllReady(const TArray<const APlayerState*>& PlayerStates, int32 MinPlayers);
 
 protected:
 	/**

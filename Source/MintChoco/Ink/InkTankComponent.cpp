@@ -75,8 +75,22 @@ void UInkTankComponent::Refill(float Seconds)
 
 	if (Seconds > 0.0f && Ink < 1.0f)
 	{
-		ApplyInk(Ink + RefillPerSecond * Seconds);
+		ApplyInk(Ink + GetRefillPerSecond() * Seconds);
 	}
+}
+
+float UInkTankComponent::GetRefillPerSecond() const
+{
+	// 배율은 1보다 작아질 수 없다. 에디터에서 0을 넣어 보드가 회복을 **멈추게** 하는 실수를
+	// 막는다 — 값의 뜻은 "더 빠르게" 하나뿐이다.
+	return bDashing ? RefillPerSecond * FMath::Max(DashRefillMultiplier, 1.0f) : RefillPerSecond;
+}
+
+void UInkTankComponent::SetDashing(bool bNewDashing)
+{
+	// 멈춰 둔 회복(RefillPause)은 건드리지 않는다. 보드를 타면 방아쇠가 놓이지만, 방금 쓴 잉크의
+	// 대가까지 없던 일이 되면 쏘고 바로 대시하는 것이 공짜가 된다.
+	bDashing = bNewDashing;
 }
 
 bool UInkTankComponent::TryConsume(float Cost)

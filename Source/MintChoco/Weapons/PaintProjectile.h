@@ -64,7 +64,12 @@ public:
 	UMaterialInterface* GetTeamMaterial(uint8 InPaintId) const;
 
 	/**
-	 * 풀에서 꺼낸 공을 날 수 있는 상태로 되돌린다. Init 직전에 불린다.
+	 * 풀에서 꺼낸 공을 날 수 있는 상태로 되돌린다. 반드시 Init 뒤에 불린다.
+	 *
+	 * 콜리전을 다시 켜는 순간 엔진이 그 자리의 초기 오버랩을 곧바로 돌린다. 그 앞에
+	 * Init이 끝나 있어야 총구에서 닿는 것(쓴 사람의 캡슐, 초코돔)이 이번 사격의
+	 * PaintId·Profile과 무시 목록으로 판정된다. 지난 사격의 값으로 판정하면 제 팀 탄에
+	 * 쓴 사람이 기절하고, 자기 돔이 제 팀 탄을 삼킨다.
 	 *
 	 * 충돌한 무브먼트 컴포넌트는 StopSimulating으로 UpdatedComponent를 null로 만든다.
 	 * 속도만 다시 넣으면 공이 제자리에 서 있으므로, 붙잡을 컴포넌트를 다시 알려 줘야 한다.

@@ -228,6 +228,13 @@ void UUnitAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		{
 			HeroDiveTilt.Yaw = 0.0;
 		}
+
+		// 애님이 실제로 보는 단계. 무브먼트 쪽 추적과 나란히 놓으면, 단계가 묶인 것인지
+		// 단계는 풀렸는데 애님 그래프만 갇힌 것인지 갈린다.
+		UE_CLOG(HeroLandingPhase != LastHeroLandingPhase, LogMintChoco, Verbose,
+			TEXT("[히어로랜딩][애님] 단계 %d -> %d (%s)"),
+			static_cast<int32>(LastHeroLandingPhase), static_cast<int32>(HeroLandingPhase), *GetNameSafe(Unit));
+
 		LastHeroLandingPhase = HeroLandingPhase;
 
 		const FRotator TargetDiveTilt = bDiving
