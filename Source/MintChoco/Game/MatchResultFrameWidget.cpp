@@ -27,8 +27,10 @@ void UMatchResultFrameWidget::NativeConstruct()
 
 void UMatchResultFrameWidget::SetFrameTexture(UTexture2D* InTexture)
 {
-	FadeRemaining = 0.0f;
+	bPopping = false;
+	PopElapsed = 0.0f;
 	SetRenderOpacity(0.0f);
+	SetRenderScale(FVector2D::UnitVector);
 
 	FrameTexture = InTexture;
 	ApplyFrameTexture();
@@ -45,37 +47,43 @@ void UMatchResultFrameWidget::ApplyFrameTexture()
 	FrameImage->SetVisibility(FrameTexture ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 }
 
-void UMatchResultFrameWidget::FadeIn(float Seconds)
+void UMatchResultFrameWidget::FadeIn(const FMatchResultPop& InPop)
 {
-	if (Seconds <= 0.0f)
+	if (bPopping)
 	{
-		FadeRemaining = 0.0f;
-		SetRenderOpacity(1.0f);
 		return;
 	}
-	// 이미 밝아지는 중이면 남은 시간만 새로 잡는다. 지금 투명도에서 이어지므로 튀지 않는다.
-	FadeRemaining = Seconds * (1.0f - GetRenderOpacity());
+
+	Pop = InPop;
+	PopElapsed = 0.0f;
+	bPopping = true;
+	ApplyPop();
+}
+
+void UMatchResultFrameWidget::ApplyPop()
+{
+	SetRenderOpacity(Pop.GetOpacity(PopElapsed));
+
+	// 렌더 배율은 기준점이 위젯 가운데라, 화면을 덮은 테두리가 사방으로 고르게 밀렸다 돌아온다.
+	const float Scale = Pop.GetScale(PopElapsed);
+	SetRenderScale(FVector2D(Scale, Scale));
 }
 
 void UMatchResultFrameWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
-	if (FadeRemaining <= 0.0f)
+	if (!bPopping)
 	{
 		return;
 	}
 
-	const float DeltaTime = FMath::Max(InDeltaTime, 0.0f);
-	if (DeltaTime >= FadeRemaining)
-	{
-		FadeRemaining = 0.0f;
-		SetRenderOpacity(1.0f);
-		return;
-	}
+	PopElapsed += FMath::Max(InDeltaTime, 0.0f);
+	ApplyPop();
 
-	// 남은 시간에 대한 비율로 좁힌다. 프레임이 길어도 정해진 시간에 정확히 1 이 된다.
-	const float Opacity = GetRenderOpacity();
-	SetRenderOpacity(Opacity + (1.0f - Opacity) * (DeltaTime / FadeRemaining));
-	FadeRemaining -= DeltaTime;
+	if (Pop.IsDone(PopElapsed))
+	{
+		// 곡선의 끝은 정확히 불투명 + 제 크기다. 남은 프레임을 계속 돌 이유가 없다.
+		bPopping = false;
+	}
 }

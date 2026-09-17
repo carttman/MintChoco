@@ -131,7 +131,12 @@ scalar. Tests: `MintChoco.Paint.Materials.LookStyle` catches a material that ski
   shot **locally on every machine** off already-replicated values; `AMatchResultStage` is the placed
   camera + two foreground character slots; the gauge is a second `UPaintBarWidget` driven through
   `FPaintBarPreview` (`ForcedKnockoutTeam` is what makes the KO finish play on a clock win).
-  `mc.Result.Preview` replays it without a match. Tests: `MintChoco.Match.Result.*`.
+  `Hold` runs for the winner animation × `WinnerAnimationLoops`, and entering it pops the frame
+  (`FMatchResultPop`) and pours the snack stickers (`FMatchResultConfetti` + one sprite sheet drawn
+  cell by cell in `NativePaint`; every distance is a screen fraction, not pixels). `SkipKeys` sends
+  only the presser to `SkipTravelURL`. `mc.Result.Preview` replays the shot alone (no lobby return,
+  since no match ended); `mc.Match.Finish` ends a real match so the whole path runs.
+  Tests: `MintChoco.Match.Result.*`.
 - Steam sessions: use `Online::GetSubsystem(GetWorld())`, keep `bAllowJoinInProgress` on, and
   filter lobbies with a private key; any filter change must be repackaged on both PCs.
 - Look presets (`Source/MintChoco/Look/`): the shipped look is **baked into the level**. Hybrid

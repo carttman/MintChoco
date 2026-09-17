@@ -147,3 +147,27 @@ struct MINTCHOCO_API FMatchResultMath
 	static FTransform MakeCharacterTransform(const FTransform& View, const FVector& SlotLocation, float Offset,
 		float MeshYawOffset);
 };
+
+/**
+ * 튀어나오듯 나타나는 모양. 밝아지는 곡선과 부풀었다 가라앉는 크기를 한 벌로 들고 있다.
+ *
+ * 밝아지는 것은 앞이 빠르고 뒤가 느리다. 눈에 먼저 들고 마무리는 천천히 잦아드는 편이 "나타났다"로
+ * 읽히고, 선형이면 같은 시간 동안 밋밋하게 밝아진다. 크기는 1 에서 한 번 부풀었다 정확히 1 로
+ * 돌아온다 - 남는 배율이 있으면 화면에 계속 늘어난 그림이 남는다.
+ */
+struct MINTCHOCO_API FMatchResultPop
+{
+	/** 다 밝아지는 데 걸리는 시간(초). 0 이하면 즉시 끝난다. */
+	float Seconds = 0.5f;
+
+	/** 가장 부풀었을 때의 크기 배율. 1 이면 크기를 건드리지 않는다. */
+	float PeakScale = 1.15f;
+
+	/** 가장 부푸는 순간(0~1). 앞쪽일수록 빠르게 부풀고 천천히 내려앉는다. */
+	float PeakAt = 0.35f;
+
+	float GetOpacity(float Elapsed) const;
+	float GetScale(float Elapsed) const;
+
+	bool IsDone(float Elapsed) const { return Elapsed >= Seconds; }
+};

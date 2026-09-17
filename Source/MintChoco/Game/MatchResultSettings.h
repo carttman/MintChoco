@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
+#include "InputCoreTypes.h"
+#include "Math/Interval.h"
 #include "Templates/SubclassOf.h"
 
 #include "MatchResultSettings.generated.h"
@@ -52,7 +54,12 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Timing", meta = (ClampMin = "0", ForceUnits = "s"))
 	float CharacterSeconds = 0.6f;
 
-	/** 완성된 그림을 그대로 두는 시간. 이 뒤에 서버가 로비로 보낸다. */
+	/**
+	 * 완성된 그림을 그대로 두는 시간. 이 뒤에 서버가 로비로 보낸다.
+	 *
+	 * 보통 이 자리는 승리 모션의 길이 x WinnerAnimationLoops 가 대신한다. 이 값이 쓰이는 것은
+	 * WinnerAnimation 이 비었거나 길이를 읽지 못했을 때뿐이다.
+	 */
 	UPROPERTY(Config, EditAnywhere, Category = "Timing", meta = (ClampMin = "0", ForceUnits = "s"))
 	float HoldSeconds = 5.0f;
 
@@ -96,6 +103,83 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Frame", meta = (ClampMin = "0", ForceUnits = "s"))
 	float FrameFadeSeconds = 0.5f;
 
+	/**
+	 * 테두리가 나타나는 동안 가장 부풀었을 때의 크기 배율. 1 이면 크기를 건드리지 않고 밝아지기만 한다.
+	 *
+	 * 화면을 덮는 그림이라 부풀면 가장자리가 화면 밖으로 밀렸다 돌아온다. 테두리 그림에 여백이 없으면
+	 * 그만큼 잘려 보이므로, 그림을 바꿀 때 같이 맞춘다.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Frame", meta = (ClampMin = "1", ClampMax = "2"))
+	float FramePeakScale = 1.15f;
+
+	/** 가장 부푸는 순간(밝아지는 시간에 대한 비율). 앞쪽일수록 빠르게 부풀고 천천히 내려앉는다. */
+	UPROPERTY(Config, EditAnywhere, Category = "Frame", meta = (ClampMin = "0.01", ClampMax = "0.99"))
+	float FramePeakAt = 0.35f;
+
+	//~ 스티커
+
+	/**
+	 * 승리 순간에 화면 위에서 쏟아지는 과자 스티커. 한 장짜리 스프라이트 시트다.
+	 *
+	 * 비어 있으면 스티커 없이 나머지 연출만 돈다. 칸은 왼쪽 위에서 가로로 세고, 빈 칸이 있으면
+	 * 그 칸도 뽑히므로 시트는 칸을 꽉 채워 둔다.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Sticker")
+	TSoftObjectPtr<UTexture2D> StickerTexture;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Sticker", meta = (ClampMin = "1"))
+	int32 StickerColumns = 5;
+
+	UPROPERTY(Config, EditAnywhere, Category = "Sticker", meta = (ClampMin = "1"))
+	int32 StickerRows = 3;
+
+	/** 배율 1 인 스티커 한 장의 한 변(px). */
+	UPROPERTY(Config, EditAnywhere, Category = "Sticker", meta = (ClampMin = "1", ForceUnits = "px"))
+	float StickerSize = 112.0f;
+
+	/** 한 번의 연출에서 뿌리는 총 장수. */
+	UPROPERTY(Config, EditAnywhere, Category = "Sticker", meta = (ClampMin = "0", ClampMax = "512"))
+	int32 StickerCount = 72;
+
+	/** 이 시간에 걸쳐 고르게 나눠 뿌린다. 0 이면 첫 프레임에 다 나가 한 번에 터진다. */
+	UPROPERTY(Config, EditAnywhere, Category = "Sticker", meta = (ClampMin = "0", ForceUnits = "s"))
+	float StickerSpawnSeconds = 3.0f;
+
+	/** 한 장이 화면에 머무는 시간(초). */
+	UPROPERTY(Config, EditAnywhere, Category = "Sticker")
+	FFloatInterval StickerLife = FFloatInterval(2.6f, 4.2f);
+
+	/** 기준 크기에 곱하는 배율. */
+	UPROPERTY(Config, EditAnywhere, Category = "Sticker")
+	FFloatInterval StickerScale = FFloatInterval(0.62f, 1.35f);
+
+	/**
+	 * 아래로 내려가는 처음 속도. 화면 높이를 1 로 본 초당 거리라 해상도가 달라도 같은 그림이 나온다.
+	 * 아래의 흔들림·가속도 같은 자를 쓴다.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Sticker|Motion")
+	FFloatInterval StickerFallSpeed = FFloatInterval(0.16f, 0.38f);
+
+	/** 떨어지면서 붙는 가속(화면 높이/초²). */
+	UPROPERTY(Config, EditAnywhere, Category = "Sticker|Motion", meta = (ClampMin = "0"))
+	float StickerGravity = 0.20f;
+
+	/** 옆으로 새는 처음 속도의 폭(화면 너비/초). 좌우 양쪽으로 같은 폭만큼 흩어진다. */
+	UPROPERTY(Config, EditAnywhere, Category = "Sticker|Motion", meta = (ClampMin = "0"))
+	float StickerSideDrift = 0.05f;
+
+	/** 좌우로 흔들리는 폭(화면 너비/초). 이것이 0 이면 그냥 곧게 떨어진다. */
+	UPROPERTY(Config, EditAnywhere, Category = "Sticker|Motion")
+	FFloatInterval StickerSwayAmplitude = FFloatInterval(0.03f, 0.10f);
+
+	/** 흔들리는 주기(라디안/초). */
+	UPROPERTY(Config, EditAnywhere, Category = "Sticker|Motion")
+	FFloatInterval StickerSwayRate = FFloatInterval(1.5f, 3.6f);
+
+	/** 도는 속도(도/초). 절반은 반대로 돈다. */
+	UPROPERTY(Config, EditAnywhere, Category = "Sticker|Motion")
+	FFloatInterval StickerSpin = FFloatInterval(25.0f, 130.0f);
+
 	//~ 무대
 
 	/** 맵에 무대가 놓여 있지 않을 때 대신 스폰할 클래스. 비어 있으면 AMatchResultStage를 그대로 쓴다. */
@@ -109,6 +193,15 @@ public:
 	/** 이긴 쪽이 다가온 뒤 도는 애니메이션. */
 	UPROPERTY(Config, EditAnywhere, Category = "Stage")
 	TSoftObjectPtr<UAnimSequence> WinnerAnimation;
+
+	/**
+	 * 승리 모션을 몇 번 돌리고 로비로 보낼지. 마지막 Hold 단계의 길이가 이 값에서 나온다.
+	 *
+	 * WinnerAnimation 의 길이를 읽어 곱하므로, 애니메이션을 바꾸면 기다리는 시간도 같이 바뀐다.
+	 * 애니메이션이 비었거나 길이가 0 이면 HoldSeconds 를 그대로 쓴다.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Stage", meta = (ClampMin = "1", ClampMax = "10"))
+	int32 WinnerAnimationLoops = 2;
 
 	/** 이긴 쪽이 카메라 쪽으로 다가오는 거리(cm). */
 	UPROPERTY(Config, EditAnywhere, Category = "Stage", meta = (ClampMin = "0", ForceUnits = "cm"))
@@ -131,4 +224,25 @@ public:
 	/** 진 쪽 메시에 쓰는 커스텀 스텐실 값. 프로젝트 설정의 Custom Depth-Stencil Pass가 켜져 있어야 한다. */
 	UPROPERTY(Config, EditAnywhere, Category = "Grayscale", meta = (ClampMin = "1", ClampMax = "255"))
 	int32 LoserStencilValue = 1;
+
+	//~ 건너뛰기
+
+	/**
+	 * 연출을 건너뛰고 로비로 빠지는 키. 누른 사람만 떠나고 다른 머신의 연출은 그대로 돈다.
+	 *
+	 * 에디터에서는 Esc 가 PIE 를 멈추고 물결표가 콘솔을 여는 등 뷰포트가 먼저 가져가는 키가 있다.
+	 * 패키징한 빌드에서만 온전히 동작하는 키라면 여기서 다른 키로 바꾼다. 비워 두면 건너뛰기가 없다.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Skip")
+	TArray<FKey> SkipKeys = { EKeys::Escape, EKeys::One };
+
+	/**
+	 * 건너뛴 사람이 가는 맵. 서버의 로비 복귀와 달리 이 머신만 떠나는 클라이언트 트래블이다.
+	 *
+	 * 리슨 서버의 호스트가 누르면 서버가 함께 내려가므로 붙어 있던 전원이 튕긴다. 호스트가 경기를
+	 * 그만두는 것과 같은 일이고, 그것이 싫으면 호스트는 끝까지 보거나 이 목록에서 키를 뺀다.
+	 * 비워 두면 건너뛰기가 없다.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Skip")
+	FString SkipTravelURL = TEXT("/Game/Maps/Lobby");
 };

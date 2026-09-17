@@ -1,6 +1,7 @@
 #include "Misc/AutomationTest.h"
 
 #include "Game/MatchResult.h"
+#include "Game/MatchResultConfetti.h"
 #include "Game/PaintBar.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -312,6 +313,179 @@ bool FMatchResultForcedKnockoutTest::RunTest(const FString& Parameters)
 	const FPaintBarPreview Preview;
 	TestEqual(TEXT("a plain preview forces nothing"), Preview.ForcedKnockoutTeam, Teams::None);
 	TestFalse(TEXT("Teams::None is not a team"), Teams::IsValidId(Preview.ForcedKnockoutTeam));
+
+	return true;
+}
+
+/** 테두리가 나타나는 곡선: 앞이 빠른 페이드와, 1 에서 부풀었다 1 로 정확히 돌아오는 크기. */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMatchResultPopTest,
+	"MintChoco.Match.Result.Pop",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FMatchResultPopTest::RunTest(const FString& Parameters)
+{
+	const float Tolerance = 1.0e-3f;
+
+	FMatchResultPop Pop;
+	Pop.Seconds = 1.0f;
+	Pop.PeakScale = 1.2f;
+	Pop.PeakAt = 0.25f;
+
+	TestEqual(TEXT("it starts invisible"), Pop.GetOpacity(0.0f), 0.0f, Tolerance);
+	TestEqual(TEXT("it ends opaque"), Pop.GetOpacity(Pop.Seconds), 1.0f, Tolerance);
+
+	// 앞이 빠르고 뒤가 느리다. 선형이면 절반 시간에 절반이지만 세제곱은 7/8 이 이미 밝아져 있다.
+	TestEqual(TEXT("half the time is seven eighths"), Pop.GetOpacity(0.5f), 0.875f, Tolerance);
+	TestTrue(TEXT("a quarter of the time is past half the brightness"), Pop.GetOpacity(0.25f) > 0.5f);
+
+	// 크기는 양 끝에서 정확히 1 이다. 남는 배율이 있으면 화면에 늘어난 그림이 그대로 남는다.
+	TestEqual(TEXT("it starts at its own size"), Pop.GetScale(0.0f), 1.0f, Tolerance);
+	TestEqual(TEXT("it ends at its own size"), Pop.GetScale(Pop.Seconds), 1.0f, Tolerance);
+	TestEqual(TEXT("it swells fullest at PeakAt"), Pop.GetScale(0.25f), Pop.PeakScale, Tolerance);
+	TestTrue(TEXT("and it never shrinks below its own size"),
+		Pop.GetScale(0.6f) > 1.0f && Pop.GetScale(0.6f) < Pop.PeakScale);
+
+	// 시간 밖은 양 끝으로 잠긴다. 위젯이 한 프레임 더 밀어 넣어도 튀지 않는다.
+	TestEqual(TEXT("before the start it is the start"), Pop.GetScale(-1.0f), 1.0f, Tolerance);
+	TestEqual(TEXT("after the end it is the end"), Pop.GetOpacity(5.0f), 1.0f, Tolerance);
+	TestFalse(TEXT("it is not done halfway"), Pop.IsDone(0.5f));
+	TestTrue(TEXT("it is done at the end"), Pop.IsDone(Pop.Seconds));
+
+	// 길이가 0 이면 걸자마자 끝난 상태다.
+	FMatchResultPop Instant;
+	Instant.Seconds = 0.0f;
+	TestEqual(TEXT("a zero-second pop is already opaque"), Instant.GetOpacity(0.0f), 1.0f, Tolerance);
+	TestEqual(TEXT("and never swells"), Instant.GetScale(0.0f), 1.0f, Tolerance);
+	TestTrue(TEXT("and reports itself done"), Instant.IsDone(0.0f));
+
+	// 배율 1 은 크기를 건드리지 않는다. 밝아지기만 하는 예전 모양이다.
+	FMatchResultPop Flat;
+	Flat.PeakScale = 1.0f;
+	TestEqual(TEXT("a flat pop never moves"), Flat.GetScale(Flat.Seconds * Flat.PeakAt), 1.0f, Tolerance);
+
+	return true;
+}
+
+/** 스프라이트 시트에서 칸을 떼어 내는 자. */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMatchResultSpriteSheetTest,
+	"MintChoco.Match.Result.SpriteSheet",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FMatchResultSpriteSheetTest::RunTest(const FString& Parameters)
+{
+	const float Tolerance = 1.0e-4f;
+
+	FMatchResultSpriteSheet Sheet;
+	Sheet.Columns = 5;
+	Sheet.Rows = 3;
+	Sheet.Inset = 0.0f;
+
+	TestEqual(TEXT("five by three is fifteen cells"), Sheet.GetCellCount(), 15);
+
+	const FBox2f First = Sheet.GetCellUV(0);
+	TestEqual(TEXT("the first cell starts at the origin"), First.Min.X, 0.0f, Tolerance);
+	TestEqual(TEXT("the first cell starts at the top"), First.Min.Y, 0.0f, Tolerance);
+	TestEqual(TEXT("and is one fifth wide"), First.Max.X, 0.2f, Tolerance);
+	TestEqual(TEXT("and one third tall"), First.Max.Y, 1.0f / 3.0f, Tolerance);
+
+	// 칸은 왼쪽 위에서 가로로 세어 나간다: 5 번은 둘째 줄의 첫 칸이다.
+	const FBox2f SecondRow = Sheet.GetCellUV(5);
+	TestEqual(TEXT("the sixth cell starts the second row"), SecondRow.Min.X, 0.0f, Tolerance);
+	TestEqual(TEXT("one row down"), SecondRow.Min.Y, 1.0f / 3.0f, Tolerance);
+
+	const FBox2f Last = Sheet.GetCellUV(14);
+	TestEqual(TEXT("the last cell ends at the right edge"), Last.Max.X, 1.0f, Tolerance);
+	TestEqual(TEXT("and at the bottom edge"), Last.Max.Y, 1.0f, Tolerance);
+
+	// 칸 수를 넘는 번호는 감는다. 시트를 줄여도 뽑는 쪽이 터지지 않는다.
+	TestEqual(TEXT("a number past the end wraps"), Sheet.GetCellUV(15).Min.X, First.Min.X, Tolerance);
+	TestEqual(TEXT("and wraps to the same row"), Sheet.GetCellUV(15).Min.Y, First.Min.Y, Tolerance);
+
+	// 여백은 칸을 사방에서 안쪽으로 물린다. 이웃 칸이 새어 들어오지 않게 하는 값이다.
+	Sheet.Inset = 0.01f;
+	const FBox2f Trimmed = Sheet.GetCellUV(0);
+	TestTrue(TEXT("the inset pulls the left edge in"), Trimmed.Min.X > First.Min.X);
+	TestTrue(TEXT("and the right edge in"), Trimmed.Max.X < First.Max.X);
+
+	return true;
+}
+
+/** 쏟아지는 스티커: 뿌리는 박자, 같은 씨앗의 같은 그림, 언젠가 다 사라지는 것. */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FMatchResultConfettiTest,
+	"MintChoco.Match.Result.Confetti",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FMatchResultConfettiTest::RunTest(const FString& Parameters)
+{
+	const float Tolerance = 1.0e-4f;
+	const int32 CellCount = 15;
+
+	// 폭을 0 으로 좁혀 흔들림이 아니라 박자만 본다.
+	FMatchResultConfettiRules Rules;
+	Rules.Count = 20;
+	Rules.SpawnSeconds = 1.0f;
+	Rules.Life = FFloatInterval(2.0f, 2.0f);
+	Rules.FallSpeed = FFloatInterval(0.5f, 0.5f);
+	Rules.Scale = FFloatInterval(1.0f, 1.0f);
+
+	FMatchResultConfetti Confetti;
+	Confetti.Start(Rules, CellCount, 1234);
+	TestEqual(TEXT("nothing is out before the first frame"), Confetti.GetStickers().Num(), 0);
+	TestFalse(TEXT("but there is still work to do"), Confetti.IsDone());
+
+	// 뿌리는 시간이 끝나면 정확히 Count 장이 나가 있다. 아직 아무도 죽지 않았다.
+	for (int32 Step = 0; Step < 10; ++Step)
+	{
+		Confetti.Advance(0.1f);
+	}
+	TestEqual(TEXT("every sticker is out by SpawnSeconds"), Confetti.GetStickers().Num(), Rules.Count);
+
+	for (const FMatchResultSticker& Sticker : Confetti.GetStickers())
+	{
+		TestTrue(TEXT("the cell is on the sheet"), Sticker.Cell >= 0 && Sticker.Cell < CellCount);
+		TestTrue(TEXT("and it is on its way down"), Sticker.Velocity.Y > 0.0f);
+	}
+
+	// 씨앗이 같으면 같은 그림이다. 머신마다 따로 뿌려도 같은 화면이 나온다는 뜻이다.
+	FMatchResultConfetti Twin;
+	Twin.Start(Rules, CellCount, 1234);
+	for (int32 Step = 0; Step < 10; ++Step)
+	{
+		Twin.Advance(0.1f);
+	}
+	TestEqual(TEXT("the same seed spawns as many"), Twin.GetStickers().Num(), Confetti.GetStickers().Num());
+	TestEqual(TEXT("in the same place"), Twin.GetStickers()[0].Position.X, Confetti.GetStickers()[0].Position.X, Tolerance);
+	TestEqual(TEXT("from the same cell"), Twin.GetStickers()[0].Cell, Confetti.GetStickers()[0].Cell);
+
+	// 수명이 다하면 사라진다. 연출이 길어져도 빈 배열만 돌 뿐이다.
+	for (int32 Step = 0; Step < 100; ++Step)
+	{
+		Confetti.Advance(0.1f);
+	}
+	TestTrue(TEXT("everything is gone in the end"), Confetti.GetStickers().IsEmpty());
+	TestTrue(TEXT("and the field knows it is finished"), Confetti.IsDone());
+
+	// 투명도는 태어날 때 밝아지고 죽기 전에 사라진다.
+	FMatchResultSticker Sticker;
+	Sticker.Life = 2.0f;
+	Sticker.Age = 0.0f;
+	TestEqual(TEXT("a newborn is invisible"), Rules.GetOpacity(Sticker), 0.0f, Tolerance);
+	Sticker.Age = Rules.FadeInSeconds;
+	TestEqual(TEXT("and fully there once it has faded in"), Rules.GetOpacity(Sticker), 1.0f, Tolerance);
+	Sticker.Age = Sticker.Life;
+	TestEqual(TEXT("and gone at the end of its life"), Rules.GetOpacity(Sticker), 0.0f, Tolerance);
+
+	// 뿌리는 시간이 0 이면 첫 프레임에 다 나가 한 번에 터진다.
+	FMatchResultConfettiRules Burst = Rules;
+	Burst.SpawnSeconds = 0.0f;
+
+	FMatchResultConfetti AtOnce;
+	AtOnce.Start(Burst, CellCount, 1);
+	AtOnce.Advance(0.016f);
+	TestEqual(TEXT("zero spawn time is one burst"), AtOnce.GetStickers().Num(), Burst.Count);
 
 	return true;
 }

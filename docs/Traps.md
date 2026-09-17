@@ -389,6 +389,26 @@ back), and position offset along the camera's forward axis, so a step toward the
 character's size without sliding it across the screen. Move a slot anywhere and the character still
 faces the viewer and still steps along the view axis.
 
+`Hold` is the last phase, and its length is not a config number: it is the winner animation's length
+× `WinnerAnimationLoops` (2), so the picture holds for exactly two rounds of the dance and then the
+server travels. `HoldSeconds` is only the fallback for a `WinnerAnimation` that will not load. Both
+sides reach the number through `GetTotalSeconds`, so the server's timer and the local sequence still
+cannot drift.
+
+Entering `Hold` is the beat every decorative thing lands on. The frame swells as it fades in
+(`FMatchResultPop`: a cubic-out opacity that is already 7/8 bright at half the time, and a scale that
+bulges to `FramePeakScale` at `FramePeakAt` and returns to exactly 1). At the same instant the snack
+stickers start pouring from the top of the screen — one sprite sheet (`StickerTexture`,
+`StickerColumns` × `StickerRows`) drawn cell by cell in `NativePaint` with a single brush whose UV
+region is swapped per piece. `FMatchResultConfetti` owns the falling and is tested without a world;
+every distance in it is a fraction of the screen rather than pixels, so the same numbers give the
+same picture at any resolution, and the seed is fixed so every machine — and every
+`mc.Result.Preview` run — sees the same fall.
+
+Any of `SkipKeys` (Esc and `1` by default) sends **only that machine** to `SkipTravelURL` through
+`ClientTravelWithFade`. Nobody else is interrupted, the sequence is not aborted (the picture stays up
+under the fade), and the server's lobby timer is untouched.
+
 | Symptom | Check first |
 |---|---|
 | A slot is empty | `AGameGameState::TeamUnitData`, which `AGameGameMode::StartPlay` copies from its own `TeamUnitData` (set in `BP_GameMode`). The game mode only exists on the server, so clients read the replicated copy; an empty array there means the mode's array was empty too. `LogMintChoco` warns per slot. |
@@ -405,7 +425,16 @@ faces the viewer and still steps along the view axis.
 | The loser is not grey | `r.CustomDepth=3` (Custom Depth-Stencil Pass: Enabled with Stencil) in `DefaultEngine.ini`, and `UMatchResultSettings::LoserDesaturateMaterial`. The blendable is added to the stage camera only, in `BeginPlay`, so nothing about the match render changes. Empty material = the rest of the sequence still runs. |
 | The map travels to the lobby mid-sequence | `ReturnToLobbyDelay` is now *extra* time after the sequence, not the whole wait. A `BP_GameMode` that serialised the old 5.0 just adds five seconds of hold. |
 | The loading screen widget flashes during the result fade | `FadeOut`/`FadeIn` use `UScreenFadeSettings::LoadingWidgetClass` like any other fade. If `WBP_LoadingScreen` carries a spinner or "로딩 중" text, it will show. |
-| Checking the look without playing a match | `mc.Result.Preview <민트 %> <초코 %> [이긴 팀 0\|1\|-1]`, no args to stop. `55 40 0` clashes then finishes, `25 20 0` finishes with no clash, `45 45 -1` is a draw. |
+| Checking the look without playing a match | `mc.Result.Preview <민트 %> <초코 %> [이긴 팀 0\|1\|-1]`, no args to stop. `55 40 0` clashes then finishes, `25 20 0` finishes with no clash, `45 45 -1` is a draw. It plays the shot locally and nothing else, so it cannot show the lobby return — see the row below. |
+| The sequence never returns to the lobby | If this was `mc.Result.Preview`, that is correct: no match ended, so `AGameGameMode::FinishMatch` never set the timer, and the preview only logs that it stopped. Use `mc.Match.Finish` instead — it ends the match the way the clock would, and the sequence, the winner and the travel all run for real. In an actual match, check `LogMintChoco` for `결과 연출: 마지막 단계` (the sequence reached the end) and then `가림막: 서버 트래블` (the server left). |
+| The stickers never appear | `UMatchResultSettings::StickerTexture` (empty skips the widget entirely) or `StickerCount` at 0. The rest of the sequence still runs either way. |
+| A sticker carries a sliver of its neighbour | `FMatchResultSpriteSheet::Inset`. A sheet's pixel size rarely divides evenly by the cell count, so cell edges land mid-pixel; the inset pulls each cell in by a fraction of its own size. The texture is imported `UserInterface2D` with no mips for the same reason — a mip chain blends neighbouring cells together. |
+| The stickers sit in front of the coverage bar | On purpose: `ConfettiZOrder` (2) is above `BarZOrder` (1), and confetti passing over the bar is the look. Swap the two constants to put them behind. |
+| The frame pops twice | `UMatchResultFrameWidget::FadeIn` ignores a second call while one is running, because restarting from a swollen scale reads as a double bounce. If it really happens, something called `SetFrameTexture` mid-sequence. |
+| The frame's edges get clipped while it swells | That is `FramePeakScale`. The image covers the whole screen, so swelling pushes its edges past the viewport. Give the frame art margin, or lower the peak to 1 (which fades without moving). |
+| A skip key does nothing in PIE | The editor viewport takes Esc (it stops PIE) before the player controller sees it, so in PIE use the other key. `1` reaches the controller, but `AUnit` also binds `1`-`8` as debug item keys outside Shipping, so it hands you item 0 on the way out; that is harmless with the match already over. Both keys work in a packaged build, and `SkipKeys` takes any key without a rebuild. |
+| Skipping dropped everyone, not just the presser | The presser was the listen-server host. `ClientTravel` on a host tears the server down — the same as the host quitting a match. Only a client leaves alone; a host that must not drop the others takes its keys out of `SkipKeys`. |
+| The lobby comes too early or too late after the dance | `WinnerAnimationLoops` for the hold, `ReturnToLobbyDelay` on `BP_GameMode` for the extra tail. On a draw nobody dances but the hold is still the animation's length × loops; the picture is static, so it only reads as a longer pause. |
 
 Tests: `MintChoco.Match.Result.*`.
 

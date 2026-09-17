@@ -132,3 +132,30 @@ EMatchResultStep FMatchResultMath::GetStep(int32 SlotTeam, int32 WinningTeam)
 	}
 	return SlotTeam == WinningTeam ? EMatchResultStep::Approach : EMatchResultStep::Withdraw;
 }
+
+float FMatchResultPop::GetOpacity(float Elapsed) const
+{
+	if (Seconds <= 0.0f)
+	{
+		return 1.0f;
+	}
+
+	// 세제곱으로 뒤끝을 길게 끈다. 절반 지점에서 이미 7/8 이 밝아져 있다.
+	const float Left = 1.0f - FMath::Clamp(Elapsed / Seconds, 0.0f, 1.0f);
+	return 1.0f - Left * Left * Left;
+}
+
+float FMatchResultPop::GetScale(float Elapsed) const
+{
+	if (Seconds <= 0.0f)
+	{
+		return 1.0f;
+	}
+
+	const float Progress = FMath::Clamp(Elapsed / Seconds, 0.0f, 1.0f);
+	const float Peak = FMath::Clamp(PeakAt, 0.01f, 0.99f);
+
+	// 꼭짓점이 1 인 삼각형을 부드럽게 다듬는다. 양 끝이 정확히 0 이라 크기가 1 로 돌아온다.
+	const float Triangle = Progress < Peak ? Progress / Peak : (1.0f - Progress) / (1.0f - Peak);
+	return 1.0f + (PeakScale - 1.0f) * FMath::SmoothStep(0.0f, 1.0f, Triangle);
+}

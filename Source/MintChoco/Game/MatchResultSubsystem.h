@@ -9,6 +9,8 @@
 
 class AMatchResultStage;
 class APlayerController;
+class UInputComponent;
+class UMatchResultConfettiWidget;
 class UMatchResultFrameWidget;
 class UPaintBarWidget;
 
@@ -47,6 +49,13 @@ public:
 	/** 연출을 중간에 끊고 화면을 경기 상태로 되돌린다. */
 	void Abort();
 
+	/**
+	 * 연출을 건너뛰고 이 머신만 로비로 떠난다. 건너뛰기 키가 부른다.
+	 *
+	 * 남의 머신은 아무것도 모른다. 연출은 그쪽에서 끝까지 돌고, 서버의 로비 복귀도 예정대로다.
+	 */
+	void Skip();
+
 	bool IsRunning() const { return Phase != EMatchResultPhase::Idle; }
 
 	EMatchResultPhase GetPhase() const { return Phase; }
@@ -66,6 +75,9 @@ private:
 	/** 단계에 들어가 그 단계의 일을 하고, 다음 단계를 예약한다. */
 	void EnterPhase(EMatchResultPhase NewPhase);
 
+	/** 미리보기의 마지막. 경기라면 서버가 로비로 보낼 순간이라, 여기서는 연출을 걷는다. */
+	void FinishPreview();
+
 	/** 화면을 무대로 갈아치운다. 가림막이 완전히 덮여 있는 동안에만 부른다. */
 	void TakeOverView();
 
@@ -84,6 +96,16 @@ private:
 	/** 화면을 두르는 장식 테두리를 투명한 채로 얹는다. 바보다 아래에 깔아 바를 가리지 않는다. */
 	void CreateFrame();
 
+	/** 화면 위에서 쏟아질 스티커를 얹는다. 실제로 뿌리는 것은 Hold 에 들어가는 순간이다. */
+	void CreateConfetti();
+
+	/**
+	 * 건너뛰기 키를 컨트롤러에 올린다. 컨트롤러가 들고 있는 입력 더미를 건드리지 않고 우리 것을
+	 * 하나 밀어 넣는다: 끝날 때 통째로 빼면 되므로 남의 바인딩 사이에서 우리 것만 골라낼 일이 없다.
+	 */
+	void BindSkipKeys();
+	void UnbindSkipKeys();
+
 	/** 이번 단계의 값을 바에 밀어 넣는다. */
 	void PushBar();
 
@@ -99,6 +121,13 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMatchResultFrameWidget> Frame;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UMatchResultConfettiWidget> Confetti;
+
+	/** 건너뛰기 키만 담은 입력 더미. 연출이 도는 동안만 컨트롤러 위에 얹혀 있다. */
+	UPROPERTY(Transient)
+	TObjectPtr<UInputComponent> SkipInput;
+
 	/** 무대가 맵에 없어서 직접 스폰했는지. 끝낼 때 치워야 한다. */
 	bool bSpawnedStage = false;
 
@@ -108,6 +137,9 @@ private:
 
 	/** 지어낸 값으로 도는 중인지. 그러면 BarReal 에서 실제 커버리지를 읽지 않는다. */
 	bool bPreview = false;
+
+	/** 건너뛰기를 이미 눌렀다. 페이드가 내려오는 동안 또 눌러도 한 번만 떠난다. */
+	bool bSkipped = false;
 
 	FTimerHandle PhaseTimer;
 };

@@ -1,7 +1,9 @@
 #include "Game/MatchResultSubsystem.h"
 
+#include "Animation/AnimSequence.h"
 #include "Blueprint/GameViewportSubsystem.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Components/InputComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -10,6 +12,7 @@
 
 #include "Game/GameGameState.h"
 #include "Game/GameHudWidget.h"
+#include "Game/MatchResultConfettiWidget.h"
 #include "Game/MatchResultFrameWidget.h"
 #include "Game/MatchResultSettings.h"
 #include "Game/MatchResultStage.h"
@@ -25,9 +28,48 @@ namespace MatchResultSubsystem
 	/** 길이가 0인 단계도 한 프레임 뒤에는 넘어가야 한다. 타이머는 0 으로 걸면 울리지 않는다. */
 	constexpr float MinPhaseSeconds = 1.0e-3f;
 
-	/** 테두리는 바 아래에 깐다. 그림이 겹치지는 않지만 바가 가려질 여지를 아예 없앤다. */
+	/** 테두리는 바 아래에, 쏟아지는 스티커는 둘 위에 깐다. 스티커가 바를 스쳐 지나가는 것이 제 그림이다. */
 	constexpr int32 FrameZOrder = 0;
 	constexpr int32 BarZOrder = 1;
+	constexpr int32 ConfettiZOrder = 2;
+
+	/**
+	 * 스티커를 뿌리는 씨앗. 고정이라 어느 머신에서도, 몇 번을 돌려도 같은 그림이 나온다.
+	 *
+	 * 나머지 연출이 복제 없이 같은 값으로 같은 그림을 만드는 것과 같은 규칙이고, mc.Result.Preview
+	 * 로 값을 바꿔 가며 견줄 때 달라진 것이 값뿐이라는 점이 분명해진다.
+	 */
+	constexpr int32 ConfettiSeed = 0x5713C;
+
+	FMatchResultConfettiRules MakeConfettiRules()
+	{
+		const UMatchResultSettings& Settings = UMatchResultSettings::Get();
+
+		FMatchResultConfettiRules Rules;
+		Rules.Count = Settings.StickerCount;
+		Rules.SpawnSeconds = Settings.StickerSpawnSeconds;
+		Rules.Life = Settings.StickerLife;
+		Rules.FallSpeed = Settings.StickerFallSpeed;
+		Rules.Gravity = Settings.StickerGravity;
+		Rules.SideDrift = Settings.StickerSideDrift;
+		Rules.SwayAmplitude = Settings.StickerSwayAmplitude;
+		Rules.SwayRate = Settings.StickerSwayRate;
+		Rules.Spin = Settings.StickerSpin;
+		Rules.Scale = Settings.StickerScale;
+		return Rules;
+	}
+
+	/** 테두리가 나타나는 모양. 설정에서 곡선 값을 옮겨 담는다. */
+	FMatchResultPop MakeFramePop()
+	{
+		const UMatchResultSettings& Settings = UMatchResultSettings::Get();
+
+		FMatchResultPop Pop;
+		Pop.Seconds = Settings.FrameFadeSeconds;
+		Pop.PeakScale = Settings.FramePeakScale;
+		Pop.PeakAt = Settings.FramePeakAt;
+		return Pop;
+	}
 
 	TSubclassOf<UPaintBarWidget> ResolveBarClass()
 	{
@@ -86,6 +128,8 @@ void UMatchResultSubsystem::Deinitialize()
 	{
 		World->GetTimerManager().ClearTimer(PhaseTimer);
 	}
+	UnbindSkipKeys();
+
 	if (Bar)
 	{
 		Bar->RemoveFromParent();
@@ -95,6 +139,11 @@ void UMatchResultSubsystem::Deinitialize()
 	{
 		Frame->RemoveFromParent();
 		Frame = nullptr;
+	}
+	if (Confetti)
+	{
+		Confetti->RemoveFromParent();
+		Confetti = nullptr;
 	}
 	Stage = nullptr;
 	bSpawnedStage = false;
@@ -122,6 +171,18 @@ FMatchResultTimeline UMatchResultSubsystem::MakeTimeline()
 	Result.BarFinishSeconds = Settings.BarFinishSeconds;
 	Result.CharacterSeconds = Settings.CharacterSeconds;
 	Result.HoldSeconds = Settings.HoldSeconds;
+
+	// 마지막 단계는 이긴 쪽 승리 모션이 정해진 횟수만큼 돌 때까지다. 위의 설정값은 애니메이션을
+	// 읽지 못했을 때의 대비다. 서버가 로비 복귀를 예약할 때도 같은 계산을 거치므로(GetTotalSeconds)
+	// 연출이 끝나기 전에 맵이 넘어가는 일은 없다.
+	if (const UAnimSequence* const Winner = Settings.WinnerAnimation.LoadSynchronous())
+	{
+		const float Looped = Winner->GetPlayLength() * FMath::Max(Settings.WinnerAnimationLoops, 1);
+		if (Looped > 0.0f)
+		{
+			Result.HoldSeconds = Looped;
+		}
+	}
 	return Result;
 }
 
@@ -165,6 +226,7 @@ void UMatchResultSubsystem::Start(const FMatchResultInput& InResult, bool bInPre
 	}
 
 	bPreview = bInPreview;
+	bSkipped = false;
 	Result = InResult;
 	Result.TeaserCoverage = UMatchResultSettings::Get().TeaserCoverage;
 
@@ -174,6 +236,7 @@ void UMatchResultSubsystem::Start(const FMatchResultInput& InResult, bool bInPre
 	Result.RightTeam = BarDefaults->GetRightPaintId();
 
 	Timeline = MakeTimeline();
+	BindSkipKeys();
 	EnterPhase(EMatchResultPhase::Frozen);
 }
 
@@ -190,6 +253,8 @@ void UMatchResultSubsystem::Abort()
 		ReleaseView();
 	}
 
+	UnbindSkipKeys();
+
 	if (Bar)
 	{
 		Bar->RemoveFromParent();
@@ -199,6 +264,11 @@ void UMatchResultSubsystem::Abort()
 	{
 		Frame->RemoveFromParent();
 		Frame = nullptr;
+	}
+	if (Confetti)
+	{
+		Confetti->RemoveFromParent();
+		Confetti = nullptr;
 	}
 	if (Stage)
 	{
@@ -264,10 +334,14 @@ void UMatchResultSubsystem::EnterPhase(EMatchResultPhase NewPhase)
 		break;
 
 	case EMatchResultPhase::Hold:
-		// 다가오기가 끝나고 승리 모션이 도는 순간이다. 테두리도 같이 밝아진다.
+		// 다가오기가 끝나고 승리 모션이 도는 순간이다. 테두리가 부풀며 밝아지고 스티커가 같이 쏟아진다.
 		if (Frame)
 		{
-			Frame->FadeIn(UMatchResultSettings::Get().FrameFadeSeconds);
+			Frame->FadeIn(MatchResultSubsystem::MakeFramePop());
+		}
+		if (Confetti)
+		{
+			Confetti->Burst(MatchResultSubsystem::ConfettiSeed);
 		}
 		break;
 
@@ -284,15 +358,33 @@ void UMatchResultSubsystem::EnterPhase(EMatchResultPhase NewPhase)
 	PushBar();
 
 	const EMatchResultPhase Next = FMatchResultTimeline::GetNextPhase(NewPhase);
+	const float Seconds = FMath::Max(Timeline.GetPhaseSeconds(NewPhase), MatchResultSubsystem::MinPhaseSeconds);
+
 	if (Next == EMatchResultPhase::Idle)
 	{
-		// 마지막 단계. 그림은 그대로 두고, 화면을 넘기는 것은 서버의 로비 복귀 타이머다.
+		// 마지막 단계다. 경기라면 그림을 그대로 두고 화면을 넘기는 것은 서버의 로비 복귀 타이머다 -
+		// AGameGameMode::FinishMatch 가 GetTotalSeconds 만큼 뒤로 잡아 두었다.
+		if (!bPreview)
+		{
+			UE_LOG(LogMintChoco, Log, TEXT("결과 연출: 마지막 단계. %.1f초 뒤 서버가 로비로 보낸다."), Seconds);
+			return;
+		}
+
+		// 미리보기에는 그 타이머가 없다. 끝나는 순간까지 보여 주고 경기 화면으로 되돌린다.
+		World->GetTimerManager().SetTimer(PhaseTimer,
+			FTimerDelegate::CreateUObject(this, &UMatchResultSubsystem::FinishPreview), Seconds, /*bLoop=*/false);
 		return;
 	}
 
-	const float Seconds = FMath::Max(Timeline.GetPhaseSeconds(NewPhase), MatchResultSubsystem::MinPhaseSeconds);
 	World->GetTimerManager().SetTimer(PhaseTimer,
 		FTimerDelegate::CreateUObject(this, &UMatchResultSubsystem::EnterPhase, Next), Seconds, /*bLoop=*/false);
+}
+
+void UMatchResultSubsystem::FinishPreview()
+{
+	UE_LOG(LogMintChoco, Log,
+		TEXT("미리보기 끝. 경기였다면 지금 로비로 떠난다 - 그 길까지 보려면 mc.Match.Finish 를 쓴다."));
+	Abort();
 }
 
 void UMatchResultSubsystem::TakeOverView()
@@ -325,6 +417,7 @@ void UMatchResultSubsystem::TakeOverView()
 	SetMatchVisualsHidden(true);
 	CreateFrame();
 	CreateBar();
+	CreateConfetti();
 
 	// 화면이 완전히 덮여 있는 동안이라 블렌드할 것이 없다.
 	Controller->SetViewTarget(Stage);
@@ -454,6 +547,30 @@ void UMatchResultSubsystem::CreateFrame()
 	Frame->AddToViewport(MatchResultSubsystem::FrameZOrder);
 }
 
+void UMatchResultSubsystem::CreateConfetti()
+{
+	APlayerController* const Controller = FindLocalController();
+	const UMatchResultSettings& Settings = UMatchResultSettings::Get();
+	UTexture2D* const Texture = Settings.StickerTexture.LoadSynchronous();
+	if (!Controller || !Texture || Settings.StickerCount <= 0)
+	{
+		return;
+	}
+
+	Confetti = CreateWidget<UMatchResultConfettiWidget>(Controller, UMatchResultConfettiWidget::StaticClass());
+	if (!Confetti)
+	{
+		return;
+	}
+
+	FMatchResultSpriteSheet Sheet;
+	Sheet.Columns = Settings.StickerColumns;
+	Sheet.Rows = Settings.StickerRows;
+
+	Confetti->SetSticker(Texture, Sheet, MatchResultSubsystem::MakeConfettiRules(), Settings.StickerSize);
+	Confetti->AddToViewport(MatchResultSubsystem::ConfettiZOrder);
+}
+
 void UMatchResultSubsystem::PushBar()
 {
 	if (!Bar)
@@ -494,5 +611,78 @@ void UMatchResultSubsystem::SetMatchVisualsHidden(bool bHidden)
 		{
 			Hud->SetHudVisible(!bHidden);
 		}
+	}
+}
+
+void UMatchResultSubsystem::BindSkipKeys()
+{
+	APlayerController* const Controller = FindLocalController();
+	const UMatchResultSettings& Settings = UMatchResultSettings::Get();
+	if (!Controller || Settings.SkipKeys.IsEmpty() || Settings.SkipTravelURL.IsEmpty())
+	{
+		return;
+	}
+
+	UnbindSkipKeys();
+
+	SkipInput = NewObject<UInputComponent>(Controller, UInputComponent::StaticClass(), TEXT("MatchResultSkipInput"));
+	SkipInput->RegisterComponent();
+
+	for (const FKey& Key : Settings.SkipKeys)
+	{
+		if (!Key.IsValid())
+		{
+			continue;
+		}
+
+		// 입력 액션 에셋 없이 키를 직접 묶는다(AUnit 의 디버그 키와 같은 방식). 먹어 치우지 않으므로
+		// 아래에 깔린 바인딩은 그대로 산다.
+		FInputKeyBinding Binding(FInputChord(Key), IE_Pressed);
+		Binding.bConsumeInput = false;
+		Binding.KeyDelegate.GetDelegateForManualSet().BindUObject(this, &UMatchResultSubsystem::Skip);
+		SkipInput->KeyBindings.Add(MoveTemp(Binding));
+	}
+
+	Controller->PushInputComponent(SkipInput);
+}
+
+void UMatchResultSubsystem::UnbindSkipKeys()
+{
+	if (!SkipInput)
+	{
+		return;
+	}
+
+	if (APlayerController* const Controller = FindLocalController())
+	{
+		Controller->PopInputComponent(SkipInput);
+	}
+	SkipInput->DestroyComponent();
+	SkipInput = nullptr;
+}
+
+void UMatchResultSubsystem::Skip()
+{
+	const FString& URL = UMatchResultSettings::Get().SkipTravelURL;
+	if (bSkipped || !IsRunning() || URL.IsEmpty())
+	{
+		return;
+	}
+
+	// 연출은 접지 않는다. 가림막이 내려오는 동안 화면에 그대로 남아 있어야 떠나는 그림이 매끄럽다.
+	// 키도 풀지 않는다: 지금 이 함수가 그 키의 델리게이트 안이라, 여기서 입력 더미를 부수면
+	// 남은 바인딩을 훑던 자리가 사라진다. 정리는 월드가 바뀌며 Deinitialize 가 한다.
+	bSkipped = true;
+	UE_LOG(LogMintChoco, Log, TEXT("결과 연출을 건너뛴다. 이 머신만 %s 로 떠난다."), *URL);
+
+	if (UScreenFadeSubsystem* const Fade = UScreenFadeSubsystem::Get(this))
+	{
+		Fade->ClientTravelWithFade(URL);
+		return;
+	}
+
+	if (APlayerController* const Controller = FindLocalController())
+	{
+		Controller->ClientTravel(URL, TRAVEL_Absolute);
 	}
 }

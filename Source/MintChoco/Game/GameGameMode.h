@@ -61,6 +61,16 @@ public:
 	 */
 	void EndMatchByKnockout(int32 Team);
 
+#if !UE_BUILD_SHIPPING
+	/**
+	 * 디버그. 시간이 다 된 것처럼 경기를 지금 끝낸다. mc.Match.Finish 가 부른다.
+	 *
+	 * 결과 연출을 끝까지 - 로비로 돌아가는 것까지 - 보려면 이 길로 들어와야 한다.
+	 * mc.Result.Preview 는 연출만 로컬로 돌릴 뿐이라 로비 복귀 타이머가 걸리지 않는다.
+	 */
+	void DebugFinishMatch();
+#endif
+
 protected:
 	/** 아이템이 나오는 주기(초). 0 이하면 아이템이 나오지 않는다. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Items", meta = (ClampMin = "0.0", ForceUnits = "s"))
