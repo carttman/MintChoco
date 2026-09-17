@@ -115,13 +115,23 @@ bool FItemProfileAssetTest::RunTest(const FString& Parameters)
 			}
 		}
 
-		// 버프 지속음은 루프여야 효과가 끝날 때까지 돈다. 루핑이 아닌 소리를 꽂으면 한 번 울리고
-		// 조용해지는데, 재생 쪽에서 보면 정상이라 로그에도 아무것도 남지 않는다.
-		if (const FSoundEvent* const Loop = Item->Sounds ? Item->Sounds->Find(AudioTags::Audio_Item_Loop) : nullptr)
+		// 계속 돌아야 하는 소리는 웨이브 자체가 Looping이어야 한다. 루핑이 아닌 것을 꽂으면 한 번
+		// 울리고 조용해지는데, 재생 쪽에서 보면 정상이라 로그에도 아무것도 남지 않는다.
+		// 루프로 도는 태그를 새로 만들면 여기에 같이 넣는다.
+		for (const FGameplayTag& LoopTag : {
+			AudioTags::Audio_Item_Loop.GetTag(),
+			AudioTags::Audio_World_Bee_Loop.GetTag()})
 		{
-			if (TestNotNull(*FString::Printf(TEXT("%s: Audio.Item.Loop has a sound"), *Name), Loop->Sound.Get()))
+			const FSoundEvent* const Loop = Item->Sounds ? Item->Sounds->Find(LoopTag) : nullptr;
+			if (!Loop)
 			{
-				TestTrue(*FString::Printf(TEXT("%s: Audio.Item.Loop sound %s loops"), *Name, *GetNameSafe(Loop->Sound.Get())),
+				continue;
+			}
+
+			const FString Label = LoopTag.ToString();
+			if (TestNotNull(*FString::Printf(TEXT("%s: %s has a sound"), *Name, *Label), Loop->Sound.Get()))
+			{
+				TestTrue(*FString::Printf(TEXT("%s: %s sound %s loops"), *Name, *Label, *GetNameSafe(Loop->Sound.Get())),
 					Loop->Sound->IsLooping());
 			}
 		}

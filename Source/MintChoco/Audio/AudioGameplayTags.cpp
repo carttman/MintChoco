@@ -29,6 +29,7 @@ namespace AudioTags
 	UE_DEFINE_GAMEPLAY_TAG(Audio_World_Balloon_Hit, "Audio.World.Balloon.Hit");
 	UE_DEFINE_GAMEPLAY_TAG(Audio_World_Balloon_Pop, "Audio.World.Balloon.Pop");
 	UE_DEFINE_GAMEPLAY_TAG(Audio_World_Balloon_Inflate, "Audio.World.Balloon.Inflate");
+	UE_DEFINE_GAMEPLAY_TAG(Audio_World_Bee_Loop, "Audio.World.Bee.Loop");
 	UE_DEFINE_GAMEPLAY_TAG(Audio_World_JumpPad, "Audio.World.JumpPad");
 
 	UE_DEFINE_GAMEPLAY_TAG(Audio_Match_CountdownTick, "Audio.Match.CountdownTick");

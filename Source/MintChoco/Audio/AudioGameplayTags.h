@@ -75,6 +75,16 @@ namespace AudioTags
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_World_Balloon_Hit);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_World_Balloon_Pop);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_World_Balloon_Inflate);
+
+	/**
+	 * 꿀벌이 날아다니는 동안의 루프. 벌 액터가 태어날 때 켜고, 터지거나 수명이 다해 사라질 때
+	 * 액터와 함께 멈춘다. 소리는 꿀벌 프로필의 뱅크가 정한다.
+	 *
+	 * 지정한 사운드 웨이브는 반드시 Looping이어야 한다 — 아니면 한 번 울리고 끝나며, 그것을
+	 * FItemProfileAssetTest가 잡는다.
+	 */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_World_Bee_Loop);
+
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_World_JumpPad);
 
 	//~ 매치 진행

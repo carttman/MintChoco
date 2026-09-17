@@ -8,8 +8,11 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/GameAudioSubsystem.h"
 #include "Game/Unit.h"
 #include "Items/ItemSlotComponent.h"
 #include "Items/BeeProfile.h"
@@ -247,9 +250,21 @@ void ABeeProjectile::SetTarget(AUnit* InTarget)
 	Target = InTarget;
 }
 
+void ABeeProjectile::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+	DOREPLIFETIME_CONDITION(ABeeProjectile, Profile, COND_InitialOnly);
+}
+
 void ABeeProjectile::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 권한을 가리기 전에. 모든 머신의 복사본이 제 벌을 울려야 한다. 루트가 아니라 몸에 붙이는
+	// 이유는 클라이언트의 넷 보간이 끌고 가는 것이 몸이기 때문이다 — 루트에 붙이면 소리와
+	// 눈에 보이는 벌이 미세하게 어긋난다. 액터가 사라지면 소리도 함께 멈춘다.
+	UGameAudioSubsystem::PlayAttached(AudioTags::Audio_World_Bee_Loop, Body, NAME_None,
+		Profile ? Profile->Sounds.Get() : nullptr);
 
 	if (!HasAuthority())
 	{
