@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>민트초코 QA 변경 기록</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F1F4F2;
+  --surface:#FFFFFF;
+  --surface-sunk:#E8ECE9;
+  --ink:#241C18;
+  --ink-soft:#4A423C;
+  --muted:#6E665F;
+  --rule:#D5DBD7;
+  --rule-soft:#E4E9E5;
+  --mint:#0B8375;
+  --mint-soft:#E1F0EC;
+  --choco:#6B3F27;
+  --choco-soft:#F0E7DF;
+  --add:#0B8375;
+  --add-bg:#E1F0EC;
+  --chg:#8C6410;
+  --chg-bg:#F6EBD5;
+  --del:#9A4038;
+  --del-bg:#F6E3E0;
+  --shadow:0 1px 2px rgba(36,28,24,.05), 0 8px 24px -16px rgba(36,28,24,.25);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#141210;
+    --surface:#1D1A17;
+    --surface-sunk:#141210;
+    --ink:#EDE8E3;
+    --ink-soft:#CFC8C1;
+    --muted:#98908A;
+    --rule:#332E29;
+    --rule-soft:#26221E;
+    --mint:#49C3AE;
+    --mint-soft:#11312C;
+    --choco:#C9945F;
+    --choco-soft:#2C2119;
+    --add:#49C3AE;
+    --add-bg:#11312C;
+    --chg:#D5A44A;
+    --chg-bg:#312616;
+    --del:#D97D72;
+    --del-bg:#321C19;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#141210;
+  --surface:#1D1A17;
+  --surface-sunk:#141210;
+  --ink:#EDE8E3;
+  --ink-soft:#CFC8C1;
+  --muted:#98908A;
+  --rule:#332E29;
+  --rule-soft:#26221E;
+  --mint:#49C3AE;
+  --mint-soft:#11312C;
+  --choco:#C9945F;
+  --choco-soft:#2C2119;
+  --add:#49C3AE;
+  --add-bg:#11312C;
+  --chg:#D5A44A;
+  --chg-bg:#312616;
+  --del:#D97D72;
+  --del-bg:#321C19;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+}
+
+*{box-sizing:border-box}
+html{color-scheme:light dark}
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--ink);
+  font-family:"Newsreader", Georgia, "Times New Roman", serif;
+  font-size:17px;
+  line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:20px;padding-block:0 72px}
+
+/* masthead */
+.mast{padding-block:56px 0}
+.eyebrow{
+  font-family:"Archivo", system-ui, sans-serif;
+  font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);margin:0 0 14px;
+}
+h1{
+  font-family:"Archivo", system-ui, sans-serif;
+  font-weight:700;font-size:clamp(34px,6vw,58px);line-height:1.02;
+  letter-spacing:-.025em;margin:0;text-wrap:balance;
+}
+.lede{
+  margin:18px 0 0;max-width:62ch;font-size:19px;color:var(--ink-soft);
+}
+.split{height:3px;margin-top:34px;border-radius:2px;
+  background:linear-gradient(90deg,var(--mint) 0%,var(--mint) 46%,var(--rule) 46%,var(--rule) 54%,var(--choco) 54%,var(--choco) 100%);}
+
+/* scope strip */
+.scope{
+  display:flex;flex-wrap:wrap;gap:0;margin-top:0;
+  border-bottom:1px solid var(--rule);
+}
+.scope div{
+  flex:1 1 160px;padding:18px 20px 20px;border-right:1px solid var(--rule-soft);
+}
+.scope div:last-child{border-right:0}
+.scope dt{
+  font-family:"Archivo", system-ui, sans-serif;
+  font-size:11px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);margin:0 0 6px;
+}
+.scope dd{margin:0;font-family:"JetBrains Mono", ui-monospace, monospace;font-size:14px;font-variant-numeric:tabular-nums}
+
+/* layout */
+.cols{display:grid;grid-template-columns:200px minmax(0,1fr);gap:56px;margin-top:52px;align-items:start}
+nav{position:sticky;top:calc(env(safe-area-inset-top, 0px) + 24px)}
+nav ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+nav a{
+  display:block;padding:6px 10px;border-radius:5px;text-decoration:none;
+  font-family:"Archivo", system-ui, sans-serif;font-size:13.5px;font-weight:500;
+  color:var(--muted);border-left:2px solid transparent;
+}
+nav a:hover{color:var(--ink);background:var(--surface-sunk)}
+nav a:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
+
+main{display:flex;flex-direction:column;gap:56px;min-width:0}
+section{scroll-margin-top:24px}
+.sec-head{display:flex;align-items:baseline;gap:14px;padding-bottom:10px;border-bottom:2px solid var(--ink);margin-bottom:0}
+h2{
+  font-family:"Archivo", system-ui, sans-serif;
+  font-weight:600;font-size:23px;letter-spacing:-.015em;margin:0;
+}
+.sec-note{font-size:14px;color:var(--muted);margin-left:auto;font-family:"Archivo",system-ui,sans-serif}
+
+/* entries */
+.entries{display:flex;flex-direction:column;gap:0}
+.entry{padding:22px 0;border-bottom:1px solid var(--rule-soft)}
+.entry:last-child{border-bottom:0}
+.entry-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+h3{
+  font-family:"Archivo", system-ui, sans-serif;
+  font-weight:600;font-size:17px;letter-spacing:-.005em;margin:0;
+}
+.chip{
+  font-family:"Archivo", system-ui, sans-serif;
+  font-size:11px;font-weight:600;letter-spacing:.08em;
+  padding:3px 8px;border-radius:3px;white-space:nowrap;
+}
+.chip.add{color:var(--add);background:var(--add-bg)}
+.chip.chg{color:var(--chg);background:var(--chg-bg)}
+.chip.del{color:var(--del);background:var(--del-bg)}
+.entry p{margin:8px 0 0;color:var(--ink-soft);max-width:66ch}
+code{
+  font-family:"JetBrains Mono", ui-monospace, monospace;
+  font-size:.86em;background:var(--surface-sunk);padding:1px 5px;border-radius:3px;
+  color:var(--ink);
+}
+
+/* value table */
+.vals{margin-top:14px;overflow-x:auto}
+table{border-collapse:collapse;font-family:"JetBrains Mono", ui-monospace, monospace;font-size:13.5px;min-width:100%}
+th,td{text-align:left;padding:6px 16px 6px 0;border-bottom:1px solid var(--rule-soft);white-space:nowrap}
+th{
+  font-family:"Archivo", system-ui, sans-serif;font-size:11px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+  border-bottom:1px solid var(--rule);
+}
+td{font-variant-numeric:tabular-nums;color:var(--ink-soft)}
+td:first-child{color:var(--ink)}
+.was{color:var(--muted);text-decoration:line-through;text-decoration-thickness:1px}
+.arrow{color:var(--muted);padding:0 6px}
+.now{color:var(--mint);font-weight:500}
+
+/* matrix */
+.matrix{margin-top:16px;overflow-x:auto;background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:16px 18px;box-shadow:var(--shadow)}
+.matrix caption{
+  font-family:"Archivo",system-ui,sans-serif;font-size:12px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+  text-align:left;padding-bottom:10px;
+}
+.matrix td:first-child{font-family:"Archivo",system-ui,sans-serif;font-size:13px}
+.matrix td{padding-right:28px}
+.own{color:var(--mint);font-weight:500}
+.enemy{color:var(--del)}
+
+.note{
+  margin-top:16px;padding:14px 16px;border-left:3px solid var(--choco);
+  background:var(--choco-soft);border-radius:0 5px 5px 0;font-size:15.5px;color:var(--ink-soft);
+}
+.note strong{color:var(--ink);font-weight:600}
+
+footer{margin-top:64px;padding-top:22px;border-top:1px solid var(--rule);color:var(--muted);font-size:14px}
+
+@media (max-width:860px){
+  .cols{grid-template-columns:1fr;gap:28px}
+  nav{position:static}
+  nav ol{flex-direction:row;flex-wrap:wrap;gap:4px}
+  nav a{border-left:0;background:var(--surface-sunk)}
+  .mast{padding-block:36px 0}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">MintChoco · QA 브랜치</p>
+  <h1>사운드 머지 이후 변경 기록</h1>
+  <p class="lede">사운드 브랜치를 QA에 합친 시점부터 지금까지, 게임이 실제로 어떻게 달라졌는지를 기능 단위로 정리했다. 값은 전부 현재 빌드에 살아 있는 값이다.</p>
+  <div class="split"></div>
+</header>
+
+<dl class="scope">
+  <div><dt>기준</dt><dd>bdd682a · Sound → QA</dd></div>
+  <div><dt>현재</dt><dd>39d8de1</dd></div>
+  <div><dt>날짜</dt><dd>2026-09-16</dd></div>
+  <div><dt>테스트</dt><dd>100 통과 / 1 실패</dd></div>
+</dl>
+
+<div class="cols">
+  <nav aria-label="목차">
+    <ol>
+      <li><a href="#shotgun">샷건</a></li>
+      <li><a href="#charge">차지샷</a></li>
+      <li><a href="#move">이동과 잉크</a></li>
+      <li><a href="#items">아이템</a></li>
+      <li><a href="#paint">페인트</a></li>
+      <li><a href="#stage">맵과 룩</a></li>
+      <li><a href="#audio">사운드</a></li>
+      <li><a href="#gone">사라진 것</a></li>
+      <li><a href="#open">남은 것</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+  <section id="shotgun">
+    <div class="sec-head"><h2>샷건 — 주무기</h2><span class="sec-note">DA_Weapon_Fan_T</span></div>
+    <div class="entries">
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>연사</h3></div>
+        <p>방아쇠를 누르고 있으면 계속 나간다. 초당 4발로, 연타 속도와 같다 — 달라진 것은 저절로 반복된다는 점이다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>펠릿을 따라가는 도색탄</h3></div>
+        <p>펠릿 5발 각각의 뒤로 보이지 않는 탄 3발이 <code>0.03초</code> 간격으로 같은 길을 따라간다. 날고 부딪히고 칠하지만 화면에는 없다. 한 번의 사격이 남기는 자국이 다섯 점이 아니라 다섯 줄이 된다.</p>
+        <div class="vals">
+          <table>
+            <thead><tr><th>값</th><th>지금</th><th>어디에</th></tr></thead>
+            <tbody>
+              <tr><td>펠릿당 추종탄</td><td class="now">3발</td><td>PainterCount</td></tr>
+              <tr><td>간격</td><td class="now">0.03 s</td><td>PainterDelay</td></tr>
+              <tr><td>메시 숨김</td><td class="now">켬</td><td>bHideMesh</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>궤적이 끊기던 문제</h3></div>
+        <p>탄이 나가는 높이가 발밑 기준 <code>204cm</code>인데 궤적 도포가 <code>250cm</code>까지만 바닥을 찾았다. 수평 사격은 겨우 닿고 위를 보거나 점프·보드·단차에서는 통째로 빗나갔다. 반경을 늘려 어느 자세에서 쏘든 줄이 이어진다.</p>
+        <div class="vals">
+          <table>
+            <thead><tr><th>값</th><th>변화</th><th>어디에</th></tr></thead>
+            <tbody>
+              <tr><td>궤적 반경</td><td><span class="was">250</span><span class="arrow">→</span><span class="now">700 cm</span></td><td>탄·추종탄 양쪽</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>피격 경직</h3></div>
+        <div class="vals">
+          <table>
+            <thead><tr><th>값</th><th>변화</th></tr></thead>
+            <tbody>
+              <tr><td>스턴</td><td><span class="was">0.25</span><span class="arrow">→</span><span class="now">0.5 s</span></td></tr>
+              <tr><td>슈퍼아머</td><td><span class="was">1</span><span class="arrow">→</span><span class="now">2 s</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>펠릿 5발이 겹쳐 맞아도 스턴은 첫 발만 건다. 스턴이 끝나면 슈퍼아머가 곧바로 이어진다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>궤적 첫 광선 아래 고정</h3></div>
+        <p>도포 광선이 비행 방향 둘레를 무작위로 돌던 탓에 어느 줄기가 바닥을 향할지가 운이었다. 한 줄기를 항상 아래로 고정해 탄 바로 밑에 자국이 이어진다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>산탄 착탄음 한 번</h3></div>
+        <p>펠릿이 거의 동시에 닿아 같은 소리가 다섯 번 겹치던 것을 첫 탄 하나로 줄였다. 칠하는 양과 이펙트는 그대로다.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <section id="charge">
+    <div class="sec-head"><h2>차지샷 — 보조무기</h2><span class="sec-note">DA_Weapon_Sniper_T</span></div>
+    <div class="entries">
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>충전 시간</h3></div>
+        <div class="vals">
+          <table>
+            <thead><tr><th>값</th><th>변화</th></tr></thead>
+            <tbody>
+              <tr><td>만충까지</td><td><span class="was">3</span><span class="arrow">→</span><span class="now">1.5 s</span></td></tr>
+              <tr><td>최소 발사</td><td><span class="was">0.9</span><span class="arrow">→</span><span class="now">0.5 s</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>0.5초를 못 채우고 놓으면 아무것도 나가지 않는다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>충전에 잉크가 든다</h3></div>
+        <p>방아쇠를 쥐고 있는 동안 <code>0.5초</code>마다 잉크 <code>10%</code>가 빠진다. 만충이면 눈금 3회로 <code>30%</code>. 다 찬 뒤에는 더 쥐고 있어도 빠지지 않고, 대신 발사 자체의 비용은 0이 됐다.</p>
+        <div class="vals">
+          <table>
+            <thead><tr><th>값</th><th>변화</th></tr></thead>
+            <tbody>
+              <tr><td>충전 눈금</td><td><span class="now">0.5초마다 10%</span></td></tr>
+              <tr><td>만충 한 발</td><td><span class="now">30%</span></td></tr>
+              <tr><td>발사 비용</td><td><span class="was">4%</span><span class="arrow">→</span><span class="now">0%</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>잉크가 떨어지면 그 자리에서 발사</h3></div>
+        <p>충전 도중 탱크가 비면 그때까지 모은 만큼으로 즉시 나간다. 빈 탱크로 공짜로 만충까지 가는 길을 막는다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>충전량이 사거리를 정한다</h3></div>
+        <p>충전이 <code>0.5초</code> 모자랄 때마다 사거리가 절반이 된다. 광선이 짧아지면 순차 발사의 발수도 함께 줄어 줄무늬 자체가 짧아진다.</p>
+        <div class="vals">
+          <table>
+            <thead><tr><th>충전</th><th>사거리</th><th>비율</th></tr></thead>
+            <tbody>
+              <tr><td>1.5 s · 만충</td><td class="now">2500 cm</td><td>1</td></tr>
+              <tr><td>1.0 s</td><td>1250 cm</td><td>1/2</td></tr>
+              <tr><td>0.5 s</td><td>625 cm</td><td>1/4</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>만충 사거리 자체도 <span class="was">3800</span><span class="arrow">→</span><span class="now">2500cm</span>로 줄였다. 맵 한 변이 약 7400cm이므로 1/3이다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>만충에서만 뛰는 스턴</h3></div>
+        <p>부분 충전은 <strong>충전한 초가 곧 스턴 초</strong>다. 만충만 예외로 두 배가 된다. 슈퍼아머는 충전량과 무관하게 고정이라, 덜 충전한 샷으로도 상대를 보호막에 넣을 수 있다.</p>
+        <div class="vals">
+          <table>
+            <thead><tr><th>맞춘 충전</th><th>스턴</th><th>슈퍼아머</th></tr></thead>
+            <tbody>
+              <tr><td>1.5 s · 만충</td><td class="now">3.0 s</td><td>3 s</td></tr>
+              <tr><td>1.0 s</td><td>1.0 s</td><td>3 s</td></tr>
+              <tr><td>0.5 s</td><td>0.5 s</td><td>3 s</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note">만충 판정은 <strong>0.99</strong>로 넉넉하게 뒀다. 충전량이 네트워크로 갈 때 0~255 눈금으로 눌리기 때문에, 1을 정확히 요구하면 한 프레임 차이로 3초가 1.49초로 떨어진다.</div>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>순차 발사 밀도</h3></div>
+        <p>총구에서 한 발씩 조준선을 따라 나가 줄무늬를 그린다. 자국 반경이 <code>175cm</code>라 간격 170이면 줄무늬의 가장 가는 지점도 폭의 87%를 유지하면서 덧칠만 30% 줄어든다.</p>
+        <div class="vals">
+          <table>
+            <thead><tr><th>값</th><th>변화</th></tr></thead>
+            <tbody>
+              <tr><td>착탄 간격</td><td><span class="was">225</span><span class="arrow">→</span><span class="now">170 cm</span></td></tr>
+              <tr><td>발수</td><td><span class="was">16</span><span class="arrow">→</span><span class="now">14</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section id="move">
+    <div class="sec-head"><h2>이동과 잉크</h2><span class="sec-note">BP_Unit</span></div>
+    <div class="entries">
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>발밑 색이 속도와 잉크를 정한다</h3></div>
+        <p>딛고 있는 바닥이 내 팀 색이면 빨라지고 상대 색이면 느려진다. 이동 속도와 잉크 회복이 <strong>같은 배율</strong>을 쓴다. 상대 색 위에서는 보드를 타도 걷는 속도 그대로라 가속이 무의미하다.</p>
+
+        <div class="matrix">
+          <table>
+            <caption>이동 속도 (cm/s)</caption>
+            <thead><tr><th>바닥</th><th>걷기</th><th>보드</th></tr></thead>
+            <tbody>
+              <tr><td class="own">내 색</td><td>1500</td><td>3000</td></tr>
+              <tr><td>미도색</td><td>1000</td><td>2000</td></tr>
+              <tr><td class="enemy">상대 색</td><td>500</td><td>500</td></tr>
+              <tr><td class="own">스피드 스타</td><td>2250</td><td>4500</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="matrix">
+          <table>
+            <caption>잉크 회복 (탱크 %/초)</caption>
+            <thead><tr><th>바닥</th><th>걷기</th><th>보드</th></tr></thead>
+            <tbody>
+              <tr><td class="own">내 색</td><td>15</td><td>30</td></tr>
+              <tr><td>미도색</td><td>10</td><td>20</td></tr>
+              <tr><td class="enemy">상대 색</td><td>5</td><td>5</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="note"><strong>스피드 스타는 바닥을 무시한다.</strong> 효과 중에는 발밑이 상대 진영 한복판이어도 내 색을 딛은 것으로 쳐서 최소 속도를 보장한다. 잉크에도 그 바닥 배율은 적용되지만, 속도 배율 1.5배는 잉크에 곱해지지 않는다 — 별을 먹었다고 잉크가 1.5배로 차지는 않는다.</div>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>보드 배율</h3></div>
+        <div class="vals">
+          <table>
+            <thead><tr><th>값</th><th>변화</th></tr></thead>
+            <tbody>
+              <tr><td>DashSpeedMultiplier</td><td><span class="was">1.7</span><span class="arrow">→</span><span class="now">2.0</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>시야 피치 제한</h3></div>
+        <p>위아래 <code>±45°</code>. 그보다 위를 보면 총구와 실제 탄도가 눈에 띄게 벌어진다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>대쉬 점프 분리</h3></div>
+        <p>보드 중 점프는 <code>DashJumpZVelocity</code>를 쓴다. 지금은 일반 점프와 같은 값이라 차이는 수평 속도뿐이고, 값을 따로 둘 수 있게 열어 둔 자리다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>스피드 스타 오라</h3></div>
+        <p>효과가 도는 동안 캐릭터에 오라 껍데기 메시와 입자가 붙는다. 카메라가 캐릭터에 가까워져 페이드되는 동안에는 껍데기도 같이 숨는다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>손에 든 아이템</h3></div>
+        <p>아이템마다 손에 붙는 메시와 이펙트를 지정할 수 있다. 조준 중에만 보이고, 조준이 끝나면 이펙트를 끈다.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <section id="items">
+    <div class="sec-head"><h2>아이템</h2></div>
+    <div class="entries">
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>아이템 상자 반짝임</h3></div>
+        <p>상자가 놓여 있는 내내 상자 높이에서 반짝임이 돈다. 상자 메시는 흔들리지만 반짝임은 제자리에 둔다 — 메시에 붙이면 반짝임까지 출렁인다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>빛 기둥이 먹을 때까지 남는다</h3></div>
+        <p>몇 초 뒤 꺼지던 것을 먹을 때까지 유지로 바꿨다. 멀리서도 남은 상자를 셀 수 있다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>아이템 스폰</h3></div>
+        <p>경기 시작에 11곳 전부 채우고, 먹은 자리만 개별로 되살아난다.</p>
+        <div class="vals">
+          <table>
+            <thead><tr><th>값</th><th>지금</th></tr></thead>
+            <tbody>
+              <tr><td>스폰 지점</td><td class="now">11곳 · Standalone</td></tr>
+              <tr><td>리스폰</td><td class="now">10 s</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>꿀벌에 따라붙는 해골</h3></div>
+        <p>꿀벌이 날아가는 동안 몸통에 해골 이펙트가 붙어 다닌다. 뒤로 흐르는 트레일과는 별개 슬롯이라 둘이 같이 보인다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>디저트 폭격 — 조준 미리보기와 예고</h3></div>
+        <p>쓰기 전에 어디로 떨어질지 바닥에 경로가 보이고, 발동 뒤 <code>1초</code> 동안 떨어질 자리에 예고 표식이 뜬 다음 실제 폭격이 시작된다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>초콜릿 분수</h3></div>
+        <p>설치 순간 한 번만 뿌리던 것을 1초마다 점점 넓게 네 번 뿌리도록 바꿨다.</p>
+        <div class="vals">
+          <table>
+            <thead><tr><th>값</th><th>지금</th></tr></thead>
+            <tbody>
+              <tr><td>지속</td><td class="now">3 s</td></tr>
+              <tr><td>분출</td><td class="now">4회 · 1.0초 간격</td></tr>
+              <tr><td>확산</td><td class="now">회당 1.4배</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>히어로 랜딩 · 꿀풍선 이펙트</h3></div>
+        <p>상승·정지·내리꽂기 각 단계와 꿀풍선 파열에 이펙트가 붙었다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>광역 아이템 경직</h3></div>
+        <p>꿀풍선·히어로 랜딩·꿀벌이 공용 값 하나를 쓴다. 이번에는 손대지 않고 그대로 뒀다.</p>
+        <div class="vals">
+          <table>
+            <thead><tr><th>값</th><th>지금</th></tr></thead>
+            <tbody>
+              <tr><td>스턴</td><td>2 s</td></tr>
+              <tr><td>슈퍼아머</td><td>4 s</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section id="paint">
+    <div class="sec-head"><h2>페인트</h2></div>
+    <div class="entries">
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>착탄 스플래시</h3></div>
+        <p>탄이 닿는 순간 방울이 튀고, 그 방울이 실제로 떨어진 자리에 자국이 남는다. 화면에 보이는 방울과 점수에 반영되는 자국이 같은 네 방울이다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>바닥 색 조회</h3></div>
+        <p>"이 지점의 바닥이 누구 색인가"를 묻는 기능이 없었다. 점수판이 읽는 격자를 그대로 읽으므로 화면에 보이는 색과 답이 어긋나지 않는다. 발밑 판정이 여기에 얹혀 있다.</p>
+        <div class="note">광선을 쏘지 않는다. 무브먼트가 이미 들고 있는 바닥 접촉면을 그대로 넘기므로 <strong>서버와 클라이언트가 같은 답</strong>을 낸다 — 이동 속도를 여기에 걸 수 있는 근거다.</div>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>팀 색 단일화</h3></div>
+        <p>민트와 초코의 색·광택·표면 재질이 한 곳에서 나온다. 여기를 고치면 모든 머티리얼과 UI, 이펙트 색이 같이 바뀐다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>발밑 도포</h3></div>
+        <p>한 발을 쏠 때마다 사수 발밑에도 자국이 남는다. 날아가는 탄을 쓰지 않고 아래로 광선 하나를 내려 바로 찍는다.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <section id="stage">
+    <div class="sec-head"><h2>맵과 룩</h2><span class="sec-note">Lvl_Stage</span></div>
+    <div class="entries">
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>경기 시간</h3></div>
+        <div class="vals">
+          <table>
+            <thead><tr><th>값</th><th>변화</th></tr></thead>
+            <tbody>
+              <tr><td>MatchDuration</td><td><span class="was">90</span><span class="arrow">→</span><span class="now">180 s</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>풍선 파열</h3></div>
+        <p>터뜨렸을 때 뿌려지는 탄을 디저트 폭격과 같은 크기로 바꿨다. 자국 반경이 5배, 넓이가 26배가 되어 발수를 줄여도 칠해지는 양은 훨씬 늘었다. 원본을 공유하지 않는 별도 탄이라 폭격 쪽에 영향이 없다.</p>
+        <div class="vals">
+          <table>
+            <thead><tr><th>값</th><th>변화</th></tr></thead>
+            <tbody>
+              <tr><td>자국 반경</td><td><span class="was">51</span><span class="arrow">→</span><span class="now">260 cm</span></td></tr>
+              <tr><td>발수</td><td><span class="was">24</span><span class="arrow">→</span><span class="now">8</span></td></tr>
+              <tr><td>체력</td><td>20</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>점프대</h3></div>
+        <p>레벨의 8개 전부 같은 속도로 맞췄다.</p>
+        <div class="vals">
+          <table>
+            <thead><tr><th>값</th><th>변화</th></tr></thead>
+            <tbody>
+              <tr><td>솟는 속도</td><td><span class="was">1100</span><span class="arrow">→</span><span class="now">1750 cm/s</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>룩을 레벨에 구웠다</h3></div>
+        <p>포스트 프로세스·태양·구름이 레벨에 직접 들어가, 에디터 뷰포트와 PIE와 패키징 빌드가 같은 화면을 보여준다. 비교용 룩 프리셋은 런타임에 얹어 보는 도구로 남았다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>아트</h3></div>
+        <p>경기 시작 전 UI, 인게임 UI와 아이템 이미지, 민트 캐릭터 2차 버전과 머티리얼, 맵 내부 경기장과 바닥 재질이 갱신됐다.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <section id="audio">
+    <div class="sec-head"><h2>사운드</h2></div>
+    <div class="entries">
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>사운드 에셋 72개</h3></div>
+        <p>V1·V2 두 묶음이 들어왔다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip add">추가</span><h3>새로 연결된 소리 7개</h3></div>
+        <p>기절, 보드 주행 루프를 포함한 7개가 태그에 붙었다. 보드 루프는 타고 있는 동안 계속 돌고 내리면 멈춘다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>무기별 소리 분리</h3></div>
+        <p>무기마다 다르게 낼 소리만 무기 쪽에 두고, 지정하지 않은 것은 프로젝트 공용 뱅크로 떨어진다.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <section id="gone">
+    <div class="sec-head"><h2>사라진 것</h2></div>
+    <div class="entries">
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip del">삭제</span><h3>테스트용 스턴 큐브</h3></div>
+        <p>맵 가운데 있던 스턴 시험용 큐브를 레벨에서 뺐다. C++ 클래스는 남아 있어 필요하면 다시 놓을 수 있다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip del">삭제</span><h3>임시 측정 로그</h3></div>
+        <p>총구 높이를 재려고 넣었던 발사마다 찍히는 로그를 뺐다. 필요한 수치는 이미 나왔다.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">변경</span><h3>에셋 폴더 정리</h3></div>
+        <p>이펙트·사운드 에셋이 <code>Content/Assets/</code> 아래로 모였다. 지워진 것이 아니라 옮겨진 것이다.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <section id="open">
+    <div class="sec-head"><h2>남은 것</h2></div>
+    <div class="entries">
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">확인 필요</span><h3>PIE 검증</h3></div>
+        <p>밸런스 변경은 전부 들어갔지만 아직 눈으로 본 것은 없다. 볼 것: 충전 중 잉크가 0.5초마다 빠지는지, 덜 충전한 샷이 짧게 나가는지, 위를 보고 쏴도 샷건 궤적이 이어지는지, 상대 색 위에서 보드가 느려지는지.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip del">실패</span><h3>사운드 뱅크 테스트</h3></div>
+        <p>자동 테스트 101개 중 1개가 실패한다. 아직 소리가 안 붙은 태그 20개 때문이고, 이번 작업 이전부터 비어 있던 것들이다. 쓸 만한 에셋이 이미 있는 자리도 여럿 있다 — 착지, 경기 시작, 카운트다운, 아이템 룰렛, 차지 완료.</p>
+      </div>
+
+      <div class="entry">
+        <div class="entry-head"><span class="chip chg">주의</span><h3>바이너리 애셋 머지</h3></div>
+        <p>블루프린트와 레벨은 충돌하면 반드시 한쪽이 통째로 죽는다. 지금까지 시야각, 점프대 속도, 아이템 스폰 모드, 꿀벌 이펙트가 이런 식으로 되돌아간 적이 있다. 머지 뒤에는 이 값들부터 확인할 것.</p>
+      </div>
+
+    </div>
+  </section>
+
+  </main>
+</div>
+
+<footer>
+  민트초코 · QA 브랜치 · bdd682a … 39d8de1 · 2026-09-16 기준. 값 전체와 변경 근거는 저장소의 <code>docs/ChangeLog.md</code>에 있다.
+</footer>
+
+</div>
+</body>
+</html>
