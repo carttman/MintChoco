@@ -55,6 +55,7 @@ public:
 	ABalloon();
 
 	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaTime) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	//~ IPaintHitReceiver
@@ -95,6 +96,20 @@ protected:
 	/** 메시 머티리얼에서 팀 색을 넣을 벡터 파라미터. 없는 이름이면 색이 바뀌지 않는다. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Balloon|Look")
 	FName ColorParameterName = TEXT("Color");
+
+	/**
+	 * 제자리에서 떠 있는 연출의 진폭(cm). 아이템 상자와 같은 식이고(BobMotion::Offset) 복제하지
+	 * 않는다: 움직이는 것은 메시의 상대 위치뿐이고 판정을 맡은 Collision은 제자리에 있다.
+	 *
+	 * 상자(10cm)보다 얌전한 이유는 풍선이 쏘는 표적이기 때문이다. 크게 흔들수록 눈에 보이는
+	 * 자리와 맞는 자리가 그만큼 벌어진다. 0이면 흔들리지 않는다.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Balloon|Look", meta = (ClampMin = "0", ForceUnits = "cm"))
+	float BobAmplitude = 6.0f;
+
+	/** 상하 왕복 횟수(초당). 0이면 흔들리지 않는다. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Balloon|Look", meta = (ClampMin = "0", ForceUnits = "Hz"))
+	float BobFrequency = 0.4f;
 
 	/** 맞을 때마다, 모든 머신에서. 부푼 비율과 마지막 팀. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Balloon")
@@ -148,4 +163,11 @@ private:
 
 	FVector BaseScale = FVector::OneVector;
 	FTimerHandle RespawnTimer;
+
+	/** 흔들기 전 메시의 상대 위치. 블루프린트가 놓은 자리가 기준이다. */
+	FVector MeshBaseLocation = FVector::ZeroVector;
+
+	/** 연출이 흐른 시간(초)과 이 풍선의 위상(0~1). */
+	float MotionTime = 0.0f;
+	float BobPhase = 0.0f;
 };
