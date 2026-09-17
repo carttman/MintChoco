@@ -47,6 +47,25 @@ bool FGameHudMath::IsTimerWarning(EMatchPhase Phase, float MatchRemaining, float
 	return Phase == EMatchPhase::Playing && MatchRemaining <= WarningSeconds;
 }
 
+FGameplayTag FGameHudMath::CountdownTickTag(EGameHudCenter Kind, int32 Number)
+{
+	// 경기 시작 카운트다운만 숫자별 소리를 쓴다. 경기 끝 10초가 3에 닿아도 여기로 들어오지
+	// 않으므로 시작을 알리는 목소리가 그쪽으로 새지 않는다.
+	if (Kind == EGameHudCenter::Countdown)
+	{
+		switch (Number)
+		{
+		case 3: return AudioTags::Audio_Match_Countdown_3;
+		case 2: return AudioTags::Audio_Match_Countdown_2;
+		case 1: return AudioTags::Audio_Match_Countdown_1;
+		default: break;
+		}
+	}
+
+	// 전용 소리를 정하지 않은 숫자(카운트다운을 3초보다 길게 둔 경우의 5·4 등)와 막판 초읽기.
+	return AudioTags::Audio_Match_CountdownTick;
+}
+
 // ---------------------------------------------------------------- UGameHudWidget
 
 void UGameHudWidget::NativeConstruct()
@@ -178,10 +197,10 @@ void UGameHudWidget::UpdateCenter(const AGameGameState& State, float Remaining, 
 		break;
 	}
 
-	// 초읽기는 숫자가 바뀌는 프레임에 한 번. 3·2·1과 마지막 10초가 같은 소리를 쓴다.
+	// 초읽기는 숫자가 바뀌는 프레임에 한 번. 어떤 소리를 낼지는 숫자와 상황이 정한다.
 	if (Number > 0 && Number != LastCountdownNumber)
 	{
-		UGameAudioSubsystem::Play2D(this, AudioTags::Audio_Match_CountdownTick);
+		UGameAudioSubsystem::Play2D(this, FGameHudMath::CountdownTickTag(Kind, Number));
 	}
 	LastCountdownNumber = Number;
 

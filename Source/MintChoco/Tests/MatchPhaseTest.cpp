@@ -1,5 +1,6 @@
 #include "Misc/AutomationTest.h"
 
+#include "Audio/AudioGameplayTags.h"
 #include "Game/GameGameMode.h"
 #include "Game/GameGameState.h"
 #include "Game/GameHudWidget.h"
@@ -106,6 +107,37 @@ bool FReturnToLobbyTextTest::RunTest(const FString& Parameters)
 	// 다 됐거나 예약이 없으면 칸이 비어야 한다. 0을 띄우면 떠나지도 않은 채 "0초"가 남는다.
 	TestTrue(TEXT("0이면 빈 텍스트"), AGameGameState::MakeReturnToLobbyText(0.0f).IsEmpty());
 	TestTrue(TEXT("음수여도 빈 텍스트"), AGameGameState::MakeReturnToLobbyText(-1.0f).IsEmpty());
+
+	return true;
+}
+
+/**
+ * 초읽기 소리 고르기. 경기 시작의 3·2·1만 전용 소리를 쓰고 나머지는 공용 틱이다.
+ *
+ * 핵심은 마지막 줄이다: 경기 끝 10초가 3에 닿아도 시작 목소리로 넘어가면 안 된다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCountdownTickTagTest,
+	"MintChoco.Match.CountdownTickTag",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCountdownTickTagTest::RunTest(const FString& Parameters)
+{
+	TestEqual(TEXT("시작 카운트다운의 3"),
+		FGameHudMath::CountdownTickTag(EGameHudCenter::Countdown, 3), AudioTags::Audio_Match_Countdown_3.GetTag());
+	TestEqual(TEXT("시작 카운트다운의 2"),
+		FGameHudMath::CountdownTickTag(EGameHudCenter::Countdown, 2), AudioTags::Audio_Match_Countdown_2.GetTag());
+	TestEqual(TEXT("시작 카운트다운의 1"),
+		FGameHudMath::CountdownTickTag(EGameHudCenter::Countdown, 1), AudioTags::Audio_Match_Countdown_1.GetTag());
+
+	// 카운트다운을 3초보다 길게 두면 앞쪽 숫자는 전용 소리가 없다.
+	TestEqual(TEXT("시작 카운트다운의 5는 공용 틱"),
+		FGameHudMath::CountdownTickTag(EGameHudCenter::Countdown, 5), AudioTags::Audio_Match_CountdownTick.GetTag());
+
+	TestEqual(TEXT("막판 초읽기의 10은 공용 틱"),
+		FGameHudMath::CountdownTickTag(EGameHudCenter::FinalCountdown, 10), AudioTags::Audio_Match_CountdownTick.GetTag());
+	TestEqual(TEXT("막판 초읽기가 3에 닿아도 시작 목소리가 새지 않는다"),
+		FGameHudMath::CountdownTickTag(EGameHudCenter::FinalCountdown, 3), AudioTags::Audio_Match_CountdownTick.GetTag());
 
 	return true;
 }

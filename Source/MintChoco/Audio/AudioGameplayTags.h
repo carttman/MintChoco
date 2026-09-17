@@ -89,8 +89,22 @@ namespace AudioTags
 
 	//~ 매치 진행
 
-	/** 카운트다운 초읽기 한 번(3, 2, 1 각각). */
+	/**
+	 * 카운트다운 초읽기 한 번. 전용 소리가 없는 숫자는 전부 이것으로 난다 — 경기 끝
+	 * 10초 카운트다운도 여기 해당한다.
+	 */
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_Match_CountdownTick);
+
+	/**
+	 * 경기 시작 카운트다운의 숫자별 소리("3", "2", "1"). 뱅크에 없으면 공용 틱으로 내려가므로
+	 * 채우지 않아도 조용해지지 않는다.
+	 *
+	 * 경기 끝 10초 카운트다운은 이 소리를 쓰지 않는다. 시작을 알리는 목소리가 경기가 끝나는
+	 * 자리에서 나면 어긋나기 때문이다(FGameHudMath::CountdownTickTag).
+	 */
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_Match_Countdown_3);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_Match_Countdown_2);
+	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_Match_Countdown_1);
 	UE_DECLARE_GAMEPLAY_TAG_EXTERN(Audio_Match_Start);
 
 	/** 남은 시간이 경고선 아래로 내려가는 순간 한 번. */

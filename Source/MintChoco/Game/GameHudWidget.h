@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "GameplayTagContainer.h"
 
 #include "Game/GameGameState.h"
 
@@ -37,6 +38,18 @@ struct MINTCHOCO_API FGameHudMath
 
 	/** 타이머를 경고색으로 보일지. 경기 중이고 남은 시간이 기준 이하일 때. */
 	static bool IsTimerWarning(EMatchPhase Phase, float MatchRemaining, float WarningSeconds);
+
+	/**
+	 * 초읽기 한 번에 울릴 소리의 태그.
+	 *
+	 * 경기 시작 카운트다운의 3·2·1만 전용 소리를 쓰고 나머지는 공용 틱이다. 경기 끝 10초
+	 * 카운트다운이 3에 닿아도 전용 소리로 넘어가지 않는다 — "3, 2, 1, 시작!"의 목소리가
+	 * 경기가 끝나는 자리에서 나면 어긋난다.
+	 *
+	 * 뱅크에 전용 항목이 없으면 재생 쪽이 알아서 기본 뱅크로 내려가므로, 소리를 채우기
+	 * 전에도 지금과 똑같이 공용 틱이 난다.
+	 */
+	static FGameplayTag CountdownTickTag(EGameHudCenter Kind, int32 Number);
 };
 
 /**
