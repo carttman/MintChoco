@@ -21,6 +21,7 @@ namespace AudioTags
 	UE_DEFINE_GAMEPLAY_TAG(Audio_Item_Announce, "Audio.Item.Announce");
 	UE_DEFINE_GAMEPLAY_TAG(Audio_Item_Pickup, "Audio.Item.Pickup");
 	UE_DEFINE_GAMEPLAY_TAG(Audio_Item_Activate, "Audio.Item.Activate");
+	UE_DEFINE_GAMEPLAY_TAG(Audio_Item_Loop, "Audio.Item.Loop");
 	UE_DEFINE_GAMEPLAY_TAG(Audio_Item_Expire, "Audio.Item.Expire");
 
 	UE_DEFINE_GAMEPLAY_TAG(Audio_World_Burst, "Audio.World.Burst");

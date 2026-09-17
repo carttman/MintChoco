@@ -6,7 +6,11 @@
 #include "Animation/AnimSequenceBase.h"
 #include "Materials/MaterialInterface.h"
 #include "Modules/ModuleManager.h"
+#include "Sound/SoundBase.h"
+#include "UObject/UnrealType.h"
 
+#include "Audio/AudioGameplayTags.h"
+#include "Audio/SoundBank.h"
 #include "Items/BeeProfile.h"
 #include "Items/BeeProjectile.h"
 #include "Items/ChocolateFountain.h"
@@ -22,6 +26,7 @@
 #include "Items/PaintRain.h"
 #include "Items/SpeedStarProfile.h"
 #include "Items/SweetSpinnerProfile.h"
+#include "Weapons/PaintBurst.h"
 #include "Weapons/PaintGunProfile.h"
 #include "Weapons/PaintballProfile.h"
 
@@ -86,6 +91,39 @@ bool FItemProfileAssetTest::RunTest(const FString& Parameters)
 		{
 			TestTrue(*FString::Printf(TEXT("%s: AuraMaterial is usable on a skeletal mesh"), *Name),
 				Item->AuraMaterial->CheckMaterialUsage_Concurrent(MATUSAGE_SkeletalMesh));
+		}
+
+		// 뱅크를 넣을 칸이 둘로 보인다: 프로필의 Sounds와, Burst 안의 Sounds. 파열음을 내는
+		// 것은 뒤쪽처럼 보이지만 MakeBurstParams가 프로필 값으로 덮어쓰므로 거기 넣은 뱅크는
+		// 통째로 버려지고, 발동음은 발동음대로 빈 기본 뱅크로 떨어진다. 양쪽 다 조용히 사라져
+		// 에셋만 보면 멀쩡해 보이므로, 잘못 넣은 것을 알아채는 곳은 여기뿐이다.
+		for (TFieldIterator<FStructProperty> It(Item->GetClass()); It; ++It)
+		{
+			if (It->Struct != FPaintBurstParams::StaticStruct())
+			{
+				continue;
+			}
+
+			const FPaintBurstParams& Burst = *It->ContainerPtrToValuePtr<FPaintBurstParams>(Item);
+			if (Burst.Sounds && !Item->Sounds)
+			{
+				AddError(FString::Printf(
+					TEXT("%s: %s.Sounds holds %s but the profile's own Sounds is empty. MakeBurstParams overwrites it ")
+					TEXT("with the profile's bank, so this one is discarded and the activate sound falls back to the ")
+					TEXT("project bank. Put the bank in the profile's Sounds instead."),
+					*Name, *It->GetName(), *GetNameSafe(Burst.Sounds.Get())));
+			}
+		}
+
+		// 버프 지속음은 루프여야 효과가 끝날 때까지 돈다. 루핑이 아닌 소리를 꽂으면 한 번 울리고
+		// 조용해지는데, 재생 쪽에서 보면 정상이라 로그에도 아무것도 남지 않는다.
+		if (const FSoundEvent* const Loop = Item->Sounds ? Item->Sounds->Find(AudioTags::Audio_Item_Loop) : nullptr)
+		{
+			if (TestNotNull(*FString::Printf(TEXT("%s: Audio.Item.Loop has a sound"), *Name), Loop->Sound.Get()))
+			{
+				TestTrue(*FString::Printf(TEXT("%s: Audio.Item.Loop sound %s loops"), *Name, *GetNameSafe(Loop->Sound.Get())),
+					Loop->Sound->IsLooping());
+			}
 		}
 
 		if (const USweetSpinnerProfile* const Spinner = Cast<USweetSpinnerProfile>(Item))

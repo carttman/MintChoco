@@ -59,6 +59,17 @@ void UItemSlotComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	StopAllAnimationSounds(0.0f);
 
+	// 효과 태그가 내려가는 것을 못 보고 끝나는 경우(레벨 전환, 컴포넌트 제거)에도 루프는
+	// 남지 않아야 한다. 떠나는 길이라 물려 줄 이유가 없으므로 그 자리에서 끊는다.
+	for (const TPair<FGameplayTag, TObjectPtr<UAudioComponent>>& Pair : EffectSounds)
+	{
+		if (Pair.Value)
+		{
+			Pair.Value->Stop();
+		}
+	}
+	EffectSounds.Empty();
+
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -639,6 +650,18 @@ void UItemSlotComponent::StartEffectFeedback(const UItemProfile& Item, const FGa
 			EffectComponents.Add(Tag, FX);
 		}
 	}
+
+	// 지속음도 이펙트와 같은 규칙이다: 이미 돌고 있으면 그대로 둔다. 갱신 때 다시 켜면 루프가
+	// 처음으로 돌아가 툭 끊긴 것처럼 들린다. 뱅크에 Audio.Item.Loop가 없는 아이템은 PlayAttached가
+	// 널을 돌려주므로 아무것도 등록되지 않는다.
+	if (!EffectSounds.Contains(Tag))
+	{
+		if (UAudioComponent* const Loop = UGameAudioSubsystem::PlayAttached(
+			AudioTags::Audio_Item_Loop, AttachTo, NAME_None, Item.Sounds))
+		{
+			EffectSounds.Add(Tag, Loop);
+		}
+	}
 }
 
 void UItemSlotComponent::StopEffectFeedback(const FGameplayTag& Tag)
@@ -650,6 +673,13 @@ void UItemSlotComponent::StopEffectFeedback(const FGameplayTag& Tag)
 	if (EffectComponents.RemoveAndCopyValue(Tag, FX) && FX)
 	{
 		FX->Deactivate();
+	}
+
+	// 루프를 그 자리에서 끊으면 파형 한가운데가 잘려 툭 튄다. 짧게 물려 준다.
+	TObjectPtr<UAudioComponent> Loop;
+	if (EffectSounds.RemoveAndCopyValue(Tag, Loop) && Loop)
+	{
+		Loop->FadeOut(0.15f, 0.0f);
 	}
 
 	// 효과가 끝나면(스턴으로 끊긴 경우 포함) 자세 클립도 내려가므로 구간 소리는 노티파이가 끄지만,
