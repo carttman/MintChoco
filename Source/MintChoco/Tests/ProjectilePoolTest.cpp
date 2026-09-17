@@ -163,4 +163,84 @@ bool FProjectilePoolPrewarmTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+
+/**
+ * 재활용한 공은 깨어나는 순간부터 이번 사격의 공이어야 한다.
+ *
+ * 풀에서 꺼낸 공은 총구에서, 즉 쏜 사람의 몸 안에서 콜리전이 켜지고, 엔진은 그 순간 그 자리의
+ * 초기 오버랩을 곧바로 질의한다. 그 앞에 Init이 끝나 있지 않으면 그 판정은 지난 사격의
+ * PaintId·Profile과 빈 무시 목록으로 이뤄져, 상대 색을 칠하던 공이 이번에 쏜 사람을 기절시키고
+ * (히어로 랜딩, 스위트 스피너) 제 팀 초코돔이 제 팀 버스트를 삼킨다(초콜릿 분수의 미도색).
+ * 한 색만 도는 풀에서는 지난 값도 늘 같은 색이라 아무 일이 없다: 멀티에서, 두 색이 섞인
+ * 뒤부터만 나오는 증상이다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FProjectilePoolReuseIdentityTest,
+	"MintChoco.Weapons.ProjectilePoolReuseIdentity",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FProjectilePoolReuseIdentityTest::RunTest(const FString& Parameters)
+{
+	UWorld* const World = MintChocoTest::MakeWorld();
+	if (!TestNotNull(TEXT("테스트 월드"), World))
+	{
+		return false;
+	}
+
+	ON_SCOPE_EXIT { MintChocoTest::DestroyWorld(World); };
+
+	UProjectilePoolSubsystem* const Pool = World->GetSubsystem<UProjectilePoolSubsystem>();
+	if (!TestNotNull(TEXT("풀 서브시스템"), Pool))
+	{
+		return false;
+	}
+
+	UPaintballProfile* const Profile = NewObject<UPaintballProfile>();
+	APawn* const Shooter = World->SpawnActor<ADefaultPawn>();
+	const TSubclassOf<APaintProjectile> Class = ATestPaintProjectile::StaticClass();
+	const FVector Velocity(1000.0f, 0.0f, 0.0f);
+	constexpr uint8 Mint = 0;
+	constexpr uint8 Choco = 1;
+
+	// 상대 색으로 한 발 쏘고 돌려받는다. 풀에 남는 것은 초코 색을 기억하는 공이다.
+	APaintProjectile* const ChocoBall = Pool->Launch(
+		Class, FTransform::Identity, nullptr, Profile, Choco, /*Seed=*/1, Velocity, /*bCosmetic=*/false);
+	if (!TestNotNull(TEXT("초코 탄"), ChocoBall))
+	{
+		return false;
+	}
+
+	UTestCollisionProbeComponent* const Probe = NewObject<UTestCollisionProbeComponent>(ChocoBall);
+	Probe->RegisterComponent();
+	Pool->Release(ChocoBall);
+
+	// 반납하며 콜리전이 꺼진 것까지가 지난 사격이다. 여기서부터 이번 사격을 본다.
+	Probe->PaintIdWhenCollisionChanged.Reset();
+	Probe->MoveIgnoreCountWhenCollisionChanged.Reset();
+
+	APaintProjectile* const MintBall = Pool->Launch(
+		Class, FTransform::Identity, Shooter, Profile, Mint, /*Seed=*/2, Velocity, /*bCosmetic=*/false);
+	TestEqual(TEXT("반납한 그 공이 다시 나온다"), MintBall, ChocoBall);
+
+	// 대조군. 이 줄이 실패하면 아래 검사는 아무것도 지키지 못한다.
+	if (!TestTrue(TEXT("재사용은 콜리전을 다시 켠다"), Probe->PaintIdWhenCollisionChanged.Num() > 0))
+	{
+		return false;
+	}
+
+	for (const uint8 PaintIdAtWake : Probe->PaintIdWhenCollisionChanged)
+	{
+		TestEqual(TEXT("콜리전이 켜지는 순간 이미 이번 사격의 색이다"),
+			static_cast<int32>(PaintIdAtWake), static_cast<int32>(Mint));
+	}
+
+	// 무시 목록도 같은 순간에 서 있어야 쏜 사람이 제 탄에 맞지 않는다.
+	for (const int32 IgnoreCount : Probe->MoveIgnoreCountWhenCollisionChanged)
+	{
+		TestTrue(TEXT("콜리전이 켜지는 순간 쏜 사람은 이미 무시 목록에 있다"), IgnoreCount > 0);
+	}
+
+	return true;
+}
+
 #endif

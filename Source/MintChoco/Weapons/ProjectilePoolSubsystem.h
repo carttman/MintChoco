@@ -70,7 +70,13 @@ public:
 	virtual void Deinitialize() override;
 
 private:
-	/** 풀에 없으면 새로 만든다. Init 전의, 트랜스폼만 잡힌 공을 돌려준다. */
+	/**
+	 * 풀에 없으면 새로 만든다. Init 전의, 트랜스폼만 잡힌 공을 돌려준다.
+	 *
+	 * 어느 쪽이든 돌려주는 공은 아직 자는 상태다(콜리전 꺼짐). 깨우는 것은 Launch가
+	 * Init 뒤에 한다: 콜리전이 켜지는 순간 초기 오버랩이 돌고, 그것은 이번 사격의
+	 * 값으로 판정돼야 한다.
+	 */
 	APaintProjectile* AcquireIdle(TSubclassOf<APaintProjectile> Class, const FTransform& Where, APawn* Instigator, bool& bOutFresh);
 
 	/** 클래스마다 따로 논다. 무기마다 ProjectileClass가 다르기 때문이다. */
