@@ -3,9 +3,12 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/Image.h"
 #include "Components/TextBlock.h"
+#include "Engine/Texture2D.h"
 #include "Engine/World.h"
 
+#include "Game/GamePlayerState.h"
 #include "MintChoco.h"
 #include "Weapons/PaintCrosshairHostWidget.h"
 #include "Audio/AudioGameplayTags.h"
@@ -64,6 +67,19 @@ FGameplayTag FGameHudMath::CountdownTickTag(EGameHudCenter Kind, int32 Number)
 
 	// 전용 소리를 정하지 않은 숫자(카운트다운을 3초보다 길게 둔 경우의 5·4 등)와 막판 초읽기.
 	return AudioTags::Audio_Match_CountdownTick;
+}
+
+UTexture2D* FGameHudMath::CharacterImageFor(int32 Team, UTexture2D* Mint, UTexture2D* Choco)
+{
+	if (Team == Teams::Mint)
+	{
+		return Mint;
+	}
+	if (Team == Teams::Choco)
+	{
+		return Choco;
+	}
+	return nullptr;
 }
 
 // ---------------------------------------------------------------- UGameHudWidget
@@ -135,6 +151,35 @@ void UGameHudWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	const float Remaining = State->GetRemainingTime();
 	UpdateTimer(*State, Remaining);
 	UpdateCenter(*State, Remaining, Now);
+	UpdateCharacterImage();
+}
+
+void UGameHudWidget::UpdateCharacterImage()
+{
+	if (!Img_Character)
+	{
+		return;
+	}
+
+	const AGamePlayerState* const PlayerState = GetOwningPlayerState<AGamePlayerState>();
+	const int32 Team = PlayerState ? PlayerState->GetTeam() : Teams::None;
+	if (bCharacterImageSet && Team == LastCharacterTeam)
+	{
+		return;
+	}
+
+	UTexture2D* const Image = FGameHudMath::CharacterImageFor(Team, MintCharacterImage, ChocoCharacterImage);
+	if (!Image)
+	{
+		// 아직 팀이 없다(관전, 고르기 전, PlayerState가 오기 전). 블루프린트가 넣어 둔 그림을
+		// 그대로 두고 다음 틱에 다시 본다 — 여기서 비우면 팀이 정해질 때까지 HUD에 구멍이 난다.
+		return;
+	}
+
+	// 크기는 블루프린트가 정한 대로 둔다. 텍스처 크기에 맞추면 배치가 흐트러진다.
+	Img_Character->SetBrushFromTexture(Image, /*bMatchSize=*/false);
+	LastCharacterTeam = Team;
+	bCharacterImageSet = true;
 }
 
 void UGameHudWidget::UpdateTimer(const AGameGameState& State, float Remaining)

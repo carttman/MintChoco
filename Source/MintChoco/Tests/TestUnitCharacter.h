@@ -34,12 +34,6 @@ public:
 	using UUnitMovementComponent::PhysCustom;
 	using UUnitMovementComponent::UpdateCharacterStateBeforeMovement;
 	using UUnitMovementComponent::Acceleration;
-
-	/**
-	 * 발사가 실제로 예약됐는지. Launch는 속도를 바로 바꾸지 않고 이 값에 담아 두었다가 다음
-	 * 이동에서 꺼내 쓰므로, 무시된 발사와 받아들인 발사를 이것으로 가른다.
-	 */
-	FVector GetPendingLaunch() const { return PendingLaunchVelocity; }
 };
 
 /**

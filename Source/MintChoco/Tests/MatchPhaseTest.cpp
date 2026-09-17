@@ -4,6 +4,8 @@
 #include "Game/GameGameMode.h"
 #include "Game/GameGameState.h"
 #include "Game/GameHudWidget.h"
+#include "Engine/Texture2D.h"
+
 #include "Game/TeamTypes.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -138,6 +140,39 @@ bool FCountdownTickTagTest::RunTest(const FString& Parameters)
 		FGameHudMath::CountdownTickTag(EGameHudCenter::FinalCountdown, 10), AudioTags::Audio_Match_CountdownTick.GetTag());
 	TestEqual(TEXT("막판 초읽기가 3에 닿아도 시작 목소리가 새지 않는다"),
 		FGameHudMath::CountdownTickTag(EGameHudCenter::FinalCountdown, 3), AudioTags::Audio_Match_CountdownTick.GetTag());
+
+	return true;
+}
+
+/**
+ * 팀에 맞는 캐릭터 그림 고르기.
+ *
+ * 두 텍스처를 바꿔 넣어도 컴파일은 되고 화면에서도 한참 뒤에나 눈에 띄므로, 그것부터 못 박는다.
+ * 팀이 없을 때 아무 쪽이나 고르지 않는 것도 여기서 지킨다 — 그러면 팀이 정해지기도 전에 남의
+ * 캐릭터가 HUD에 떠 있게 된다.
+ */
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FCharacterImageTest,
+	"MintChoco.Match.CharacterImage",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FCharacterImageTest::RunTest(const FString& Parameters)
+{
+	UTexture2D* const Mint = NewObject<UTexture2D>();
+	UTexture2D* const Choco = NewObject<UTexture2D>();
+
+	TestTrue(TEXT("민트는 민트 그림"), FGameHudMath::CharacterImageFor(Teams::Mint, Mint, Choco) == Mint);
+	TestTrue(TEXT("초코는 초코 그림"), FGameHudMath::CharacterImageFor(Teams::Choco, Mint, Choco) == Choco);
+
+	// 뒤바뀌지 않았다. 위의 두 줄만으로는 둘 다 같은 값을 돌려줘도 통과할 수 있다.
+	TestTrue(TEXT("민트와 초코가 서로 다른 그림을 받는다"),
+		FGameHudMath::CharacterImageFor(Teams::Mint, Mint, Choco) != FGameHudMath::CharacterImageFor(Teams::Choco, Mint, Choco));
+
+	// 팀이 없으면 고르지 않는다. 호출부는 이때 그림을 건드리지 않는다.
+	TestNull(TEXT("팀이 없으면 nullptr"), FGameHudMath::CharacterImageFor(Teams::None, Mint, Choco));
+
+	// 아직 텍스처를 꽂지 않은 HUD도 조용히 넘어가야 한다(에셋을 지정하기 전의 블루프린트).
+	TestNull(TEXT("그림을 정하지 않았으면 nullptr"), FGameHudMath::CharacterImageFor(Teams::Mint, nullptr, Choco));
 
 	return true;
 }

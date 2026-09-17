@@ -8,8 +8,10 @@
 
 #include "GameHudWidget.generated.h"
 
+class UImage;
 class UPaintCrosshairHostWidget;
 class UTextBlock;
+class UTexture2D;
 
 /** 화면 중앙에 무엇을 띄울지. 순수 계산의 결과라 테스트가 월드 없이 검사한다. */
 enum class EGameHudCenter : uint8
@@ -50,6 +52,14 @@ struct MINTCHOCO_API FGameHudMath
 	 * 전에도 지금과 똑같이 공용 틱이 난다.
 	 */
 	static FGameplayTag CountdownTickTag(EGameHudCenter Kind, int32 Number);
+
+	/**
+	 * 팀에 맞는 캐릭터 그림. 민트도 초코도 아니면(관전, 팀을 고르기 전) nullptr이다.
+	 *
+	 * 그럴 때 아무 쪽이나 돌려주지 않는 이유는, 팀이 정해지기도 전에 남의 캐릭터가 HUD에
+	 * 떠 있게 되기 때문이다. 호출부는 nullptr을 받으면 그림을 건드리지 않는다.
+	 */
+	static UTexture2D* CharacterImageFor(int32 Team, UTexture2D* Mint, UTexture2D* Choco);
 };
 
 /**
@@ -82,6 +92,21 @@ protected:
 	 */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
 	TObjectPtr<UPaintCrosshairHostWidget> CrosshairHost;
+
+	/**
+	 * 내 팀의 캐릭터 그림. 팀이 정해지는 순간 아래 두 텍스처 중 하나로 바뀐다.
+	 *
+	 * 팀을 폰이 아니라 PlayerState에서 읽는다: 팀은 부활해도 그대로지만 폰은 바뀌고,
+	 * PlayerState가 폰보다 먼저 온다. 폰을 보면 죽을 때마다 잠깐 팀을 잃는다.
+	 */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional))
+	TObjectPtr<UImage> Img_Character;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Match HUD")
+	TObjectPtr<UTexture2D> MintCharacterImage;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Match HUD")
+	TObjectPtr<UTexture2D> ChocoCharacterImage;
 
 	/** 남은 시간이 이 값(초) 이하가 되면 타이머가 TimerWarningColor로 바뀐다. */
 	UPROPERTY(EditDefaultsOnly, Category = "Match HUD", meta = (ClampMin = "0", ForceUnits = "s"))
@@ -129,6 +154,11 @@ private:
 	/** 지난 프레임의 경고 여부. 0→1 에지에서 경고음과 막판 곡. */
 	bool bWasWarning = false;
 
+	/** 마지막으로 그림에 반영한 팀. 팀이 바뀌는 순간에만 브러시를 다시 쓴다. */
+	int32 LastCharacterTeam = Teams::None;
+	bool bCharacterImageSet = false;
+
 	void UpdateTimer(const AGameGameState& State, float Remaining);
 	void UpdateCenter(const AGameGameState& State, float Remaining, double Now);
+	void UpdateCharacterImage();
 };
