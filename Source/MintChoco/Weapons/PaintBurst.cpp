@@ -133,9 +133,14 @@ void APaintBurst::SpawnBurstFX()
 	// 회전을 주지 않는다. 이 연출은 밑동이 바닥에 놓인 물기둥이라 늘 월드 위로 솟아야 하는데,
 	// 히트 노멀을 따르게 하면 벽에서 터졌을 때 기둥이 벽을 뚫고 옆으로 눕는다. 꿀풍선은
 	// 벽에 맞아도 터지므로(AItemProjectile::HandleWorldHit) 그 경우가 실제로 나온다.
+	// 꺼진 채로 낳아 팀 색을 넣고 켠다. 이미 켜진 컴포넌트에 넣은 유저 파라미터는 다음 틱으로
+	// 미뤄지는데(SetVariable_Deferred), 이 연출은 첫 틱에 한 번 왕창 뿌리고 마는 물기둥이라
+	// 그 한 무더기가 에셋 기본색으로 태어난다 — 팀 색은 그 다음 틱부터라 눈에 띄게 깜빡인다.
 	if (UNiagaraComponent* const FX = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-			World, Params.BurstFX, GetActorLocation(), FRotator::ZeroRotator, FVector(Params.BurstFXScale)))
+			World, Params.BurstFX, GetActorLocation(), FRotator::ZeroRotator, FVector(Params.BurstFXScale),
+			/*bAutoDestroy=*/true, /*bAutoActivate=*/false))
 	{
 		FX->SetVariableLinearColor(TeamLook::NiagaraTintParameter, TeamLook::GetColor(Params.PaintId, World));
+		FX->Activate();
 	}
 }
