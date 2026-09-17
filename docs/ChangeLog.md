@@ -137,11 +137,13 @@ DA_Brush_Feet_T            ← DA_Brush_HeroLanding 복제. 두 무기의 FeetDe
 | | |
 |---|---|
 | 어디에 | `DA_Weapon_Sniper_T` |
-| 무엇을 | `VolleySpacing` 225 → **170cm**, `MaxVolleyShots` 16 → **14** |
+| 무엇을 | `VolleySpacing` 225 → **170cm**, `MaxVolleyShots` 16 → 14 → **21** |
 | 대체한 것 | 간격 100 → 225 → 170으로 두 번 바뀌었다. 지금 값이 170이다 |
 
-발수는 `clamp(floor((길이 − 간격×0.5) / 간격), 0, MaxVolleyShots)`이라 사거리 2500에서
-14발이 나온다. 상한 14는 그 자연수와 같게 맞춰 둔 것이다 — 사거리가 늘면 상한이 먼저 걸린다.
+발수는 `clamp(floor((길이 − 간격×0.5) / 간격), 0, MaxVolleyShots)`이다. 상한은 그 자연수와
+같게 맞춰 둔다 — 상한이 먼저 걸리면 사거리를 늘려도 줄무늬가 안 길어진다. 사거리 2500일 때
+자연수가 14라 상한도 14였고, 사거리를 **3750으로 올리면서 자연수가 21이 되어 상한도 21로
+같이 올렸다**. 줄무늬 길이는 21 × 170 = **3570cm**.
 
 간격 170을 고른 계산:
 
@@ -197,9 +199,12 @@ DA_Brush_Feet_T            ← DA_Brush_HeroLanding 복제. 두 무기의 FeetDe
 
 | 충전 | 사거리 |
 |---|---|
-| 1.5초(만충) | 2500cm |
-| 1.0초 | 1250cm (1/2) |
-| 0.5초 | 625cm (1/4) |
+| 1.5초(만충) | **3750cm** |
+| 1.0초 | 1875cm (1/2) |
+| 0.5초 | 937.5cm (1/4) |
+
+`Range`는 2500 → **3750cm**(1.5배). 광선이 닿는 거리라 스턴·풍선 타격·착탄 자국이 모두 그만큼
+멀리 간다. 줄무늬 길이는 `MaxVolleyShots`가 정하므로 그 상한도 14 → 21로 같이 올렸다(위 참고).
 
 0이면 충전량이 사거리를 안 바꾸므로 기존 프로필은 전과 같다. 줄어드는 것은 광선의 길이뿐이라
 **볼리 발수도 같이 준다** — 덜 충전한 샷은 짧은 줄무늬를 남긴다.
@@ -505,19 +510,28 @@ UPaintSubsystem::GetPaintIdUnder(위치, 깊이)        히트가 없는 곳에�
 | 상대 색 | 500 | 500 |
 | 스타 | 2250 | 4500 |
 
-잉크 회복 (`BP_Unit.InkTank.RefillPerSecond` **0.10**. C++ 기본값은 0.15지만 `BP_Unit`이
-이미 0.10으로 덮어 두고 있었다 — 바꿀 것이 없었다):
+잉크 회복 (`BP_Unit.InkTank.RefillPerSecond` **0.133333**. C++ 기본값은 0.15이고, `BP_Unit`이
+0.10으로 덮어 두고 있던 것을 내 색 걷기가 20%/s가 되도록 올렸다 — 배율이 이동 속도와 공유라
+기준값을 올리는 것 말고는 내 색만 따로 올릴 방법이 없다):
 
 | | 걷기 | 보드 |
 |---|---|---|
-| 내 색 | 15%/s | 30%/s |
-| 미도색 | 10%/s | 20%/s |
-| 상대 색 | 5%/s | 5%/s |
+| 내 색 | 20%/s | 40%/s |
+| 미도색 | 13.3%/s | 26.7%/s |
+| 상대 색 | 6.7%/s | 6.7%/s |
 
-미도색 보드 20%와 상대색 보드 5%는 기획표에 없어 같은 규칙으로 채운 값이다.
+미도색과 상대 색은 기획표에 없다. 내 색 20/40을 맞추려고 기준값을 0.10 → 0.133333으로 올린
+결과 같은 비율로 따라 올라간 값이다. 이 둘을 예전 값(10/20, 5/5)으로 되돌리려면 잉크 배율을
+이동 속도 배율에서 떼어내는 C++ 작업이 필요하다.
 
 `GetInkRefillMultiplier`는 두 배율의 곱이되 **부스트 배율은 뺀다.** 별을 먹었다고 잉크가
-1.5배로 차지는 않는다. 다만 바닥은 내 색으로 굳으므로 상대 진영에서 별을 먹으면 잉크도 15%/s가 된다.
+1.5배로 차지는 않는다. 다만 바닥은 내 색으로 굳으므로 상대 진영에서 별을 먹으면 잉크도 20%/s가 된다.
+
+**소모 후 회복 정지** `RefillDelayAfterSpend` 0.5 → **0.25초**. 소모할 때마다 이만큼 회복이
+멈춘다. 0.5초였을 때는 샷건 연사 간격(0.25초)과 차지 눈금 간격(0.5초)이 둘 다 정지 시간
+이하라 **쏘는 동안·충전하는 동안 회복이 완전히 차단**됐다. 0.25초로 내리면 차지 눈금 사이에
+0.25초씩 회복이 들어와 만충 한 발의 실질 비용이 30%에서 약 26%로 내려간다. 샷건은 연사
+간격과 정지 시간이 같아져 연사 중 회복은 여전히 거의 없다.
 
 잉크는 **서버만 채운다**(`Refill`이 `ROLE_Authority`에서만 불린다). 그래서 예측할 것이 없고,
 배율이 클라이언트와 갈라져도 고무줄이 나지 않는다.
@@ -1120,7 +1134,7 @@ git diff --name-status <머지전_내커밋> HEAD -- Content/Maps Content/LevelP
 | `Lvl_Stage`의 `BP_ItemSpawnPoint` **11개** | `SpawnMode` **Standalone**, `RespawnDelay` **10초** (되돌아가면 Shared / 3초) |
 | `Lvl_Stage`의 `TestStunZone` | **버렸다.** 59215e2 머지에서 사라진 것을 그대로 두기로 했다 |
 | `BP_Unit` → `CharMoveComp` | `GravityScale` 2.0, `JumpZVelocity` 660, `DashJumpZVelocity` 660, `AirControl` 0.15, `MaxWalkSpeed` 1000, `DashSpeedMultiplier` **2.0**, `SpeedBoostMultiplier` 1.5 |
-| `BP_Unit` → `InkTank` | `RefillPerSecond` **0.10**, `RefillDelayAfterSpend` 0.5 |
+| `BP_Unit` → `InkTank` | `RefillPerSecond` **0.133333**, `RefillDelayAfterSpend` **0.25** |
 | `BP_Unit` → `CharMoveComp` 바닥 배율 | `OwnFloorMultiplier` 1.5, `EnemyFloorMultiplier` 0.5, `EnemyFloorDashMultiplier` 1.0 |
 | `BP_GameMode` | `MatchDuration` **180**, `CountdownDuration` 0, `ItemSpawnInterval` 3 |
 | `Lvl_Stage`의 `BP_Balloon` **9개 전부** | `BurstPaintball` **`DA_Paintball_BalloonBurst`**, `BurstCount` **16**, `BurstSpeed` **600**, `MaxHealth` 20, `RespawnDelay` 10 |
@@ -1136,7 +1150,7 @@ git diff --name-status <머지전_내커밋> HEAD -- Content/Maps Content/LevelP
 | `DA_Weapon_Fan_T` | `FireMode` **Automatic**, `ShotsPerSecond` 4, `InkCostPercent` 5, 추종탄 3발 / 0.03초 |
 | `DA_Paintball_Heavy_Trail_T` | `TrailRadius` **700**, `TrailSpacing` 40, `MaxTrailSplats` 64, `DropAfter` 0.1, `DropGravityScale` 4, `bTrailFirstRayDown` true, 스턴 **0.5** / 슈퍼아머 **2** |
 | `DA_Paintball_Fan_Painter_T` | `TrailRadius` **700**, `bHideMesh` true, `TrailSpacing` 60, `MaxTrailSplats` 24, hitPower·stunDuration 0 |
-| `DA_Weapon_Sniper_T` | `ChargeTime` **1.5**, `MinChargeToFire` **0.333**, `InkCostPercent` **0**, `ChargeInkPercentPerTick` **10** / `ChargeInkTickSeconds` **0.5**, `Range` **2500**, `RangeHalvingSeconds` **0.5**, `VolleySpacing` **170**, `MaxVolleyShots` **14**, `VolleySpeed` 1800, `VolleyDropLead` 270 |
+| `DA_Weapon_Sniper_T` | `ChargeTime` **1.5**, `MinChargeToFire` **0.333**, `InkCostPercent` **0**, `ChargeInkPercentPerTick` **10** / `ChargeInkTickSeconds` **0.5**, `Range` **3750**, `RangeHalvingSeconds` **0.5**, `VolleySpacing` **170**, `MaxVolleyShots` **21**, `VolleySpeed` 1800, `VolleyDropLead` 270 |
 | `DA_Weapon_Sniper_T.Impact` | hitPower 100, `StunDuration` **1.5**, `StunSuperArmorDuration` **3**, `FullChargeStunSeconds` **3.0**, `FullChargeThreshold` **0.99** |
 | `DA_Paintball_SniperVolley_T` | `DropGravityScale` 18, `bHideMesh` **false**(보이게 두기로 함) |
 | `BP_Bee` | `TrailFX` = `NS_ArrowTrail_Magic`(main 것), `BodyFX` = `NS_BeeSkull` |
