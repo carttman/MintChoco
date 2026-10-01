@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MintChoco 시스템 흐름</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&family=Do+Hyeon&display=swap">
+<style>
+/* Layout: 왼쪽 고정 목차 + 본문 한 단(약 72자). 세 시스템은 민트·초코·중립 색 띠로 구분한다. */
+:root {
+	--bg: #f6f8f7;
+	--surface: #ffffff;
+	--fg: #1f2523;
+	--muted: #5d6a66;
+	--line: #d9e2df;
+	--mint: #138a74;
+	--mint-soft: #ddf2ec;
+	--choco: #7a4a2e;
+	--choco-soft: #f1e6de;
+	--slate: #3d5a80;
+	--slate-soft: #e2e9f2;
+	--warn: #a15c00;
+	--warn-soft: #fbefdc;
+	--code-bg: #eef2f1;
+	--font-display: "Do Hyeon", "IBM Plex Sans KR", system-ui, sans-serif;
+	--font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+	--font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+	color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		--bg: #121615; --surface: #1a201e; --fg: #e3e9e6; --muted: #9aa8a3; --line: #2c3532;
+		--mint: #4fd1b2; --mint-soft: #16332c; --choco: #d9a07a; --choco-soft: #33251c;
+		--slate: #8fb0dc; --slate-soft: #1d2836; --warn: #f0b45a; --warn-soft: #33270f; --code-bg: #222a27;
+		color-scheme: dark;
+	}
+}
+:root[data-theme="dark"] {
+	--bg: #121615; --surface: #1a201e; --fg: #e3e9e6; --muted: #9aa8a3; --line: #2c3532;
+	--mint: #4fd1b2; --mint-soft: #16332c; --choco: #d9a07a; --choco-soft: #33251c;
+	--slate: #8fb0dc; --slate-soft: #1d2836; --warn: #f0b45a; --warn-soft: #33270f; --code-bg: #222a27;
+	color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+	margin: 0; background: var(--bg); color: var(--fg);
+	font: 15px/1.7 var(--font-body);
+	padding-inline: 16px;
+}
+.shell { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; padding-block: 40px 80px; }
+@media (max-width: 900px) { .shell { grid-template-columns: minmax(0, 1fr); gap: 24px; } nav.toc { position: static !important; max-height: none !important; } }
+nav.toc { position: sticky; top: 24px; align-self: start; max-height: calc(100vh - 48px); overflow-y: auto; font-size: 13.5px; }
+nav.toc h2 { font: 400 1.1rem var(--font-display); margin: 0 0 8px; color: var(--muted); letter-spacing: .02em; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+nav.toc ol ol { padding-left: 12px; margin-block: 2px 8px; }
+nav.toc a { color: var(--fg); text-decoration: none; display: block; padding: 3px 8px; border-radius: 4px; }
+nav.toc a:hover, nav.toc a:focus-visible { background: var(--code-bg); outline: none; }
+nav.toc .p-items > a { color: var(--mint); font-weight: 700; }
+nav.toc .p-unit > a { color: var(--choco); font-weight: 700; }
+nav.toc .p-online > a { color: var(--slate); font-weight: 700; }
+main { min-width: 0; }
+header.doc { border-bottom: 1px solid var(--line); padding-bottom: 24px; margin-bottom: 8px; }
+header.doc .eyebrow { font: 500 12px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+header.doc h1 { font: 400 clamp(2.2rem, 5vw, 3.2rem)/1.1 var(--font-display); margin: 6px 0 12px; text-wrap: balance; }
+header.doc h1 .m { color: var(--mint); } header.doc h1 .c { color: var(--choco); }
+header.doc p { max-width: 68ch; margin: 0; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 16px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+section.part { padding-top: 48px; }
+.part-head { display: flex; align-items: baseline; gap: 14px; border-bottom: 3px solid var(--accent); padding-bottom: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+.part-head .num { font: 500 13px var(--font-mono); color: var(--accent); }
+.part-head h2 { font: 400 2rem/1.15 var(--font-display); margin: 0; text-wrap: balance; }
+.part-head .scope { font: 12.5px var(--font-mono); color: var(--muted); margin-left: auto; }
+#items { --accent: var(--mint); --accent-soft: var(--mint-soft); }
+#unit { --accent: var(--choco); --accent-soft: var(--choco-soft); }
+#online { --accent: var(--slate); --accent-soft: var(--slate-soft); }
+#notes { --accent: var(--warn); --accent-soft: var(--warn-soft); }
+
+h3 { font-size: 1.2rem; margin: 36px 0 10px; text-wrap: balance; }
+h4 { font-size: 1rem; margin: 22px 0 6px; color: var(--accent); }
+p, ul, ol.flow { max-width: 74ch; }
+ul, ol { padding-left: 1.3em; }
+li { margin-block: 3px; }
+code { font: 0.86em var(--font-mono); background: var(--code-bg); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+.ref { font: 11.5px var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
+.tldr { background: var(--accent-soft); border-radius: 6px; padding: 14px 18px; max-width: 74ch; }
+.tldr strong { color: var(--accent); }
+.tldr ul { margin: 6px 0 0; }
+
+.table-wrap { overflow-x: auto; margin-block: 12px 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+th { font-weight: 500; font-size: 12px; letter-spacing: .04em; color: var(--muted); background: var(--code-bg); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td:first-child { white-space: nowrap; font-weight: 500; }
+td.wrap { white-space: normal; }
+
+.diagram { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px; margin-block: 12px; }
+.diagram .cap { font: 12px var(--font-mono); color: var(--muted); margin-bottom: 8px; }
+pre.mermaid { margin: 0; background: transparent; font-family: var(--font-body); min-width: 560px; }
+
+ol.flow { counter-reset: s; list-style: none; padding-left: 0; }
+ol.flow > li { counter-increment: s; position: relative; padding-left: 34px; margin-block: 8px; }
+ol.flow > li::before { content: counter(s); position: absolute; left: 0; top: 2px; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font: 500 12px/22px var(--font-mono); text-align: center; }
+
+.lanes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-block: 12px; }
+@media (max-width: 760px) { .lanes { grid-template-columns: minmax(0, 1fr); } }
+.lane { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; min-width: 0; font-size: 13.5px; }
+.lane h5 { margin: 0 0 6px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+.lane ol { margin: 0; padding-left: 1.2em; }
+
+.pit { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 10px 16px; border-radius: 0 6px 6px 0; max-width: 74ch; margin-block: 12px; }
+.pit h4 { margin-top: 2px; color: var(--warn); }
+.pit ul { margin: 4px 0; }
+.chip { display: inline-block; font: 500 11px var(--font-mono); padding: 1px 7px; border-radius: 10px; background: var(--code-bg); color: var(--muted); margin-right: 4px; white-space: nowrap; }
+.chip.srv { background: var(--choco-soft); color: var(--choco); }
+.chip.own { background: var(--mint-soft); color: var(--mint); }
+.chip.all { background: var(--slate-soft); color: var(--slate); }
+.chip.bp { background: var(--warn-soft); color: var(--warn); }
+footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+a { color: var(--accent, var(--mint)); }
+</style>
+</head>
+<body>
+<div class="shell">
+<nav class="toc" aria-label="목차">
+	<h2>목차</h2>
+	<ol>
+		<li class="p-items"><a href="#items">1 · 아이템 GAS</a>
+			<ol>
+				<li><a href="#i-asc">ASC 위치와 초기화</a></li>
+				<li><a href="#i-life">아이템 생애</a></li>
+				<li><a href="#i-seq">발동 시퀀스</a></li>
+				<li><a href="#i-tags">태그 모델</a></li>
+				<li><a href="#i-table">아이템별 동작</a></li>
+				<li><a href="#i-status">스턴·슈퍼아머·넉백</a></li>
+				<li><a href="#i-net">복제 정리</a></li>
+				<li><a href="#i-add">아이템 추가 절차</a></li>
+			</ol>
+		</li>
+		<li class="p-unit"><a href="#unit">2 · 캐릭터 (AUnit)</a>
+			<ol>
+				<li><a href="#u-comp">구성</a></li>
+				<li><a href="#u-spawn">스폰과 빙의</a></li>
+				<li><a href="#u-move">이동 컴포넌트</a></li>
+				<li><a href="#u-hero">히어로 랜딩 상태 기계</a></li>
+				<li><a href="#u-face">몸 방향</a></li>
+				<li><a href="#u-aim">조준·사격 접점</a></li>
+				<li><a href="#u-anim">애니메이션</a></li>
+				<li><a href="#u-tick">프레임 흐름</a></li>
+				<li><a href="#u-add">캐릭터 추가 절차</a></li>
+			</ol>
+		</li>
+		<li class="p-online"><a href="#online">3 · 온라인·세션</a>
+			<ol>
+				<li><a href="#o-api">세션 서브시스템 API</a></li>
+				<li><a href="#o-join">방 만들기·참가</a></li>
+				<li><a href="#o-lobby">로비</a></li>
+				<li><a href="#o-travel">로비 → 경기</a></li>
+				<li><a href="#o-match">경기 단계</a></li>
+				<li><a href="#o-return">결과 → 로비 복귀</a></li>
+				<li><a href="#o-fade">화면 가림막</a></li>
+				<li><a href="#o-warm">Warmup·NetAssetRetainer</a></li>
+				<li><a href="#o-steam">Steam 설정</a></li>
+			</ol>
+		</li>
+		<li><a href="#notes">4 · 분석 중 발견한 점</a></li>
+	</ol>
+</nav>
+
+<main>
+<header class="doc">
+	<div class="eyebrow">MintChoco · UE 5.8 · Source/MintChoco</div>
+	<h1><span class="m">아이템</span>, <span class="c">캐릭터</span>, 온라인 흐름</h1>
+	<p>페인트 파이프라인을 뺀 세 시스템이 서버·소유 클라이언트·다른 클라이언트에서 각각 어떻게 도는지 코드 기준으로 정리했다. 근거 위치는 <code>Source/MintChoco/</code> 기준 <span class="ref">파일:줄</span>로 단다. 블루프린트 내부는 읽을 수 없어서 에셋 안의 이름 문자열로만 추정한 부분은 <span class="chip bp">BP 추정</span>으로 표시했다.</p>
+	<div class="legend">
+		<span><span class="chip srv">서버</span>권한 있는 쪽</span>
+		<span><span class="chip own">소유</span>조종하는 클라이언트</span>
+		<span><span class="chip all">전원</span>모든 머신에서 로컬로</span>
+	</div>
+</header>
+
+<!-- ============================== 1. ITEMS ============================== -->
+<section class="part" id="items">
+	<div class="part-head"><span class="num">01</span><h2>아이템 GAS 흐름</h2><span class="scope">Items/ · Game/Unit · Game/GameGameMode</span></div>
+
+	<div class="tldr"><strong>한눈에</strong>
+		<ul>
+			<li>ASC는 폰(AUnit)에 있고 Mixed 복제다. 어빌리티는 픽업 순간 서버가 부여한다.</li>
+			<li>모든 아이템은 <code>UItemProfile</code>(데이터) + <code>UItemAbility</code>(LocalPredicted GA) + 지속형이면 전용 <code>UItemGameplayEffect</code> 한 쌍이다.</li>
+			<li>아이템은 효과가 시작될 때만 슬롯에서 빠진다. 조준 중 취소하면 그대로 남는다.</li>
+			<li>상태는 GE의 <code>DynamicGrantedTags</code>로 실리고 연출은 각 머신이 태그 변화를 보고 로컬로 켠다. 이동에 영향을 주는 상태는 압축 이동 플래그로 간다.</li>
+			<li>비용·쿨다운 GE는 없다. <code>CommitAbility</code>는 늘 통과한다.</li>
+		</ul>
+	</div>
+
+	<h3 id="i-asc">ASC 위치와 초기화</h3>
+	<ul>
+		<li><code>AUnit : ACharacter, IAbilitySystemInterface</code>. 생성자에서 ASC를 만들고 <code>SetIsReplicated(true)</code>, <code>ReplicationMode = Mixed</code>로 둔다. <span class="ref">Game/Unit.cpp:130-132</span></li>
+		<li>아이템 효과는 폰에 속하므로 ASC도 PlayerState 대신 폰에 둔다. <span class="ref">Game/Unit.h:369-377</span></li>
+		<li><code>InitAbilityActorInfo(this, this)</code>: 서버는 <code>PossessedBy</code>, 클라이언트는 <code>OnRep_PlayerState</code>에서 부른다. <span class="ref">Unit.cpp:200-228</span></li>
+		<li>Mixed 모드이므로 GE 자체는 소유자에게만 복제되고 태그와 큐는 최소 복제로 모두에게 간다. 그래서 상태 태그로 모든 머신의 연출을 구동할 수 있다.</li>
+	</ul>
+
+	<h3 id="i-life">아이템의 생애</h3>
+	<h4>① 스폰 지점</h4>
+	<div class="table-wrap"><table>
+		<tr><th>모드</th><th>동작</th></tr>
+		<tr><td>Shared (기본)</td><td class="wrap">표식일 뿐이다. <code>AGameGameMode::StartItemSpawning</code>이 모아 <code>StartMatch</code>에서 시작한다. <code>ItemSpawnInterval</code> 15초 루프다. 첫 발화는 <code>Interval − Warning</code>(경고 5초)에 일어나 첫 아이템이 정확히 한 주기 뒤에 활성화된다. 빈 지점 중 무작위로 고르고 모두 차 있으면 그 회차를 건너뛴다. <span class="ref">GameGameMode.cpp:178-262</span></td></tr>
+		<tr><td>Standalone</td><td class="wrap">게임모드 목록에서 빠진다. 서버 BeginPlay에서 경고 없이 직접 픽업을 놓는다. 픽업이 사라지면 <code>RespawnDelay</code> 3초 레이저 경고 후 다시 놓는다. <span class="ref">ItemSpawnPoint.cpp:28-75</span></td></tr>
+		<tr><td>ChooseItem</td><td class="wrap"><code>FixedItem</code>이 있으면 그 아이템, 없으면 <code>UItemSettings::Items</code>(DefaultGame.ini)에서 무작위. ChocolateFountain 줄은 현재 주석 처리돼 있다. <span class="ref">Config/DefaultGame.ini:126-140</span></td></tr>
+	</table></div>
+
+	<h4>② 픽업</h4>
+	<ul>
+		<li>상태는 Announced(레이저만, 트리거 꺼짐) → Active 순이다. 서버 타이머가 <code>WarningTime</code> 뒤에 전환한다. <span class="ref">ItemPickup.cpp:128-138, 241-262</span></li>
+		<li>오버랩 판정은 <span class="chip srv">서버</span>에서만 한다. Active 상태여야 하고 아직 수거되지 않았어야 하며 닿은 것이 유닛의 캡슐이어야 한다. 통과하면 <code>Slot->GiveItem</code> → <code>bCollected</code> 복제 → 지점 해제 → <code>SetLifeSpan(1)</code> 순이다. 습득음이 클라이언트에 닿도록 수명을 1초 남긴다. <span class="ref">ItemPickup.cpp:300-333</span></li>
+		<li>슬롯은 하나뿐이라 새로 주우면 들고 있던 것을 대체한다.</li>
+	</ul>
+
+	<h4>③ 부여 <code>UItemSlotComponent::GiveItem</code> <span class="chip srv">서버</span></h4>
+	<ul>
+		<li>스펙은 <code>FGameplayAbilitySpec(AbilityClass, 1, INDEX_NONE, Item)</code>으로 만들고 프로필을 <code>SourceObject</code>로 둔다. <span class="ref">ItemSlotComponent.cpp:102-144</span></li>
+		<li>들고만 있던 이전 스펙은 지운다. 같은 클래스의 스펙이 효과 중이면 새로 만들지 않고 재사용한다(<code>RemoveAfterActivation=false</code>, SourceObject 교체). 같은 아이템을 효과 중에 다시 쓰는 재발동은 이 재사용에 기댄다.</li>
+		<li><code>HeldItem</code>은 <code>OnRep_HeldItem</code>으로 모두에게 복제된다. 서버는 <code>OnHeldItemChanged</code>를 직접 브로드캐스트한다.</li>
+	</ul>
+
+	<h4>④ 발동 정책 <code>UItemAbility</code></h4>
+	<div class="table-wrap"><table>
+		<tr><th>항목</th><th>값</th></tr>
+		<tr><td>InstancingPolicy</td><td><code>InstancedPerActor</code></td></tr>
+		<tr><td>NetExecutionPolicy</td><td><code>LocalPredicted</code></td></tr>
+		<tr><td>Retrigger</td><td><code>bRetriggerInstancedAbility = true</code></td></tr>
+		<tr><td>ActivationBlockedTags</td><td><code>State.Status.Stunned</code></td></tr>
+		<tr><td>Cost / Cooldown</td><td>없음</td></tr>
+	</table></div>
+	<p class="ref">ItemAbility.cpp:17-28</p>
+	<p>입력 경로: <code>ItemAction</code>(Started) → <code>AUnit::UseItem</code> → <code>ItemSlot->TryUseHeldItem()</code> → <code>TryActivateAbilityByClass</code>. 이 호출은 소유 클라이언트에서 일어난다. <span class="ref">Unit.cpp:853-884, ItemSlotComponent.cpp:195-206</span></p>
+
+	<h4>⑤ ActivateAbility → StartItem</h4>
+	<ol class="flow">
+		<li><code>CommitAbility</code>로 시작해 유닛과 프로필을 검증한다. 지속형인데 <code>EffectClass</code>가 없으면 실패한다. 이어서 <code>InterruptItemRecovery</code>로 진행 중인 끝 동작을 끊는다. <span class="ref">ItemAbility.cpp:60-105</span></li>
+		<li><b>조준형</b>이면 <code>bAiming</code>을 켜고 <code>Slot->SetAiming(true)</code>와 <code>OnAimStarted</code>를 부른 뒤 여기서 멈춘다. 이 시점에는 소모도 GE도 없다.</li>
+		<li><code>StartItem</code>: 서버에서 <code>ConsumeHeldItem</code>을 부르면 <code>SetRemoveAbilityOnEnd</code>가 설정되고 슬롯이 비워진다. <span class="ref">ItemAbility.cpp:107-127</span></li>
+		<li><b>즉발</b>(<code>Duration ≤ 0</code>): <code>PlayInstantUseFeedback</code>(로컬 재생 + 서버의 <code>MulticastItemUsed</code>) → <code>OnItemActivated</code> → <code>EndAbility</code>.</li>
+		<li><b>지속형</b>: <code>EffectClass</code>로 스펙을 만들고 SetByCaller <code>Data.Item.Duration</code>을 넣는다. <code>DynamicGrantedTags</code>에는 <code>StateTag</code>를 넣는다. 슈퍼아머를 주는 아이템이면 <code>State.Status.SuperArmor</code>도 함께 넣는다. 클라이언트는 예측으로, 서버는 권한으로 GE를 적용한다.</li>
+		<li>종료 대기는 양쪽이 다르다. 서버는 <code>WaitGameplayEffectRemoved</code>, 클라이언트는 <code>WaitDelay(EffectDuration)</code>으로 기다린다. 클라이언트가 예측 핸들의 제거를 기다리면 RTT 한 번 만에 끝나 버린다. <span class="ref">ItemAbility.cpp:166-188, ItemAbility.h:38-40</span></li>
+		<li>GE가 정상 만료되면 <code>BeginRecoveryOrEnd</code>로 넘어간다. <code>GetRecoveryDuration &gt; 0</code>이면 상태 태그 없이 어빌리티만 살아 있는 끝 동작 구간을 거친다. <span class="ref">ItemAbility.cpp:194-268</span></li>
+		<li><code>EndAbility</code>는 언제나 조준을 닫고 <code>OnItemEnded</code>를 정확히 한 번 부른다.</li>
+	</ol>
+
+	<h4>끝 동작(recovery)을 끊는 것</h4>
+	<ul>
+		<li>소유자가 트리거를 당겨 받아들여질 때 <span class="ref">Unit.cpp:897-906, 934-942</span></li>
+		<li>서버에서 사격이 나갈 때(<code>HandleWeaponFired</code>) <span class="ref">Unit.cpp:1266-1269</span></li>
+		<li>차지가 시작될 때 <span class="ref">Unit.cpp:1324-1327</span></li>
+		<li>다른 아이템이 발동될 때</li>
+	</ul>
+	<p>효과가 진행 중일 때는 위 어느 것도 끊지 않는다(<code>MintChoco.Items.Recovery.Flow</code>). <code>FinishItem</code>은 GE를 먼저 제거하고 끝 동작을 건너뛴다.</p>
+
+	<h4>조준 확정·취소</h4>
+	<p>좌클릭은 <code>StartFire</code> → <code>ItemSlot->HandleFireInput()</code>, 우클릭은 <code>HandleCancelInput()</code>으로 간다. <code>RouteItemInput</code>은 먼저 로컬에서 처리하고 조준 중이면서 권한이 없을 때만 <code>ServerItemInput</code>(Reliable)을 보낸다. 확정은 <code>EndAim(true)</code> + <code>StartItem</code>, 취소는 <code>EndAbility(cancelled)</code>다. 취소하면 아이템은 슬롯에 그대로 남는다. 애초에 가져가지 않았기 때문이다. 스턴에 걸려도 조준이 취소된다. <span class="ref">ItemSlotComponent.cpp:218-248, ItemAbility.cpp:315-339</span></p>
+
+	<h3 id="i-seq">발동 시퀀스</h3>
+	<div class="diagram"><div class="cap">픽업부터 종료까지 · 소유 클라이언트 / 서버 / 다른 클라이언트</div>
+<pre class="mermaid">
+sequenceDiagram
+    participant OC as 소유 클라이언트
+    participant S as 서버
+    participant OT as 다른 클라이언트
+    S->>S: 픽업 오버랩 → GiveItem (스펙 부여)
+    S-->>OC: HeldItem 복제 → HUD 갱신
+    S-->>OT: HeldItem 복제
+    OC->>OC: ItemAction → TryActivateAbilityByClass
+    OC->>OC: 예측 ActivateAbility
+    OC->>S: ServerTryActivateAbility
+    S->>S: ActivateAbility
+    opt 조준형 (꿀풍선, 디저트 폭격)
+        S-->>OT: bAiming 복제 (소유자 제외) → 자세·손 메시
+        OC->>OC: 미리보기 (궤적, 낙하 띠)
+        OC->>S: ServerItemInput (확정 또는 취소)
+    end
+    S->>S: StartItem → ConsumeHeldItem
+    S-->>OC: HeldItem = null
+    alt 즉발
+        S->>OT: MulticastItemUsed
+        S->>S: 복제 액터 스폰 (투사체, PaintRain, 돔)
+        S->>S: EndAbility
+    else 지속형
+        OC->>OC: 예측 GE → 태그 올라감 → 연출, 부스트 플래그
+        OC->>OC: WaitDelay(Duration)
+        S->>S: 실제 GE → WaitGameplayEffectRemoved
+        S-->>OT: 태그 복제 → 같은 연출
+        S->>S: 권한 작업 (칠하기, 볼리, 버스트, 스턴)
+        S->>S: GE 만료 → 끝 동작 또는 EndAbility
+        S->>OC: ClientEndAbility
+    end
+    S->>S: SetRemoveAbilityOnEnd → 스펙 제거
+</pre>
+	</div>
+
+	<h3 id="i-tags">태그 모델</h3>
+	<p>태그 정의 위치: <span class="ref">Items/ItemGameplayTags.cpp:5-12</span>. 다른 아이템을 막는 태그는 없어서 두 효과가 겹칠 수 있다. 오라 스택도 이를 전제로 만들어졌다.</p>
+	<div class="table-wrap"><table>
+		<tr><th>태그</th><th>막거나 켜는 것</th></tr>
+		<tr><td><code>State.Item.SweetSpinner</code></td><td class="wrap">두 총을 모두 막는다(<code>TriggerBlockedTags</code>). <code>PullTrigger</code>, 차지 판정, <code>ServerFire</code>에서 확인한다. <span class="ref">PaintWeaponComponent.cpp:37, 209, 367, 664</span></td></tr>
+		<tr><td><code>State.Item.HeroLanding</code></td><td class="wrap">총을 막고 이동과 점프를 잠그며 <code>FLAG_Custom_2</code>를 허가한다.</td></tr>
+		<tr><td><code>State.Item.SpeedStar</code></td><td class="wrap">속도 부스트 플래그를 허가하고 몸 오라와 아웃라인 셸을 켠다.</td></tr>
+		<tr><td><code>State.Item.InfiniteAmmo</code></td><td class="wrap"><code>FreeShotTags</code>를 통해 잉크 비용을 0으로 만들고 사격 간격을 0.1초 이하로, 차지를 0.5초 이하로 줄인다. 잉크병은 빨간 룩이 된다.</td></tr>
+		<tr><td><code>State.Status.Stunned</code></td><td class="wrap">아이템 발동, 총, 이동을 막고 당기고 있던 트리거를 취소한다.</td></tr>
+		<tr><td><code>State.Status.SuperArmor</code></td><td class="wrap">스턴과 넉백을 거부한다. 아웃라인과 소리를 켠다.</td></tr>
+		<tr><td><code>Data.Item.Duration</code></td><td class="wrap">지속시간을 넣는 SetByCaller 키.</td></tr>
+	</table></div>
+	<h4>태그 변화에 대한 슬롯의 반응 <span class="chip all">전원</span></h4>
+	<p><code>HandleTagChanged</code>는 말단 태그를 <code>UItemSettings::FindItemByStateTag</code>로 프로필에 되짚는다. 그래서 ini 목록에 없는 아이템은 연출이 나오지 않는다. 태그가 올라가면 <code>StartEffectFeedback</code>이 사용 애니메이션, <code>Audio.Item.Activate</code>, 오라 스택과 오버레이 재질, <code>ActivateFX</code>, <code>Audio.Item.Loop</code>를 켠다. 태그가 내려가면 <code>StopEffectFeedback</code>과 <code>Audio.Item.Expire</code>가 돈다. 속도 부스트 플래그는 소유자와 서버에서만 켠다. <span class="ref">ItemSlotComponent.cpp:533-710</span></p>
+
+	<h3 id="i-table">아이템별 동작</h3>
+	<div class="table-wrap"><table>
+		<tr><th>아이템</th><th>종류</th><th>동작 · 실행 위치 · 스폰하는 것</th></tr>
+		<tr><td>SweetSpinner</td><td>지속 + 끝 동작</td><td class="wrap">두 트리거를 놓게 한다. 서버와 소유자가 각자 <code>SetItemPoseOverride</code>로 자세 단계를 돌리고 <code>PoseOverride</code>는 소유자를 빼고 복제된다. 서버는 볼리 구간 안에서 <code>UAbilityTask_Repeat</code>로 손 소켓에서 <code>Volley->Fire</code>를 쏜다. <code>MulticastSpinnerShot</code>은 나머지 머신에 연출용 탄을 만든다. GE 길이는 효과 구간, 끝 동작 길이는 End 구간과 같다.</td></tr>
+		<tr><td>SpeedStar</td><td>지속</td><td class="wrap">속도는 프로필에 없고 <code>SpeedBoostMultiplier</code> 1.5가 정한다. 대시 배율과 곱해진다. <code>FLAG_Custom_1</code>로 보내고 서버가 허가한다. 서버는 <code>BeginStarPaint</code> 잠금을 걸고 틱마다 <code>TrailDeposit</code>으로 자국을 남긴다. 슈퍼아머는 기본으로 켜져 있으며 아이템 GE에 같이 실린다.</td></tr>
+		<tr><td>InfiniteAmmo</td><td>지속</td><td class="wrap">효과는 전부 태그가 낸다. 재발동 때 잉크병 점멸만 다시 시작한다. 갱신은 태그 수가 1에서 1로 머물러 태그 이벤트가 오지 않기 때문이다.</td></tr>
+		<tr><td>HeroLanding</td><td>지속(안전 상한)</td><td class="wrap">소유자가 <code>FLAG_Custom_2</code>를 켜면 이동 컴포넌트의 단계 기계가 돈다. 착지 표시(<code>ALandingMarker</code>)는 소유자에게만 있다. Rise/Hover 중 좌클릭은 RPC 없이 <code>FLAG_Custom_3</code>(다이브)에 실려 간다. 착지하면 서버가 차지 배율을 적용한 <code>APaintBurst</code>와 범위 스턴·넉백을 낸다. 그다음 모든 쪽이 <code>FinishItem</code>을 부른다.</td></tr>
+		<tr><td>HoneyBalloon</td><td>즉발 · 조준</td><td class="wrap">조준 궤적(<code>AItemAimPreview</code>)은 소유자에게만 보인다. 확정하면 서버가 복제되는 <code>AHoneyBalloonProjectile</code>을 던진다. 지형이나 유닛(아군 포함)에 닿으면 버스트와 범위 스턴을 낸다. 넉백은 없다.</td></tr>
+		<tr><td>Bee</td><td>즉발</td><td class="wrap">서버가 가장 가까운 상대를 노리는 <code>ABeeProjectile</code>을 스폰한다. 조향, 자국, 수명은 서버에서만 돈다. 적중·충돌·만료 시 버스트와 스턴을 낸다. 적 페인트를 <code>Health</code>만큼 맞으면 조용히 사라진다.</td></tr>
+		<tr><td>DessertBombardment</td><td>즉발 · 조준</td><td class="wrap">소유자에게만 보이는 Niagara 띠가 바라보는 방향으로 맵 경계까지 뻗는다. 확정하면 서버가 <code>APaintRain::Spawn</code>을 부른다. <code>Params</code>는 처음 한 번만 복제된다. 모든 머신이 같은 타이머로 행을 떨어뜨리고 서버의 탄만 칠한다.</td></tr>
+		<tr><td>ChocolateFountain</td><td>즉발 (드롭 목록에서 빠짐)</td><td class="wrap">서버가 발밑에 돔과 아군 팀 버스트를 만든다. 아군은 통과한다. 생성 순간 안에 있던 적은 <code>PassThrough</code> 목록에 넣고 넉백한다. 적 페인트탄은 돔 벽에서 소멸한다.</td></tr>
+	</table></div>
+
+	<h3 id="i-status">상대가 거는 상태: 스턴, 슈퍼아머, 넉백</h3>
+	<ul>
+		<li>스턴은 <code>AUnit::TryApplyStun(Stun, SuperArmor)</code> 하나로만 건다 <span class="chip srv">서버</span>. 권한이 없거나, 시간이 0 이하이거나, 이미 스턴 중이거나, 슈퍼아머가 있으면 거부하고 이유를 로그로 남긴다. 따라서 스턴은 겹치거나 갱신되지 않는다. <span class="ref">Unit.cpp:466-515</span></li>
+		<li>스턴이 끝나면 <code>HandleStunEnded</code>가 예약해 둔 시간만큼 <code>UGE_SuperArmor</code>를 건다. 인자 없는 버전의 기본값은 스턴 2초, 아머 4초다.</li>
+		<li>아이템은 <code>FItemAreaEffect::Apply</code>를 거친다. 같은 팀과 자신은 빼고 반경에 캡슐 반지름을 더하며 넉백을 먼저 적용한다. 무기는 <code>FPaintDeposit::StrikeUnit</code>을 거친다.</li>
+		<li>슈퍼아머를 주는 출처는 두 가지다. 스턴 뒤의 GE와 아이템 GE에 덧붙인 태그다. 태그 수가 쌓이므로 둘 다 끝나야 풀린다.</li>
+		<li>넉백: 서버에서만 <code>LaunchCharacter</code>를 부른다(수평 900, 위 350). 슈퍼아머 중에는 무시되고 다음 위치 보정이 결과를 소유자에게 전한다. <span class="ref">Unit.cpp:655-674</span></li>
+	</ul>
+
+	<h3 id="i-net">복제 정리</h3>
+	<div class="table-wrap"><table>
+		<tr><th>구분</th><th>항목</th></tr>
+		<tr><td>권한 상태</td><td class="wrap">ASC GE와 태그(Mixed), <code>HeldItem</code>, 픽업의 <code>Profile/State/bCollected</code>, 아이템 투사체(복제 이동, 클라이언트 사본은 콜리전 없음), <code>APaintRain::Params</code>, 돔의 <code>PassThrough</code>, <code>ReplicatedHeroPhase</code></td></tr>
+		<tr><td>이동 플래그</td><td class="wrap"><code>FLAG_Custom_1</code> 부스트, <code>_2</code> 히어로 랜딩, <code>_3</code> 다이브. 모두 서버가 검증한다.</td></tr>
+		<tr><td>RPC</td><td class="wrap">GAS 내장(<code>ServerTryActivateAbility</code>, <code>ClientEndAbility</code>), <code>ServerItemInput</code>(Reliable), <code>ServerDebugGiveItem</code>. Unreliable 멀티캐스트: <code>MulticastItemUsed</code>, <code>MulticastSpinnerShot</code>, <code>MulticastPlayFXAt</code></td></tr>
+		<tr><td>로컬 연출</td><td class="wrap">오라, FX, 루프·만료음, <code>bAiming</code>, <code>PoseOverride</code>(소유자 제외 복제), 손에 든 메시, 픽업 흔들림, 착지 표시, 모든 조준 미리보기</td></tr>
+	</table></div>
+
+	<h3 id="i-add">아이템 추가 절차</h3>
+	<ol class="flow">
+		<li><code>UMyItemProfile : UItemProfile</code>에 튜닝 값을 둔다. 필요하면 <code>GrantsSpeedBoost</code>, <code>GrantsSuperArmor</code>, <code>OverridesInkLook</code>, <code>LogUnsetReferences</code>를 오버라이드한다.</li>
+		<li><code>UGA_MyItem : UItemAbility</code>를 만들고 <code>OnItemActivated</code>와 <code>OnItemEnded</code>를 구현한다. 서버 전용 작업은 <code>IsAuthority()</code>로 나눈다. 필요하면 조준(<code>IsAimingItem</code>, <code>OnAimStarted/Ended</code>), 입력(<code>WantsInput</code>, <code>HandleInput</code>), 끝 동작(<code>GetRecoveryDuration</code>, <code>OnRecoveryStarted</code>)도 구현한다.</li>
+		<li><b>지속형</b>: <code>ItemGameplayTags</code>에 태그를 추가하고 전용 <code>UGE_MyItem : UItemGameplayEffect</code>를 만든다(스택이 섞이지 않게). 생성자에서 <code>StateTag</code>와 <code>EffectClass</code>를 지정한다. <b>즉발</b>: <code>Duration = 0</code>으로 두고 효과는 복제되는 액터가 맡게 한다.</li>
+		<li>이동에 영향을 주는 상태가 있다면 서버가 허가하는 압축 이동 플래그로 보낸다. GAS 속성으로 보내지 않는다.</li>
+		<li><code>/Game/Blueprints/Items</code>에 DA 에셋을 만든다. 오라 재질은 Skeletal Mesh 사용이 허용돼 있어야 한다.</li>
+		<li><code>DefaultGame.ini</code>의 <code>[/Script/MintChoco.ItemSettings]</code>에 <code>+Items=</code>를 추가한다. 빠뜨리면 드롭되지 않고 연출도 찾지 못한다.</li>
+		<li><code>MintChoco.Items.ProfileAssets</code> 테스트를 늘린다. 스크래치 에셋에서 먼저 시험한다. Live Coding이 꺼져 있으니 리빌드한 뒤 에디터를 재시작한다.</li>
+	</ol>
+</section>
+
+<!-- ============================== 2. UNIT ============================== -->
+<section class="part" id="unit">
+	<div class="part-head"><span class="num">02</span><h2>캐릭터 (AUnit) 흐름</h2><span class="scope">Game/Unit · UnitMovementComponent · UnitAnimInstance</span></div>
+
+	<div class="tldr"><strong>한눈에</strong>
+		<ul>
+			<li><code>AUnit</code>은 플레이어와 AI가 함께 쓰는 유일한 캐릭터 클래스다. 민트와 초코의 차이는 <code>UUnitDataAsset</code>에만 있다. 클래스 안에 "민트인가?" 분기를 두지 않는다.</li>
+			<li>이동은 속도 값 대신 의도를 압축 플래그 4개(대시, 부스트, 히어로 랜딩, 다이브)에 실어 보낸다.</li>
+			<li>몸 방향은 이동 컴포넌트가 정한다. <code>bUseControllerRotationYaw</code>는 끈 채로 둔다.</li>
+			<li>HP, 사망, 리스폰은 없다. 경기의 "KO"는 커버리지 차이로 내는 판정이다.</li>
+		</ul>
+	</div>
+
+	<h3 id="u-comp">구성</h3>
+	<div class="table-wrap"><table>
+		<tr><th>컴포넌트</th><th>설정 · 역할</th></tr>
+		<tr><td>CameraBoom / FollowCamera</td><td class="wrap">암 길이 350, 소켓 오프셋 (0,60,60). 붐이 컨트롤 회전을 따르고 카메라 랙은 15다. <span class="ref">Unit.cpp:91-108</span></td></tr>
+		<tr><td>CameraProbe</td><td class="wrap">반지름 40 구체로 Pawn과만 겹친다. 다른 플레이어의 카메라가 이 유닛 안으로 들어오면 총, 보드, 셸을 숨긴다.</td></tr>
+		<tr><td>PaintWeapon / SecondaryWeapon</td><td class="wrap"><code>UPaintWeaponComponent</code> 두 개(주 사격, 보조 사격).</td></tr>
+		<tr><td>InkTank</td><td class="wrap">잉크 양을 복제한다. 소유자가 소비를 예측하고 충전은 서버만 한다. 대시 중에는 충전 속도가 3배다.</td></tr>
+		<tr><td>AbilitySystem / ItemSlot</td><td class="wrap">1장 참고.</td></tr>
+		<tr><td>InkBottle / Glass / Surface</td><td class="wrap">등에 멘 잉크병. 무기의 복제된 PaintId를 따라 색이 정해진다.</td></tr>
+		<tr><td>GunMesh / HeldItemMesh / BoardMesh</td><td class="wrap">기본은 숨김이고 콜리전이 없다.</td></tr>
+		<tr><td>OutlineMesh / AuraMesh</td><td class="wrap">메인 메시의 포즈를 따라가는 스켈레탈 "셸". 슈퍼아머 아웃라인과 스피드스타 오라에 쓴다.</td></tr>
+	</table></div>
+	<p>액터 틱은 꺼져 있다. 이동 컴포넌트는 ObjectInitializer로 <code>UUnitMovementComponent</code>로 바꿔 끼운다. <code>GetUnitMovement()</code>는 BP가 컴포넌트를 재인스턴스하면 캐시가 낡을 수 있어서 매번 캐스트한다. <span class="ref">Unit.cpp:72-77, 768-771</span></p>
+
+	<h4>캐릭터는 데이터다 (UUnitDataAsset)</h4>
+	<p><code>DisplayName</code>, <code>Mesh</code>, <code>AnimClass</code>, <code>GunMesh</code>, <code>BoardMesh</code>, <code>GunVisibleHoldTime</code>(0.5), <code>ActionFeedback</code>(Dash/Fire/Charge/Stun 등 → 몽타주·FX·소켓), 오버라이드 사운드 뱅크를 담는다. <code>ApplyUnitData</code>는 메시 교체부터 시작한다. <span class="ref">Unit.cpp:1608-1694</span></p>
+	<ol class="flow">
+		<li><code>SetSkeletalMesh</code> 다음에 <code>SetAnimInstanceClass</code>를 부른다. 메시를 바꾸면 애님 인스턴스가 다시 만들어지므로 순서가 중요하다.</li>
+		<li>소켓 이름으로 다시 붙인다: <code>InkBottle</code>, <code>Gun</code>, <code>Board</code>.</li>
+		<li>두 셸에 메시를 복사하고 리더 포즈를 설정한 뒤 셸 재질을 채운다.</li>
+		<li>두 무기에 <code>SetMuzzleSource(GunMesh, "Muzzle")</code>를 부른다. 이 소켓은 FX 전용이다.</li>
+	</ol>
+
+	<h4>입력 (UUnitInputConfig + Enhanced Input)</h4>
+	<p>조작은 플레이어에 속하는 설정이라 UnitData와 따로 둔다. 바인딩은 로컬 플레이어가 조종하는 폰에서만 일어나므로 AI는 자동으로 빠진다. <span class="ref">Unit.cpp:773-876</span></p>
+	<div class="table-wrap"><table>
+		<tr><th>액션</th><th>트리거 → 처리</th></tr>
+		<tr><td>Move / Look</td><td class="wrap">Triggered. Move는 카메라 요 기준이고 잠금 중에는 버린다. Look에는 DeltaTime을 곱하지 않는다.</td></tr>
+		<tr><td>Dash</td><td class="wrap">Started → <code>StartDash</code>, Completed와 Canceled → <code>StopDash</code></td></tr>
+		<tr><td>Jump</td><td class="wrap">Started → <code>Jump</code>, Completed → <code>StopJumping</code></td></tr>
+		<tr><td>Fire / SecondaryFire</td><td class="wrap">Started/Completed/Canceled → Pull/Release/Cancel. Cancel이 있어서 입력을 빼앗겼을 때 차지 샷이 나가지 않는다. 먼저 <code>ItemSlot->HandleFireInput()</code>에 물어 조준 중인 아이템이 입력을 가져가게 한다. 두 트리거는 동시에 쓸 수 없다.</td></tr>
+		<tr><td>Item</td><td class="wrap">Started → <code>UseItem</code></td></tr>
+		<tr><td>1–8 (Shipping 제외)</td><td class="wrap">디버그용 아이템 지급</td></tr>
+	</table></div>
+
+	<h3 id="u-spawn">스폰과 빙의</h3>
+	<ul>
+		<li><b>팀 복사</b>: 로비에서 seamless travel로 넘어올 때 <code>BP_LobbyPlayerState</code>의 <code>ReceiveCopyProperties</code>가 Team을 옮긴다 <span class="chip bp">BP 추정</span>. 엔진이 이 복사를 마친 뒤에 ChoosePlayerStart와 폰 스폰을 부르므로, 게임모드의 모든 훅에서 <code>GetTeam()</code>을 믿을 수 있다.</li>
+		<li><code>Team</code>의 기본값은 <code>Teams::None</code>(-1)이다. 복사가 빠졌을 때 조용히 민트로 처리되는 것을 막기 위해서다. (Mint 0, Choco 1)</li>
+		<li><code>ShouldSpawnAtStartSpot = false</code>. true면 seamless travel이 캐시한 StartSpot을 매번 다시 쓴다.</li>
+		<li><b>ChoosePlayerStart</b> 우선순위: 우리 팀의 빈 지점 → 중립 빈 지점 → 우리 팀 지점(점유돼도) → 중립 지점 → 엔진 기본. 후보는 가장 가까운 적과의 거리로 정렬한 뒤 상위 3개 중 무작위로 고른다. <span class="ref">GameGameMode.cpp:439-626</span></li>
+		<li><b>지연 스폰</b>: <code>SpawnDefaultPawnAtTransform</code>이 폰을 지연 스폰하고 <code>SetUnitData(TeamUnitData[Team])</code> 다음에 <code>FinishSpawning</code>을 부른다. PostInitializeComponents가 처음부터 올바른 메시를 보게 되어 깜빡임이 없다.</li>
+		<li><b>팀 색</b>: <code>ApplyTeamToWeapon</code>은 여러 번 불러도 안전하다. 도착 순서가 보장되지 않아서 <code>PossessedBy</code>, <code>OnRep_PlayerState</code>, <code>AGamePlayerState::OnRep_Team</code> 세 곳에서 부른다.</li>
+	</ul>
+	<div class="diagram"><div class="cap">스폰·초기화 순서 · 서버 / 소유 클라이언트 / 시뮬레이티드 프록시</div>
+<pre class="mermaid">
+sequenceDiagram
+    participant S as 서버
+    participant OC as 소유 클라이언트
+    participant SP as 시뮬레이티드 프록시
+    S->>S: Seamless travel → CopyProperties (Team)
+    S->>S: ChoosePlayerStart (팀 → 중립 → 대체)
+    S->>S: 지연 스폰 → SetUnitData(TeamUnitData[Team])
+    S->>S: FinishSpawning → PostInitializeComponents (ApplyUnitData, 델리게이트 연결)
+    S->>S: BeginPlay (태그 이벤트 등록)
+    S->>S: PossessedBy → InitAbilityActorInfo, ApplyTeamToWeapon
+    S-->>OC: 액터 채널 열림
+    S-->>SP: 액터 채널 열림
+    OC->>OC: PostInitializeComponents (BP 기본 UnitData)
+    OC->>OC: OnRep_UnitData → ApplyUnitData
+    OC->>OC: OnRep_PlayerState → InitAbilityActorInfo, ApplyTeamToWeapon
+    OC->>OC: PawnClientRestart (카메라 프로브 켬)
+    OC->>OC: SetupPlayerInputComponent (매핑 컨텍스트)
+    SP->>SP: OnRep_UnitData, OnRep_PlayerState, OnRep_PaintId → 잉크병 색
+    OC->>OC: 0.2초 폴링 (폰 있음, 가림막 열림)
+    OC->>S: ServerSetReady
+    S->>S: 모두 준비 → Countdown → Playing
+    S-->>OC: OnRep_MatchPhase → 입력 잠금 해제
+</pre>
+	</div>
+
+	<h3 id="u-move">이동 컴포넌트 (UUnitMovementComponent)</h3>
+	<p>MaxWalkSpeed를 직접 바꾸면 서버와 보정 재생이 서로 다른 값을 계산해 고무줄 현상이 난다. 그래서 의도만 압축 플래그로 보내고 양쪽이 같은 식으로 속도를 계산한다. <span class="ref">UnitMovementComponent.h:123-142</span></p>
+	<ul>
+		<li><code>GetMaxSpeed</code>: 잠금 중이면 0, 아니면 기본 속도 × 1.5(부스트 중) × 1.7(대시 중).</li>
+		<li><code>ConstrainInputAcceleration</code>은 잠금 중에 가속을 0으로 만든다. 서버는 클라이언트가 보낸 가속을 그대로 쓰므로 이 처리가 이동 컴포넌트에 있어야 한다.</li>
+		<li><b>잠금 조건</b>: 히어로 단계 ≠ None이거나, 경기 단계 ≠ Playing이거나, Stunned 태그 또는 HeroLanding 태그가 있을 때. 점프도 같은 조건으로 막는다.</li>
+	</ul>
+	<div class="table-wrap"><table>
+		<tr><th>플래그</th><th>의미</th><th>서버 검증</th></tr>
+		<tr><td><code>FLAG_Custom_0</code></td><td>대시</td><td>—</td></tr>
+		<tr><td><code>FLAG_Custom_1</code></td><td>속도 부스트</td><td class="wrap"><code>IsSpeedBoostAuthorized</code>(SpeedStar 태그)</td></tr>
+		<tr><td><code>FLAG_Custom_2</code></td><td>히어로 랜딩</td><td class="wrap">태그가 있거나 아이템을 아직 들고 있을 때</td></tr>
+		<tr><td><code>FLAG_Custom_3</code></td><td>지금 다이브</td><td>—</td></tr>
+	</table></div>
+	<ul>
+		<li><code>FSavedMove_Unit</code>은 히어로 상태 전체(단계, 단계 시간, 이륙점, 다이브 목표와 요, 접근점, 차지, 장전 여부)를 저장한다. <code>PrepMoveFor</code>는 델리게이트를 쏘지 않고 필드만 복원하므로 재생 중에 연출이 다시 나가지 않는다. <code>CanCombineWith</code>는 플래그가 다르거나 히어로 단계가 진행 중인 무브를 합치지 않는다.</li>
+		<li><b>대시</b>: <code>SetWantsToDash</code>는 값이 실제로 바뀔 때만 이벤트를 낸다(소유자는 입력, 서버는 플래그에서). <code>HandleDashStateChanged</code>는 <code>bIsDashing</code>을 쓰고(소유자 제외 복제라 소유자가 직접 써야 한다) 두 트리거를 취소하며 잉크 충전을 3배로 올리고 대시 FX를 켠다.</li>
+		<li><b>넉백</b>은 이동 단계가 아니다. 서버의 <code>LaunchCharacter</code> 한 번이다. <code>Launch</code>는 히어로 단계(Recover 포함) 중에 무시된다.</li>
+		<li><b>점프 패드</b>: 복제되지 않는다. 캡슐 오버랩 시 소유자 또는 서버만 Z를 1200으로 덮어써 띄운다. XY는 유지한다.</li>
+	</ul>
+
+	<h3 id="u-hero">히어로 랜딩 상태 기계</h3>
+	<div class="diagram"><div class="cap">EHeroLandingPhase · MOVE_Custom 서브모드 1 → 다이브는 MOVE_Falling</div>
+<pre class="mermaid">
+stateDiagram-v2
+    [*] --> None
+    None --> Rise : 플래그 0→1, 장전됨
+    Rise --> Hover : RiseHeight 도달 또는 천장
+    Hover --> Dive : 시간 초과 또는 다이브 플래그 (목표가 낮음)
+    Hover --> Approach : 목표가 더 높음
+    Approach --> Dive : 상승 → 수평 이동 → 수직 낙하
+    Dive --> Recover : Landed → FinishHeroLandingDive
+    Recover --> None : 회복 시간 경과
+    Rise --> None : 중단 (Rise와 Hover에서만)
+    Hover --> None : 중단
+</pre>
+	</div>
+	<p>프록시는 상태 기계를 돌리지 않는다. <code>OnRep_HeroLandingPhase</code> → <code>SetSimulatedHeroLandingPhase</code>로 단계만 받는다. 무중력 판정에 단계가 필요해서다. 착지하면 <code>FinishHeroLandingDive</code>가 캡슐을 <code>HeroDiveYaw</code>로 돌린다. 다이브 중 기울기는 메시로만 준다. <span class="ref">UnitMovementComponent.cpp:443-666</span></p>
+
+	<h3 id="u-face">몸 방향</h3>
+	<ul>
+		<li><code>bUseControllerRotationYaw/Pitch/Roll</code>은 모두 false이고 <code>bOrientRotationToMovement</code>도 false다. 컨트롤 회전은 붐만 따른다.</li>
+		<li>이동 컴포넌트는 <code>bUseControllerDesiredRotation</code>(720°/s)을 켜 두지만 <code>PhysicsRotation</code>은 <code>ShouldFaceControlRotation()</code>이 참일 때만 돈다. 그 조건은 잠금이 아니면서 가속이 있거나 <code>WantsToFaceAim()</code>이 참인 경우다. <code>WantsToFaceAim()</code>은 트리거를 당기거나, 조준하거나, 차지하는 중이거나, 마지막 사격 후 0.5초 이내일 때 참이다.</li>
+		<li><code>LastFireTime</code>은 데디케이티드 서버의 조기 반환보다 먼저 기록한다. 그래야 서버도 같은 답을 낸다.</li>
+		<li>대시 중이거나 대시 후 방향을 따라잡는 중이면 <code>FBoardTurn::Step</code>이 요를 정한다. 보정 재생(<code>bClientUpdating</code>) 중에는 건너뛴다.</li>
+		<li>컨트롤러 요를 다시 켜면 매 프레임 몸이 카메라로 스냅되어 가만히 서서 둘러보는 동작이 불가능해진다. 프록시의 요는 엔진이 보간한 복제 회전이다.</li>
+	</ul>
+
+	<h3 id="u-aim">조준·사격 접점</h3>
+	<ul>
+		<li>발사 원점은 <code>PaintAim::FireOrigin(ViewOrigin, ViewDir, PawnLocation, 30)</code>이다. 시선 광선 위에서 폰의 깊이에 해당하는 점이다. 서버는 <code>ServerFire</code>로 소유자의 시점을 받는다. <span class="ref">PaintWeaponComponent.cpp:660-754, PaintAimMath.h:19-23</span></li>
+		<li>총 메시의 <code>Muzzle</code> 소켓은 <code>VisualMuzzle</code>로만 쓴다(총구 화염, 트레이서 시작점, 총에서 비행 경로로 이어지는 시각적 합류). 이 소켓은 포즈에 따라 흔들리고 소유자와 서버에서 위치가 달라서 판정에 쓰지 않는다.</li>
+		<li><code>IsTriggerBlocked</code>: 경기 단계가 Playing이 아니거나, 대시 중이거나, SweetSpinner/HeroLanding/Stunned 태그가 있을 때.</li>
+	</ul>
+
+	<h3 id="u-anim">애니메이션 (UUnitAnimInstance)</h3>
+	<div class="table-wrap"><table>
+		<tr><th>변수</th><th>계산 방식</th></tr>
+		<tr><td>MoveForward/Right, GroundSpeed</td><td class="wrap">이동 컴포넌트의 <code>Velocity</code>에서 계산하고 위치 차분은 쓰지 않는다. 리슨 호스트에서 애니메이션이 느려 보이는 함정을 피한다.</td></tr>
+		<tr><td>bIsInAir</td><td class="wrap">Falling, Flying, Custom 중 하나</td></tr>
+		<tr><td>AimPitch</td><td class="wrap"><code>GetBaseAimRotation</code>. 원격 폰에서만 속도 18로 보간한다.</td></tr>
+		<tr><td>bDashAnimationActive</td><td class="wrap">Locomotion 상태 이름이 "Dash"로 시작하면 참이다. 보드 표시도 키 입력 대신 이 값을 따른다.</td></tr>
+		<tr><td>BoardLean</td><td class="wrap"><code>atan(v·ω/g)</code>, g=10000, 최대 25°</td></tr>
+		<tr><td>HeroLandingPhase, HeroDiveTilt</td><td class="wrap">다이브가 끝나는 프레임에는 기울기의 요를 버린다.</td></tr>
+		<tr><td>bWeaponPoseHeld</td><td class="wrap">(조준 중 또는 최근 사격) 그리고 대시 중이 아님</td></tr>
+		<tr><td>ItemPose</td><td class="wrap">ItemSlot에서 받는다. 블렌드 아웃 중 T포즈가 보이지 않도록 마지막 클립을 유지한다.</td></tr>
+	</table></div>
+	<p>메시 회전을 쓰는 곳은 <code>SetMeshOffset(Pitch, Yaw, Lean)</code> 한 곳뿐이다. 이 함수는 <code>CacheInitialMeshOffset</code>도 다시 써서 네트워크 스무딩이 회전을 덮어쓰지 않게 한다. 발소리(<code>UAnimNotify_Footstep</code>)는 각 머신에서 로컬로 난다. <code>BobMotion</code>은 픽업과 풍선이 쓰고 유닛은 쓰지 않는다.</p>
+
+	<h3 id="u-tick">프레임 흐름</h3>
+	<div class="lanes">
+		<div class="lane"><h5>소유 클라이언트</h5><ol>
+			<li>입력 → Move, Look, <code>SetWantsToDash</code></li>
+			<li>이동: 상태 갱신(히어로 장전, 중단, 회복) → <code>GetMaxSpeed</code>, 가속 제한 → Phys*/PhysCustom → <code>PhysicsRotation</code></li>
+			<li><code>SetMoveFor</code> → <code>ServerMove</code>(Custom 0–3)</li>
+			<li>사격 → <code>FireOrigin</code> → <code>ServerFire</code> → OnFired(총 표시, 몽타주, LastFireTime)</li>
+			<li>애님 갱신 → 보드 표시, <code>SetMeshOffset</code></li>
+		</ol></div>
+		<div class="lane"><h5>서버</h5><ol>
+			<li><code>ServerMove</code> → <code>UpdateFromCompressedFlags</code>(부스트, 히어로 검증)</li>
+			<li>같은 이동 경로 실행 → 대시·히어로 이벤트 → 복제 프로퍼티 갱신</li>
+			<li><code>ServerFire</code> → <code>MulticastShotFired</code></li>
+			<li>잉크 충전 틱, Landed → <code>FinishHeroLandingDive</code></li>
+			<li>오차가 생기면 <code>ClientAdjustPosition</code> → 소유자가 <code>PrepMoveFor</code>로 재생</li>
+		</ol></div>
+		<div class="lane"><h5>시뮬레이티드 프록시</h5><ol>
+			<li>복제 이동 + 스무딩 (PhysicsRotation과 단계 기계 없음)</li>
+			<li><code>OnRep_IsDashing</code>, <code>OnRep_HeroLandingPhase</code></li>
+			<li><code>MulticastShotFired</code> → OnFired</li>
+			<li>애님 갱신(로컬 속도로 기울기 계산), ASC 태그 이벤트</li>
+		</ol></div>
+	</div>
+
+	<h3 id="u-add">캐릭터 추가 절차</h3>
+	<ol class="flow">
+		<li><code>UUnitDataAsset</code>을 만든다. 메시에는 <code>InkBottle</code>, <code>Gun</code>, <code>Board</code>(foot_l) 소켓이 있어야 한다. AnimClass는 <code>UUnitAnimInstance</code>를 상속하고 <code>Locomotion</code> 상태 기계, <code>Dash*</code> 상태, <code>UpperBody</code> 슬롯을 갖춰야 한다. 공용 ABP를 재사용해도 된다. GunMesh에는 <code>Muzzle</code> 소켓이 필요하다. ActionFeedback은 Dash/Fire/Charge/Stun을 채운다.</li>
+		<li><code>BP_GameMode</code>의 <code>TeamUnitData[팀]</code>에 지정한다. 3팀째가 필요하면 <code>Teams::Count</code>와 팀 룩 항목도 늘려야 한다. 런타임 교체는 서버의 <code>SetUnitData</code>로 한다.</li>
+		<li>AUnit을 상속하거나 캐릭터 분기를 추가하지 않는다. 소켓이 빠지면 부착물이 메시 원점에 붙은 모습으로 드러난다.</li>
+	</ol>
+
+	<div class="pit"><h4>캐릭터 함정 (Traps.md)</h4><ul>
+		<li>컨트롤러 요는 C++에서도 BP_Unit에서도 다시 켜지 않는다. 방향 조건은 서버도 가진 데이터만 읽어야 한다.</li>
+		<li>스턴과 잠금은 입력 핸들러뿐 아니라 이동 컴포넌트에서도 걸어야 한다.</li>
+		<li>부스트는 플래그로 보내고 GE 속성으로 보내지 않는다. 부스트와 대시는 곱해진다.</li>
+		<li>히어로 랜딩은 0→1 엣지에서만 시작한다. 다이브는 중단하지 않는다. 기울기는 캡슐 대신 메시로 주고 <code>SetMeshOffset</code>을 쓰는 곳은 하나로 유지한다.</li>
+		<li>착지음과 점프 패드 소리는 소유자와 서버에서만 들린다. 실제로 쓰이는 무기 에셋은 <code>_Test/*_T</code> 사본이다.</li>
+	</ul></div>
+</section>
+
+<!-- ============================== 3. ONLINE ============================== -->
+<section class="part" id="online">
+	<div class="part-head"><span class="num">03</span><h2>온라인 서브시스템 · 세션 · 맵 흐름</h2><span class="scope">OnlineSessionsSubsystem · Room · Lobby · Screen</span></div>
+
+	<div class="tldr"><strong>한눈에</strong>
+		<ul>
+			<li>맵 순서: <code>Title</code> → <code>Room</code>(방 목록) → <code>Lobby?listen</code> → <code>Lvl_*</code> → 결과 연출 → <code>Lobby</code>. 로비와 경기 사이는 seamless travel이다.</li>
+			<li>Create, Find, Join, Destroy는 C++ <code>UOnlineSessionsSubsystem</code>이 맡는다. StartSession은 BP(AdvancedSessions)가, EndSession은 C++ <code>AGameGameMode</code>가 맡는다.</li>
+			<li>모든 이동은 <code>UScreenFadeSubsystem</code>을 거친다. 가림막이 열려야 준비 보고가 나가고 그 보고가 있어야 카운트다운이 시작된다.</li>
+			<li>Steam 로비는 비공개 키 <code>MINTCHOCO_ID</code>와 <code>BuildIdOverride</code>로 거른다. 둘 중 하나라도 바꾸면 두 PC 모두 다시 패키징해야 한다.</li>
+		</ul>
+	</div>
+
+	<h3 id="o-api">세션 서브시스템 API</h3>
+	<p><code>UOnlineSessionsSubsystem</code>은 GameInstance 서브시스템이다. <code>Online::GetSubsystem(GetWorld())</code>로 서브시스템을 얻는다. PIE 창마다 인스턴스가 따로 있어야 해서다. 이름이 <code>"NULL"</code>이면 LAN으로 간주한다. Create, Find, Join, Destroy, InviteAccepted 델리게이트와 <code>OnNetworkFailure</code>를 연결한다. <span class="ref">OnlineSessionsSubsystem.cpp:47-95</span></p>
+	<div class="table-wrap"><table>
+		<tr><th>함수</th><th>동작</th></tr>
+		<tr><td>OnMyCreateSession(name, max)</td><td class="wrap">기존 세션이 있으면 <code>PendingAction=Create</code>를 기억해 두고 Destroy부터 한다(남은 세션이 있으면 Create가 실패하므로). 설정: <code>bShouldAdvertise</code>, <code>bUsesPresence</code>, <code>bUseLobbiesIfAvailable</code>, <b><code>bAllowJoinInProgress=true</code></b>, <code>bAllowJoinViaPresence</code>. 커스텀 필드 <code>ROOM_NAME</code>, <code>HOST_NAME</code>(Base64 UTF-8), <code>MINTCHOCO_ID="MintChoco_v1"</code>. 성공하면 <code>ServerTravelWithFade("/Game/Maps/Lobby?listen")</code>. <span class="ref">.cpp:120-218</span></td></tr>
+		<tr><td>OnMyFindSessions</td><td class="wrap">매번 새 <code>SessionSearch</code>를 만든다. <code>SEARCH_LOBBIES</code>, ID 동등 필터, 최대 50개. 완료가 동기로 올 수 있어서 <code>FindSessions</code>보다 먼저 lock(true)을 방송한다. 결과마다 ID를 클라이언트에서 다시 확인하고(NULL 서브시스템은 필터를 무시하므로) <code>OnSearchComplete</code>를 낸다. <span class="ref">.cpp:222-315</span></td></tr>
+		<tr><td>OnMyJoinSession(index)</td><td class="wrap">인덱스를 검증한 뒤 검색 결과 전체를 복사한다. Destroy를 기다리는 동안 새 검색이 결과를 바꿀 수 있기 때문이다. 성공하면 <code>GetResolvedConnectString</code> → <code>ClientTravelWithFade(url)</code>. 초대 수락도 같은 경로를 탄다. <span class="ref">.cpp:317-446</span></td></tr>
+		<tr><td>OnMyExitRoom</td><td class="wrap">대기 중인 동작을 비운다. 세션이 없으면 바로 <code>ClientTravelWithFade("/Game/Maps/Room")</code>로 간다. Destroy가 끝나면 대기 중인 Create/Join을 이어서 하고 없으면 방 목록으로 간다.</td></tr>
+		<tr><td>네트워크 실패</td><td class="wrap">다른 PIE 월드와 호스트 자신의 실패는 무시한다. 클라이언트의 <code>ConnectionLost</code>만 <code>OnMyExitRoom</code>으로 처리한다.</td></tr>
+	</table></div>
+	<p><code>FMySessionInfo</code>: RoomName, HostName, MaxPlayer, JoinPlayerCount(=Num − Open), PingSpeed, Index. 델리게이트: <code>FSearchSignature</code>(방 하나마다), <code>FSearchLockSignature(bool)</code>.</p>
+
+	<h3 id="o-join">방 만들기와 참가</h3>
+	<p><b>Title</b>: 시작 버튼이 가림막 없이 <code>OpenLevel(Room)</code>을 부른다 <span class="chip bp">BP 추정</span>. <b>Room</b>: <code>URoomListWidget</code>이 생성될 때 한 번 자동 검색한다. 서브시스템이 위젯보다 오래 살기 때문에 바인딩은 Destruct에서 해제한다. 새로고침은 목록을 비우고 다시 검색한다. 검색 중에는 <code>Btn_Refresh</code>를 잠그고 <code>Txt_Searching</code>을 띄운다. 방 만들기 팝업은 앞뒤 공백을 뺀 이름이 비어 있지 않을 때만 버튼을 켠다.</p>
+	<div class="diagram"><div class="cap">(a) 호스트가 방을 만들고 클라이언트가 참가 · 호스트 / 클라이언트 / Steam</div>
+<pre class="mermaid">
+sequenceDiagram
+    participant H as 호스트 (서버)
+    participant ST as Steam
+    participant C as 클라이언트
+    H->>H: 방 만들기 팝업 → OnMyCreateSession(name, 100)
+    opt 남은 세션
+        H->>ST: DestroySession → 완료 후 계속
+    end
+    H->>ST: CreateSession (ROOM_NAME, HOST_NAME, MINTCHOCO_ID, 참가 허용)
+    ST-->>H: OnMyCreateSessionComplete(true)
+    H->>H: ServerTravelWithFade(Lobby?listen)
+    H->>H: PostLogin → InitLobbyPlayer(false)
+    C->>C: Room → OnMyFindSessions → lock(true)
+    C->>ST: FindSessions (SEARCH_LOBBIES, ID 필터, BuildId)
+    ST-->>C: 결과 → lock(false) → 방마다 OnSearchComplete
+    C->>C: RoomItem Join → OnMyJoinSession(i)
+    C->>ST: JoinSession (결과 복사본)
+    ST-->>C: Success → GetResolvedConnectString
+    C->>H: ClientTravelWithFade(steam url) → SteamSockets 접속
+    H->>H: PostLogin → InitLobbyPlayer (Nickname = PlayerName)
+    H-->>C: LobbyPlayerState 복제
+    C->>H: ClientInitialize → Server_SetNickname
+</pre>
+	</div>
+
+	<h3 id="o-lobby">로비</h3>
+	<ul>
+		<li><code>ALobbyGameMode</code>(GameModeBase라 MatchState가 없다): <code>PostLogin</code> → <code>InitLobbyPlayer(false)</code>. 첫 복제 전에 PlayerName으로 Nickname을 채운다. 호스트는 OnRep을 받지 못하므로 <code>RefreshLobbyUI</code>를 직접 부른다. 이어서 <code>BP_OnPlayerJoinedLobby</code>를 쏜다.</li>
+		<li>seamless travel로 로비에 돌아오면 PostLogin이 불리지 않으므로 <code>HandleSeamlessTravelPlayer</code>에서 <code>InitLobbyPlayer(…, true)</code>를 한 번 더 부른다. 초기화 진입점은 이렇게 두 곳이 된다.</li>
+		<li><code>ALobbyPlayerState</code>: <code>Ready</code>, <code>Nickname</code>(OnRep), <code>Team</code>(기본 −1)을 복제한다. <code>ClientInitialize</code>는 소유 컨트롤러가 유효해지는 시점이라 여기서 닉네임을 다시 보내고 UI를 다시 그린다.</li>
+		<li>팀 선택: <code>Server_HandleTeamButton</code> → <code>Multicast_Team</code>. 레디: <code>Server_HandleReadyButton</code>은 팀이 없으면 거부하고 통과하면 <code>Multicast_Ready</code> → <code>TryStartGame</code> → <code>BP_TryStartGame</code>으로 간다.</li>
+		<li>UI 규칙: 민트/초코 버튼은 자기 줄에만 보인다. 팀을 고르기 전에는 Ready가 비활성이다. 호스트에게는 다른 사람 줄에 Kick이 보인다. 줄은 <code>PlayerId</code>로 정렬해 모든 화면에서 같은 순서가 되게 한다.</li>
+		<li><code>AreAllPlayersReady</code>는 활성 상태이면서 관전자가 아닌 LobbyPlayerState만 센다. 최소 인원은 Shipping에서 2, 그 외에는 1이다. 이동 직후 남아 있는 옛 게임 PlayerState는 건너뛴다.</li>
+	</ul>
+
+	<h3 id="o-travel">로비 → 경기 이동</h3>
+	<div class="diagram"><div class="cap">(b) 로비에서 경기로, 가림막 포함 · 호스트 / 클라이언트 / Steam</div>
+<pre class="mermaid">
+sequenceDiagram
+    participant H as 호스트 (서버)
+    participant ST as Steam
+    participant C as 클라이언트
+    C->>H: Server_HandleTeamButton, Server_HandleReadyButton
+    H-->>C: Multicast_Team, Multicast_Ready
+    H->>H: TryStartGame → BP_TryStartGame → AreAllPlayersReady
+    H->>ST: UpdateSession (MAP_NAME) → StartAdvancedSession [BP]
+    ST-->>H: 세션 InProgress
+    H->>H: ServerTravelWithFade(Lvl_...)
+    H->>C: AScreenFadeRelay.MulticastFadeOut (Reliable)
+    Note over H,C: 양쪽 화면이 어두워짐 → TravelHold 0.2초
+    H->>H: World ServerTravel (seamless)
+    Note over H,C: PreLoadMap → Cover 유지
+    H->>H: ReceiveCopyProperties (Team, Nickname) [BP]
+    H->>H: ChoosePlayerStart → 폰 스폰 (UnitData)
+    Note over H,C: PostLoadMap → WaitingForReady + Warmup 홀드
+    C->>C: 홀드 해제, 폰과 PS 있음 → FadeIn
+    C->>H: ServerSetReady
+    H->>H: WaitingForPlayers → Countdown → Playing
+</pre>
+	</div>
+
+	<h3 id="o-match">경기 단계</h3>
+	<div class="diagram"><div class="cap">AGameGameState::MatchPhase (복제) · 입력은 Playing에서만 허용</div>
+<pre class="mermaid">
+stateDiagram-v2
+    [*] --> WaitingForPlayers : StartPlay
+    WaitingForPlayers --> Countdown : 전원 bReady와 폰 있음 또는 ReadyTimeout 20초
+    Countdown --> Playing : CountdownDuration 3초 → StartMatch
+    Playing --> Ended : MatchTimer 90초 만료 또는 KO
+    Ended --> [*] : ReturnToLobby
+</pre>
+	</div>
+	<ul>
+		<li><code>StartPlay</code>는 <code>TeamUnitData</code>를 GameState로 복사하고 <code>CheckPlayersReady</code>를 0.25초마다 돌린다.</li>
+		<li>각 <code>AGamePlayerState</code>는 소유 머신에서 0.2초마다 폴링한다. 폰이 있고 가림막이 열려 있으면 <code>bReady</code>를 켠다(호스트는 직접, 클라이언트는 <code>ServerSetReady</code>로).</li>
+		<li><code>StartMatch</code>는 아이템 스폰을 시작하고 <code>MatchEndServerTime</code>을 설정한다. 타이머는 끝나는 시각만 복제하고 남은 시간은 각 머신이 계산한다.</li>
+		<li>시간 만료 시 커버리지가 높은 팀이 이긴다. 동점이면 민트가 이긴다.</li>
+	</ul>
+
+	<h3 id="o-return">결과 → 로비 복귀</h3>
+	<div class="diagram"><div class="cap">(c) 경기 종료 → 결과 → 로비 복귀 · 호스트 / 클라이언트 / Steam</div>
+<pre class="mermaid">
+sequenceDiagram
+    participant H as 호스트 (서버)
+    participant ST as Steam
+    participant C as 클라이언트
+    H->>H: 타이머 만료 또는 KO → FinishMatch(winner)
+    H->>H: SetMatchResult (Ended, bMatchEnded) → HandleMatchEnded
+    H->>H: ReturnToLobby 예약 = 지연 + 결과 연출 총 길이
+    H-->>C: bMatchEnded, ReturnToLobbyServerTime 복제
+    C->>C: OnRep_MatchEnded → HandleMatchEnded → BeginSequence (로컬 연출)
+    Note over H,C: 결과 연출은 RPC 없이 복제된 값만으로 각자 재생
+    H->>H: 타이머 또는 나가기 버튼 → ReturnToLobby
+    H->>ST: EndOnlineSession (InProgress → Ended)
+    H->>C: ServerTravelWithFade(Lobby?listen) → 릴레이 페이드
+    H->>H: AGamePlayerState.CopyProperties → Team, Nickname (Ready=false)
+    H->>H: HandleSeamlessTravelPlayer → InitLobbyPlayer(true)
+    C->>C: ClientInitialize → 자기 줄 다시 그림 → 가림막 열림
+</pre>
+	</div>
+	<p>게임 → 로비 복사는 C++ <code>AGamePlayerState::CopyProperties</code>가 한다. Ready는 false로 두므로 돌아온 플레이어는 다시 레디를 눌러야 한다(<code>MintChoco.Lobby.SeamlessTravelCopy</code>). EndSession을 빠뜨리면 엔진이 InProgress 세션을 다시 시작하지 않아 다음 경기가 열리지 않는다.</p>
+
+	<h3 id="o-fade">화면 가림막 (UScreenFadeSubsystem)</h3>
+	<div class="diagram"><div class="cap">FScreenFadeState · 코어 티커에서 실시간으로 돌아 로딩 중에도 진행된다</div>
+<pre class="mermaid">
+stateDiagram-v2
+    direction LR
+    [*] --> Clear
+    Clear --> FadingOut : ServerTravelWithFade, ClientTravelWithFade
+    FadingOut --> Covered
+    Covered --> WaitingForReady : PostLoadMap
+    WaitingForReady --> FadingIn : IsWorldReady 또는 MaxReadyWait
+    FadingIn --> Clear
+</pre>
+	</div>
+	<ul>
+		<li><b>서버 이동</b>: 클라이언트이거나 이미 대기 중인 이동이 있으면 거부한다. URL을 큐에 넣고 <code>AScreenFadeRelay</code>(복제, 항상 관련)를 스폰해 <code>MulticastFadeOut</code>으로 모든 머신을 어둡게 한다. 0.2초 뒤 <code>ServerTravel</code>을 부른다.</li>
+		<li><b>클라이언트 이동</b>: 로컬에서 페이드한 뒤 <code>ClientTravel(TRAVEL_Absolute)</code>.</li>
+		<li><b>준비 조건</b> <code>IsWorldReady</code>: seamless travel 중이 아니고 레벨이 로드돼 있어야 한다. 첫 PC에 PlayerState가 있어야 하고 게임 맵이면 폰도 있어야 한다. 남은 홀드도 없어야 한다.</li>
+		<li><b>홀드</b>는 소유자와 이유별로 참조 카운트된다. 페인트 아틀라스 베이크와 Warmup이 사용한다. <code>MaxReadyWait</code>(ini에서 18초)가 지나면 남은 홀드를 로그로 남기고 열어 버린다.</li>
+		<li>가림막을 우회하면 클라이언트가 서버 이동 전에 어두워지지 않는다. 그 신호는 릴레이만 보낸다. 가림막이 열려야 준비 보고가 나가고 그래야 카운트다운이 시작된다. 이중 이동은 큐가 막는다.</li>
+	</ul>
+
+	<h3 id="o-warm">Warmup · NetAssetRetainer</h3>
+	<div class="table-wrap"><table>
+		<tr><th>서브시스템</th><th>역할</th></tr>
+		<tr><td>UWarmupSubsystem</td><td class="wrap">게임 맵에서 월드당 한 번 <code>"Warmup"</code> 홀드를 건다. 아이템과 픽업 클래스를 미리 로드하고 투사체 풀·페인트·스플래시를 예열한다(가림막 뒤에서 실제 착탄 이펙트 한 번). 그다음 PSO 프리캐시 큐가 빌 때까지 최대 15초 기다린다. 홀드 하나가 화면과 경기 시작을 함께 막는다.</td></tr>
+		<tr><td>UNetAssetRetainerSubsystem</td><td class="wrap">로비에 돌아간 클라이언트가 게임 에셋을 GC하면 90초 뒤 NetGUID 캐시가 만료된다. 그 뒤 서버가 경로 없이 GUID만 보내면 <code>NOT_IN_CACHE</code>가 나고 그 클라이언트에서만 페인트와 아이템이 사라진다. 이를 막으려고 아이템·무기·탄·산포·브러시 프로필, UnitData, InputConfig, SoundBank와 AUnit·AItemPickup 파생 BP를 영구히 붙들어 둔다. <code>net.ResetAckStatePostSeamlessTravel=1</code>, <code>net.AllowClientRemapCacheObject=1</code>과 짝을 이룬다.</td></tr>
+	</table></div>
+
+	<h3 id="o-steam">Steam 설정</h3>
+	<ul>
+		<li>NetDriver는 <code>SteamSocketsNetDriver</code>이고 대체는 <code>SteamNetSocketsNetDriver</code>. <code>DefaultPlatformService=Steam</code>, <code>SteamDevAppId=480</code>(steam_appid.txt도 480). <span class="ref">Config/DefaultEngine.ini:97-117</span></li>
+		<li><code>bUseBuildIdOverride=true</code>, <code>BuildIdOverride=20260903</code>. 클라이언트 쪽에서 한 번 더 거르는 장치다.</li>
+		<li>AdvancedSessions/AdvancedSteamSessions 플러그인은 uproject와 Build.cs에 없고 BP에서만 쓴다.</li>
+		<li>BP에서 <code>UpdateSession</code>을 부를 때도 <code>bAllowJoinInProgress</code>를 켜 둬야 한다. 꺼지면 Steam이 로비를 참가 불가로 표시해 검색에서 사라진다.</li>
+	</ul>
+	<div class="pit"><h4>온라인 함정</h4><ul>
+		<li>월드 없이 <code>IOnlineSubsystem::Get()</code>을 쓰면 Create 한 번에 모든 PIE 창이 반응한다.</li>
+		<li>480 앱의 남의 로비가 섞여 보이면 비공개 키가 빠진 것이다. 두 PC가 서로 보지 못하면 필터나 BuildId가 다른 것이다.</li>
+		<li>카운트다운이 시작되지 않으면 폰이 없거나, 가림막이 닫혀 있거나, 홀드가 걸려 있는 경우다. 로그에서 <code>준비 완료</code>를 찾는다.</li>
+		<li>Team 기본값이 0이면 조용히 민트가 되므로 기본값은 None(−1)이다.</li>
+	</ul></div>
+	<h4>게임 맵 추가</h4>
+	<ol class="flow">
+		<li>GameMode는 <code>AGameGameMode</code> 파생(BP_GameMode)에 seamless travel을 켜고 GameState와 PlayerState는 <code>AGameGameState</code>/<code>AGamePlayerState</code>로 지정한다.</li>
+		<li><code>ATeamPlayerStart</code>를 배치한다. 중립 지점이 대체로 쓰인다. <code>TeamUnitData</code>를 지정한다.</li>
+		<li>BP_LobbyGameMode의 이동 목록과 <code>DefaultGame.ini</code>의 <code>MapsToCook</code>에 추가한다.</li>
+		<li>이동은 반드시 <code>ServerTravelWithFade</code>로 한다. 맵별 준비 작업이 오래 걸리면 새 연결을 만들지 말고 페이드 홀드를 건다.</li>
+	</ol>
+</section>
+
+<!-- ============================== 4. NOTES ============================== -->
+<section class="part" id="notes">
+	<div class="part-head"><span class="num">04</span><h2>분석 중 발견한 점</h2><span class="scope">확인 권장</span></div>
+	<p>문서화 중에 코드에서 보인 불일치와 위험 요소다. 고치지는 않았다.</p>
+	<div class="table-wrap"><table>
+		<tr><th>영역</th><th>내용</th></tr>
+		<tr><td>결과 스킵 키</td><td class="wrap">해당 머신만 <code>?listen</code> 없이 <code>/Game/Maps/Lobby</code>로 ClientTravel하고 세션도 정리하지 않는다. 호스트가 누르면 모든 클라이언트가 끊긴다. <span class="ref">MatchResultSettings.h:230-247, MatchResultSubsystem.cpp:678-702</span></td></tr>
+		<tr><td>MapsToCook</td><td class="wrap">Title, Lobby, Room, <code>Lvl_Stage_Floor</code>만 들어 있다. BP_LobbyGameMode가 <code>Lvl_Stage</code>나 <code>Lvl_Fountain</code>을 고를 수 있다면 패키지에서 빠질 수 있다. <span class="ref">DefaultGame.ini:109-112</span></td></tr>
+		<tr><td>BP_GamePlayerState</td><td class="wrap">헤더에는 "C++ 전용이라 BP ReceiveCopyProperties 없음"이라고 적혀 있지만 에셋 안에 <code>ReceiveCopyProperties</code> 문자열이 있다. C++ 복사를 덮어쓰는지 확인이 필요하다. <span class="chip bp">BP 추정</span> <span class="ref">GamePlayerState.h:48-52</span></td></tr>
+		<tr><td>가림막 우회</td><td class="wrap">WBP_Title의 OpenLevel, WBP_Lobby와 BP_LobbyPlayerState의 DestroySession + OpenLevel(Title), WBP_CreateRoomPopup의 OpenLevel(Lobby)(죽은 노드일 수 있음). <span class="chip bp">BP 추정</span></td></tr>
+		<tr><td>조용한 실패</td><td class="wrap">Join 실패(로그도 없음), Create 실패, Destroy 실패가 UI에 알려지지 않는다. UI 신호가 있는 것은 Find뿐이다.</td></tr>
+		<tr><td>닉네임 대체값</td><td class="wrap">헤더 주석에는 "Unknown"으로 대체한다고 적혀 있지만 코드에 없다. 빈 문자열이 될 수 있다. <span class="ref">OnlineSessionsSubsystem.h:105, .cpp:476-489</span></td></tr>
+		<tr><td>최대 인원</td><td class="wrap">팝업이 100을 하드코딩한다. 로비 위젯은 10줄만 그린다. <span class="ref">CreateRoomPopupWidget.cpp:53, LobbyWidget.cpp:30</span></td></tr>
+		<tr><td>아이템 첫 사용</td><td class="wrap"><code>HeldItem</code>이 스펙보다 먼저 복제되면 <code>TryUseHeldItem</code>이 실패한다. 다시 누르면 된다. <span class="ref">ItemSlotComponent.cpp:203-205</span></td></tr>
+		<tr><td>죽은 코드</td><td class="wrap"><code>UHeroLandingProfile</code>의 StartFX/LandFX/HoverFX/CameraRiseOffset, <code>UGA_HeroLanding</code>의 SetCameraRaised 등, <code>MulticastPlayAttachedFX</code>(호출처 없음), <code>UGE_HoneyBalloon</code>, <code>UGE_DessertBombardment</code>(즉발이라 미사용), <code>EUnitAction</code>의 Hit/Death/SpeedBoost, 세션 서브시스템의 <code>SessionManager</code>와 <code>CreateCompleteDelegate</code>, ini의 <code>SteamNetDriver</code> 섹션.</td></tr>
+	</table></div>
+</section>
+
+<footer>2026-10-01 기준 main 브랜치 코드를 읽고 작성했다. 블루프린트 그래프 내부는 확인하지 않았다. <span class="chip bp">BP 추정</span> 항목은 에디터에서 확인해야 한다.</footer>
+</main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script>
+(function () {
+	if (!window.mermaid) return;
+	var attr = document.documentElement.getAttribute("data-theme");
+	var dark = attr ? attr === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+	mermaid.initialize({
+		startOnLoad: true,
+		theme: dark ? "dark" : "neutral",
+		fontFamily: "IBM Plex Sans KR, Malgun Gothic, sans-serif",
+		sequence: { useMaxWidth: false, mirrorActors: false, wrap: true, width: 170 },
+		state: { useMaxWidth: false }
+	});
+})();
+</script>
+</body>
+</html>

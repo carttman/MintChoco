@@ -1,0 +1,181 @@
+<title>MintChoco 이야기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* Layout: 한 단 읽기 글(약 34em). 민트와 초코 두 색을 팀 색 그대로 쓰고, 꾸밈은 장 머리의 두 점 하나로 끝낸다. */
+:root {
+	--bg: #fbfcfb;
+	--fg: #2a221d;
+	--muted: #6b625c;
+	--line: #e3e0dc;
+	--mint: #138a74;
+	--mint-soft: #e3f4ef;
+	--choco: #6b4430;
+	--choco-soft: #f3ece6;
+	--font-display: "Gowun Batang", "Batang", serif;
+	--font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+	color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		--bg: #161312; --fg: #ece6e1; --muted: #a59b94; --line: #332d29;
+		--mint: #57d3b6; --mint-soft: #17332c; --choco: #d9a585; --choco-soft: #33261e;
+		color-scheme: dark;
+	}
+}
+:root[data-theme="dark"] {
+	--bg: #161312; --fg: #ece6e1; --muted: #a59b94; --line: #332d29;
+	--mint: #57d3b6; --mint-soft: #17332c; --choco: #d9a585; --choco-soft: #33261e;
+	color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--fg);
+	font: 17px/1.85 var(--font-body);
+	padding-inline: 20px;
+	word-break: keep-all;
+	overflow-wrap: break-word;
+}
+.page { max-width: 36em; margin: 0 auto; padding-block: 64px 96px; }
+header { padding-bottom: 36px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.dots { display: flex; gap: 6px; margin-bottom: 22px; }
+.dots i { width: 14px; height: 14px; border-radius: 50%; display: block; }
+.dots i:first-child { background: var(--mint); }
+.dots i:last-child { background: var(--choco); }
+h1 { font: 700 clamp(2.4rem, 7vw, 3.4rem)/1.15 var(--font-display); margin: 0 0 16px; text-wrap: balance; }
+h1 .m { color: var(--mint); }
+h1 .c { color: var(--choco); }
+.lede { font-size: 1.08rem; color: var(--muted); margin: 0; }
+h2 { font: 700 1.55rem/1.35 var(--font-display); margin: 56px 0 14px; text-wrap: balance; }
+p { margin: 0 0 1.1em; }
+strong { font-weight: 700; }
+.mint { color: var(--mint); font-weight: 700; }
+.choco { color: var(--choco); font-weight: 700; }
+
+.items { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 18px 0 22px; padding: 0; list-style: none; }
+@media (max-width: 520px) { .items { grid-template-columns: minmax(0, 1fr); } }
+.items li { background: var(--mint-soft); border-radius: 8px; padding: 12px 14px; font-size: 0.92rem; line-height: 1.6; min-width: 0; }
+.items li.i { background: var(--choco-soft); }
+.items b { display: block; font-size: 0.98rem; margin-bottom: 2px; }
+
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 4px; margin: 16px 0 22px; padding: 0; list-style: none; font-size: 0.9rem; }
+.flow li { background: var(--choco-soft); color: var(--fg); padding: 4px 12px; border-radius: 999px; }
+.flow li.game { background: var(--mint-soft); }
+.flow .arrow { background: none; color: var(--muted); padding: 0 2px; }
+
+.why { background: var(--mint-soft); border-radius: 10px; padding: 18px 20px 6px; margin: 22px 0 8px; font-size: 0.95rem; line-height: 1.8; }
+.why.c { background: var(--choco-soft); }
+.why h3 { font: 700 1rem/1.4 var(--font-display); margin: 0 0 8px; color: var(--mint); }
+.why.c h3 { color: var(--choco); }
+.why p { margin: 0 0 0.9em; }
+blockquote { margin: 26px 0; padding: 4px 0 4px 18px; border-left: 3px solid var(--mint); font: 400 1.18rem/1.7 var(--font-display); color: var(--fg); }
+.note { font-size: 0.86rem; color: var(--muted); }
+footer { margin-top: 64px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 0.85rem; color: var(--muted); }
+</style>
+
+<div class="page">
+<header>
+	<div class="dots" aria-hidden="true"><i></i><i></i></div>
+	<h1><span class="m">Mint</span><span class="c">Choco</span> 이야기</h1>
+	<p class="lede">민트팀과 초코팀이 페인트로 땅따먹기를 하는 온라인 게임을 만들면서 제가 맡은 부분을 정리한 글이에요. 게임 개발을 몰라도 읽을 수 있게 썼어요.</p>
+</header>
+
+<h2>어떤 게임이에요?</h2>
+<p><span class="mint">민트팀</span>과 <span class="choco">초코팀</span>으로 나뉘어 페인트 총을 쏘는 게임이에요. 상대를 쓰러뜨리는 쪽보다 바닥과 벽을 자기 팀 색으로 더 많이 칠한 쪽이 이겨요. 한 판은 90초이고 중간에 격차가 크게 벌어지면 KO로 일찍 끝나요. 맵 곳곳에 아이템이 나타나서 판을 뒤집을 기회도 생겨요.</p>
+<p>방을 만든 사람이 Steam에 방을 열면 친구들이 그 방에 들어와 같이 할 수 있어요. 언리얼 엔진 5.8로 만들었고 코드는 C++로 썼어요.</p>
+
+<h2>제가 맡은 부분</h2>
+<p>페인트가 묻는 모습을 화면에 그리는 렌더링 부분을 빼고 게임의 규칙과 네트워크 쪽을 맡았어요. 아이템, 캐릭터와 움직임, 친구와 같이 플레이하는 온라인 기능, 그리고 소리예요.</p>
+
+<h2>여럿이 같이 하는 게임이 어려운 이유</h2>
+<p>온라인 게임에서는 참가자마다 컴퓨터가 따로 있어요. 내 화면과 친구 화면은 같은 장면을 보여 줘야 하지만 컴퓨터 사이에 신호가 오가는 데는 시간이 걸려요. 그래서 누군가 한 명이 심판을 맡아야 해요. 이 게임에서는 방을 만든 사람의 컴퓨터가 서버가 되어 심판 노릇을 해요.</p>
+<p>심판이 모든 걸 정한 뒤에 다른 사람에게 알려 주면 정확하긴 해도 느려요. 버튼을 눌렀는데 한참 뒤에 반응하면 답답하죠. 그래서 내 컴퓨터는 일단 먼저 움직이고 심판이 나중에 확인해 주는 방식을 써요. 이걸 <strong>예측</strong>이라고 불러요. 예측이 맞으면 아무 일도 없고 틀리면 심판의 결과로 살짝 고쳐져요.</p>
+<p>제가 한 일의 많은 부분이 이 예측과 확인을 어긋나지 않게 맞추는 일이었어요. 그때마다 붙든 생각은 세 가지예요.</p>
+<blockquote>판정은 심판만 하고 화면 연출은 각자 한다.<br>숫자 대신 의도를 보낸다.<br>새 캐릭터와 아이템은 코드 대신 데이터로 늘린다.</blockquote>
+<div class="why">
+	<h3>왜 이 세 가지냐면</h3>
+	<p><strong>판정을 심판만 하는 이유</strong>는 결과가 한 곳에서만 정해져야 사람마다 다른 결과가 남지 않기 때문이에요. 누가 어디를 칠했는지, 누가 아이템을 먼저 주웠는지를 심판 혼자 정하니까 두 사람이 동시에 같은 아이템을 밟아도 한 명만 가져가요. 내 컴퓨터가 몰래 값을 바꿔도 심판이 받아 주지 않으니 속임수에도 강해져요. 경기 중간에 들어온 사람도 심판이 가진 기록을 받아서 같은 판을 보게 돼요.</p>
+	<p><strong>연출을 각자 하는 이유</strong>는 소리나 애니메이션까지 네트워크로 보내면 주고받을 양이 늘고 그만큼 늦게 도착하기 때문이에요. 각 컴퓨터가 이미 받은 정보로 직접 틀면 지연 없이 바로 나오고 통신량도 아낄 수 있어요.</p>
+	<p><strong>숫자 대신 의도를 보내는 이유</strong>는 양쪽이 같은 계산을 하게 만들기 위해서예요. 속도 같은 숫자를 보내면 도착하는 사이에 상황이 바뀌어 서로 다른 답이 나와요. "대시 중"이라는 의도만 보내면 심판과 내 컴퓨터가 같은 공식으로 같은 답을 내서 움직임이 부드러워요.</p>
+	<p><strong>데이터로 늘리는 이유</strong>는 프로그래머가 아니어도 게임을 바꿀 수 있게 하기 위해서예요. 캐릭터나 아이템을 하나 더 만들 때 프로그램을 다시 빌드하고 에디터를 껐다 켤 필요가 없어서 시도해 보는 속도가 빨라져요.</p>
+</div>
+<p>아래 이야기는 모두 이 세 문장으로 돌아와요.</p>
+
+<h2>아이템</h2>
+<p>아이템은 8종이에요. 민트색은 일정 시간 동안 효과가 이어지는 아이템이고 초코색은 쓰는 순간 무언가를 내보내는 아이템이에요.</p>
+<ul class="items">
+	<li><b>스위트 스피너</b>빙글빙글 돌면서 사방으로 페인트를 뿌려요</li>
+	<li><b>스피드 스타</b>잠깐 빨라지고 지나간 자리에 무지개 자국이 남아요</li>
+	<li><b>무한 탄환</b>잉크 걱정 없이 마음껏 쏠 수 있어요</li>
+	<li><b>히어로 랜딩</b>하늘로 솟았다가 고른 자리에 내리꽂혀요</li>
+	<li class="i"><b>꿀풍선</b>날아갈 곳을 미리 보고 던지면 터진 자리 주변이 굳어요</li>
+	<li class="i"><b>꿀벌</b>가장 가까운 상대를 쫓아가서 터져요</li>
+	<li class="i"><b>디저트 폭격</b>바라보는 방향으로 맵 끝까지 페인트 비가 내려요</li>
+	<li class="i"><b>초콜릿 분수</b>우리 팀만 지나갈 수 있는 돔을 세워요</li>
+</ul>
+<p>아이템을 누르면 내 컴퓨터가 먼저 효과를 켜고 심판이 확인해요. 여기서 까다로운 점은 효과가 끝나는 시점이에요. 내 컴퓨터가 예측으로 켠 효과는 심판이 확인하는 순간 심판의 효과로 바뀌어요. 내 컴퓨터가 "내가 켠 효과가 사라지면 끝"이라고 판단하면 효과가 켜지자마자 끝나 버려요. 그래서 심판은 실제 효과가 사라질 때를 기다리고 내 컴퓨터는 정해진 시간이 지나기를 기다리게 나눴어요.</p>
+<p>꿀풍선처럼 조준하는 아이템은 던질 곳을 미리 보여 주고 마음에 안 들면 취소할 수 있어요. 아이템은 효과가 실제로 시작될 때만 없어지게 해서 취소해도 손에 그대로 남아요.</p>
+<p>상대를 잠깐 굳게 만드는 아이템이 여럿이라 여러 명에게 연달아 맞으면 계속 갇힐 수도 있었어요. 그래서 굳는 효과는 한 곳에서만 걸리게 하고 풀린 뒤에는 잠깐 동안 다시 걸리지 않게 했어요.</p>
+<div class="why">
+	<h3>왜 이렇게 했냐면</h3>
+	<p>누르는 순간 바로 반응해야 손맛이 살아요. 아이템을 예측으로 먼저 켜는 이유예요. 다만 예측을 쓰면 효과가 끝나는 시점이 컴퓨터마다 어긋나기 쉬워서 종료를 기다리는 방법을 심판과 내 컴퓨터로 나눴어요. 덕분에 어느 화면에서 봐도 효과가 같은 길이로 이어져요.</p>
+	<p>아이템을 효과가 시작될 때만 없애면 "취소했으니 돌려준다"는 코드가 아예 필요 없어요. 돌려주는 코드가 없으니 돌려주다가 생기는 실수, 그러니까 아이템이 사라지거나 두 개가 되는 문제도 생길 자리가 없어요.</p>
+	<p>굳는 효과를 한 곳에서만 거는 이유는 규칙을 한 군데에서 지키기 위해서예요. 아이템이든 총이든 같은 길을 지나니까 "이미 굳어 있으면 다시 걸지 않는다"는 규칙이 모든 공격에 똑같이 적용돼요. 연달아 맞아도 계속 갇혀 있지 않아서 맞는 쪽도 덜 답답하고 규칙을 바꿀 때도 한 곳만 고치면 돼요.</p>
+	<p>아이템 하나는 "어떤 값을 쓰는지"를 담은 데이터와 "무슨 일을 하는지"를 담은 동작 한 쌍으로 이루어져요. 새 아이템을 넣어도 다른 아이템을 건드리지 않고 기획자는 데이터만 열어서 숫자를 조절할 수 있어요.</p>
+</div>
+
+<h2>캐릭터</h2>
+<p>민트와 초코는 겉모습만 다르고 몸은 같아요. 캐릭터를 움직이는 프로그램은 하나뿐이고 생김새와 애니메이션, 소리는 캐릭터마다 데이터 파일 하나에 담겨 있어요. 같은 사람에게 옷을 갈아입히는 것과 비슷해요. 그래서 새 캐릭터를 만들 때 프로그램을 고칠 필요가 없고 두 팀의 성능이 달라질 일도 없어요.</p>
+<p>순간적으로 빨라지는 대시와 아이템으로 받는 속도 증가도 있어요. 속도 숫자를 직접 바꾸면 심판과 내 컴퓨터가 서로 다른 속도를 계산해서 캐릭터가 자꾸 뒤로 끌려가요. 고무줄에 묶인 것처럼요. 그래서 "지금 대시 중이에요"라는 의도만 보내고 속도는 양쪽이 같은 공식으로 계산하게 했어요.</p>
+<p>작은 부분도 신경 썼어요. 가만히 서서 카메라를 돌리면 몸은 그대로 있고 움직이거나 쏠 때만 몸이 조준 방향을 봐요. 탄은 카메라가 바라보는 선 위에서 나가요. 총구는 애니메이션에 따라 흔들려서 심판과 내 화면에서 위치가 다르기 때문이에요. 그래도 화면에서는 탄이 총구에서 나오는 것처럼 보이게 그렸어요.</p>
+<div class="why c">
+	<h3>왜 이렇게 했냐면</h3>
+	<p>캐릭터 프로그램을 하나로 두면 고칠 곳도 하나예요. 민트에서 찾은 버그를 고치면 초코도 같이 고쳐지고 두 팀의 이동 속도나 사격이 미묘하게 달라질 걱정이 없어요. 팀으로 겨루는 게임에서는 이게 공정함과 바로 이어져요. 네트워크로도 "이 캐릭터는 어떤 옷을 입었는지" 하나만 알려 주면 되니까 주고받을 것이 적어요.</p>
+	<p>움직임을 의도로 보내면 끌려가는 현상이 없어지는 데다 심판이 그 의도를 허락할지도 정할 수 있어요. 속도 증가 아이템이 없는 사람이 "나 빨라졌어"라고 보내도 심판이 받아 주지 않아요.</p>
+	<p>몸 방향을 움직일 때만 바꾸는 이유는 둘이에요. 가만히 서서 주변을 둘러보는 동작이 자연스러워지고 심판도 같은 정보로 같은 몸 방향을 계산할 수 있어요. 탄을 카메라 시선에서 내보내면 내 화면에서 겨눈 곳과 심판이 맞았다고 판정하는 곳이 같아져요. 쏜 사람 입장에서는 조준한 대로 맞는다는 뜻이에요.</p>
+</div>
+
+<h2>친구와 한 판 하기까지</h2>
+<ul class="flow" aria-label="맵 순서">
+	<li>타이틀</li><li class="arrow">→</li><li>방 목록</li><li class="arrow">→</li><li>로비</li><li class="arrow">→</li><li class="game">경기</li><li class="arrow">→</li><li class="game">결과</li><li class="arrow">→</li><li>로비</li>
+</ul>
+<p>방을 만들면 Steam에 방이 등록되고 친구는 방 목록에서 골라 들어와요. 개발용 Steam 번호는 많은 개발자가 같이 써서 남의 방이 섞여 보여요. 그래서 우리 게임만의 표식을 붙여 걸러 냈어요.</p>
+<p>맵을 옮길 때는 화면을 검게 가려요. 이 가림막은 내 캐릭터가 준비되고 무거운 파일을 미리 다 읽어 둘 때까지 열리지 않아요. 그리고 모두의 가림막이 열려야 3, 2, 1 카운트다운이 시작돼요. 로딩이 느린 친구를 두고 경기가 먼저 시작되는 일이 없어요.</p>
+<p>이런 문제도 있었어요. 경기를 마치고 로비로 돌아간 뒤 90초가 지나면 한 사람 화면에서만 페인트와 아이템이 사라졌어요. 로비에 있는 동안 그 컴퓨터가 게임 파일을 메모리에서 비우고 90초 뒤에는 그 파일을 찾는 주소록까지 지운 게 원인이었어요. 그래서 경기에 필요한 파일은 로비에서도 계속 붙들어 두게 했어요.</p>
+<div class="why">
+	<h3>왜 이렇게 했냐면</h3>
+	<p>우리 게임만의 표식으로 방을 거르면 방 목록에 엉뚱한 방이 보이지 않아서 친구 방을 바로 찾을 수 있어요.</p>
+	<p>가림막을 경기 시작 조건에 묶은 이유는 공정한 출발을 위해서예요. 컴퓨터 성능이나 인터넷 속도가 달라도 모두 준비된 뒤에 같이 출발해요. 가림막 뒤에서 무거운 파일과 효과를 미리 읽어 두니까 경기 도중에 화면이 잠깐 멈추는 일도 줄어요. 로딩이 조금 길어지는 대신 경기 중에 끊기지 않는 쪽을 골랐어요.</p>
+	<p>맵을 옮길 때마다 반드시 가림막을 거치게 한 덕분에 화면이 갑자기 튀지 않고 이동이 두 번 겹쳐 일어나는 일도 막아져요.</p>
+	<p>경기 파일을 붙들어 두는 건 메모리를 조금 더 쓰는 대신 여러 판을 연달아 해도 화면이 망가지지 않게 하는 선택이에요. 친구들과 모이면 한 판으로 끝나는 일이 거의 없으니까요.</p>
+</div>
+
+<h2>소리</h2>
+<p>소리도 같은 생각으로 만들었어요. 코드는 "대시 소리"라는 이름표만 넘기고 실제로 어떤 파일을 어떤 크기로 틀지는 소리 표가 정해요. 소리는 네트워크로 보내지 않아요. 각 컴퓨터가 이미 받은 정보를 보고 같은 소리를 각자 틀어요.</p>
+<p>한 번에 수십 발이 터지는 소리는 동시에 나는 개수를 제한하고 같은 소리가 연달아 날 때는 음 높이를 조금씩 바꿔 기계음처럼 들리지 않게 했어요. 배경 음악은 맵이 바뀌어도 끊기지 않고 경기 단계가 바뀌면 1.5초 동안 겹치며 다음 곡으로 넘어가요.</p>
+<div class="why c">
+	<h3>왜 이렇게 했냐면</h3>
+	<p>코드가 이름표만 알면 사운드 담당자는 소리 표만 바꿔서 소리를 갈아 끼울 수 있어요. 크기나 들리는 거리를 조절할 때도 프로그래머를 부를 필요가 없어요. 캐릭터나 아이템마다 다른 소리가 필요하면 바꿀 소리만 담은 작은 표를 하나 더 붙이면 되고 나머지는 기본 표에서 가져와요.</p>
+	<p>소리를 네트워크로 보내지 않으면 통신량이 줄고 모든 컴퓨터에서 지연 없이 바로 소리가 나요. 같은 소리를 한쪽에서 보내고 다른 쪽에서도 트는 실수로 소리가 두 번 겹치는 일도 막을 수 있어요.</p>
+	<p>동시에 나는 개수를 제한하지 않으면 페인트가 한꺼번에 터질 때 다른 소리가 다 묻혀요. 음악을 끊지 않는 건 타이틀에서 로비를 지나 경기로 들어갈 때까지 한 흐름으로 느껴지게 하려는 거예요.</p>
+</div>
+
+<h2>같이 만드는 사람들을 위해</h2>
+<p>기획자와 아트 담당자가 저 없이도 값을 바꿀 수 있게 했어요. 캐릭터 생김새와 아이템 수치, 소리, 경기 연출 시간은 모두 에디터 화면에서 고칠 수 있어요. 필요한 값을 빠뜨리면 어느 칸이 비었는지 알려 주고 자동 테스트 55개가 규칙이 깨지지 않았는지 확인해요. 시간을 들여 찾은 문제는 증상과 먼저 볼 곳을 문서로 남겨서 다음 사람이 처음부터 다시 찾지 않게 했어요.</p>
+<div class="why">
+	<h3>왜 이렇게 했냐면</h3>
+	<p>값을 바꿀 때마다 프로그래머를 거쳐야 하면 그 사람이 병목이 돼요. 기획자와 아트가 직접 바꾸고 바로 확인할 수 있으면 여러 번 시도해 볼 수 있어서 게임이 더 빨리 다듬어져요.</p>
+	<p>대신 값을 열어 두면 잘못 넣는 일도 생겨요. 그래서 빈 칸을 알려 주는 안내와 자동 테스트를 같이 뒀어요. 실수를 게임을 켜 보기 전에 찾을 수 있고 고친 뒤에도 다른 규칙이 깨지지 않았는지 바로 확인할 수 있어요.</p>
+</div>
+
+<h2>아직 남은 일</h2>
+<p>완벽하진 않아요. 방 참가에 실패해도 화면에 알림이 뜨지 않고 결과 화면에서 방장이 건너뛰기를 누르면 다른 사람들의 연결이 끊겨요. 둘 다 원인과 고칠 방법은 찾아 두었어요.</p>
+
+<h2>정리하면</h2>
+<p>판정은 심판에게 맡기고 연출은 각자의 컴퓨터가 하고 새 캐릭터와 아이템은 데이터로 늘리는 게임이에요. 친구들과 한 판 해 보면 이 세 가지가 어디에 들어 있는지 보일 거예요.</p>
+
+<footer>MintChoco · 언리얼 엔진 5.8 · C++ · Steam</footer>
+</div>
